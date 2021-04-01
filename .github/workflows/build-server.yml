@@ -2,7 +2,7 @@ name: build-server
 on:
   push:
     paths:
-      - "server/**"
+      - "**"
       - ".github/workflows/build-server.yml"
 jobs:
   build:
