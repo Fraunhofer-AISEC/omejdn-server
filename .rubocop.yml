@@ -2,6 +2,7 @@ AllCops:
   NewCops: enable
   Exclude:
     - tests/*.rb
+    - vendor/**/*
 Metrics/BlockLength:
   Max: 75
 Metrics/MethodLength:
