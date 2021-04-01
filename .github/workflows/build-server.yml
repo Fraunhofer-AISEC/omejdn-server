@@ -19,9 +19,9 @@ jobs:
         rubocop
     - name: Unit tests
       run: |
-        gem install --no-document test/unit rack/test webrick/https
-        ruby tests/test_api.rb
-        ruby tests/test_oauth_helper.rb
+        gem install --no-document test-unit rack-test webrick
+        bundle exec ruby tests/test_api.rb
+        bundle exec ruby tests/test_oauth_helper.rb
   docker-build:
     needs: test
     runs-on: ubuntu-latest
