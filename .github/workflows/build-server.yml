@@ -19,7 +19,7 @@ jobs:
         ruby tests/test_api.rb
         ruby tests/test_oauth_helper.rb
   docker-build:
-    needs: lint
+    needs: test
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@master
