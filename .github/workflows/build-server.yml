@@ -9,13 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@master
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.0' # Not needed with a .ruby-version file
+        bundler-cache: true # runs 'bundle install' and caches installed gems automatically
     - name: Rubocop lint
       run: |
         sudo gem install --no-document rubocop
         rubocop
     - name: Unit tests
       run: |
-        bundle install
         ruby tests/test_api.rb
         ruby tests/test_oauth_helper.rb
   docker-build:
