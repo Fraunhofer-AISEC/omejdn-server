@@ -5,6 +5,13 @@ on:
       - "**"
       - ".github/workflows/build-server.yml"
 jobs:
+  lint:
+    runs-on: ruby:3
+    steps:
+    - name: Rubocop Lint
+      run: |
+        gem install rubocop
+        rubocop
   build:
     runs-on: ubuntu-latest
     steps:
