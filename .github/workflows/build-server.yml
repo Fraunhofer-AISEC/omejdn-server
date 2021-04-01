@@ -16,8 +16,8 @@ jobs:
     - name: Push Docker Image
       run: |
         export TAG=`expr substr $GITHUB_SHA 1 8`
-        docker login docker.pkg.github.com -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.GITHUB_TOKEN }}
-        docker push docker.pkg.github.com/fraunhofer-aisec/omejdn/server:$TAG
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        docker push ghcr.io/fraunhofer-aisec/omejdn-server:$TAG
       if: github.ref == 'refs/heads/master'
     - uses: actions/delete-package-versions@v1
       with:
