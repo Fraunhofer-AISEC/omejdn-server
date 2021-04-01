@@ -11,7 +11,7 @@ jobs:
     - uses: actions/checkout@master
     - name: Rubocop Lint
       run: |
-        sudo gem install rubocop
+        sudo gem install --no-document rubocop
         rubocop
   build:
     needs: lint
