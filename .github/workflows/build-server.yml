@@ -12,7 +12,7 @@ jobs:
     - name: Build Docker Image
       run: |
         export TAG=`expr substr $GITHUB_SHA 1 8`
-        docker build -t docker.pkg.github.com/fraunhofer-aisec/omejdn/server:$TAG .
+        docker build -t ghcr.io/fraunhofer-aisec/omejdn-server:$TAG .
     - name: Push Docker Image
       run: |
         export TAG=`expr substr $GITHUB_SHA 1 8`
