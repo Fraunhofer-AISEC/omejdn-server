@@ -3,7 +3,11 @@
 require_relative './config'
 
 require 'require_all'
-require_rel 'claim_mappers'
+begin
+  require_rel 'claim_mappers'
+rescue RequireAll::LoadError
+  p 'No claim mappers available'
+end
 
 # Claim mapper plugin loader class
 class ClaimMapper
