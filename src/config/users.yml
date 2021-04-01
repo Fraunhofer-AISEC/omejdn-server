@@ -1,0 +1,13 @@
+admin:
+  password: admin
+  roles:
+    - admin
+  attributes:
+    email: admin@example.com
+jdoe:
+  password: secret
+  roles:
+    - user
+  attributes:
+    fullName: John Doe
+    email: jdoe@example.com

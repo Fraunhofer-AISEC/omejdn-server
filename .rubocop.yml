@@ -1,0 +1,16 @@
+AllCops:
+  NewCops: enable
+  Exclude:
+    - tests/*.rb
+Metrics/BlockLength:
+  Max: 75
+Metrics/MethodLength:
+  Max: 35
+Metrics/ClassLength:
+  Max: 200
+Metrics/AbcSize:
+  Max: 25
+Metrics/CyclomaticComplexity:
+  Max: 10
+Metrics/PerceivedComplexity:
+  Max: 10

@@ -1,0 +1,29 @@
+name: build-server
+on:
+  push:
+    paths:
+      - "server/**"
+      - ".github/workflows/build-server.yml"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - name: Build Docker Image
+      run: |
+        export TAG=`expr substr $GITHUB_SHA 1 8`
+        docker build -t docker.pkg.github.com/fraunhofer-aisec/omejdn/server:$TAG server
+    - name: Push Docker Image
+      run: |
+        export TAG=`expr substr $GITHUB_SHA 1 8`
+        docker login docker.pkg.github.com -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.GITHUB_TOKEN }}
+        docker push docker.pkg.github.com/fraunhofer-aisec/omejdn/server:$TAG
+        #docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_PASSWORD }}
+        #docker tag docker.pkg.github.com/fraunhofer-aisec/omejdn/server:$TAG fraunhoferaisec/omejdn:$TAG
+        #docker push fraunhoferaisec/omejdn:$TAG
+      if: github.ref == 'refs/heads/master'
+    - uses: actions/delete-package-versions@v1
+      with:
+        package-name: server
+        num-old-versions-to-delete: 1
+      if: github.ref == 'refs/heads/master'
