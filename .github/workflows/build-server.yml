@@ -5,15 +5,20 @@ on:
       - "**"
       - ".github/workflows/build-server.yml"
 jobs:
-  lint:
+  test:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@master
-    - name: Rubocop Lint
+    - name: Rubocop lint
       run: |
         sudo gem install --no-document rubocop
         rubocop
-  build:
+    - name: Unit tests
+      run: |
+        bundle install
+        ruby tests/test_api.rb
+        ruby tests/test_oauth_helper.rb
+  docker-build:
     needs: lint
     runs-on: ubuntu-latest
     steps:
