@@ -35,6 +35,13 @@ jobs:
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
         docker push ghcr.io/fraunhofer-aisec/omejdn-server:dev
       if: github.ref == 'refs/heads/master'
+    - name: Push branch docker image
+      run: |
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        git_branch=${GITHUB_REF#refs/heads/}
+        docker tag ghcr.io/fraunhofer-aisec/omejdn-server:dev ghcr.io/fraunhofer-aisec/omejdn-server:$git_branch
+        docker push ghcr.io/fraunhofer-aisec/omejdn-server:$git_branch
+      if: (github.ref != 'refs/heads/master') && startsWith(github.ref, 'refs/heads')
     - name: Push release docker image
       run: |
         # determine version from tag
