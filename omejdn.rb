@@ -88,7 +88,6 @@ class RequestCache
   end
 end
 
-
 # Initialize admin user if given in ENV
 if ENV['OMEJDN_ADMIN']
   admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
@@ -716,20 +715,24 @@ get '/.well-known/webfinger' do
   halt 400 if params[:resource].nil?
 
   res = CGI.unescape(params[:resource].gsub('%20', '+'))
-  halt 400 unless res.start_with? "acct:"
+  halt 400 unless res.start_with? 'acct:'
 
-  email = res[5..]
-  YAML.load_file('config/webfinger.yml').each do |host,metadata|
-    next unless email.end_with? '@' + host
+  email = res[5..-1]
+  YAML.load_file('config/webfinger.yml').each do |wfhost, _|
+    next unless email.end_with? "@#{wfhost}"
+
     return JSON.generate(
       {
-        'subject': 'acct:' + email,
-        'properties': {},
-        'links': [
-          'rel': 'http://openid.net/specs/connect/1.0/issuer',
-          'href': my_path
+        subject: "acct:#{email}",
+        properties: {},
+        links: [
+          {
+            rel: 'http://openid.net/specs/connect/1.0/issuer',
+            href: my_path
+          }
         ]
-      })
+      }
+    )
   end
   halt 404
 end
