@@ -1,12 +1,3 @@
-GIT
-  remote: https://github.com/annawimbauer/sinatra-webfinger.git
-  revision: 736ac0312d9031c1ec61bb46c9319c557af7d53a
-  branch: master
-  specs:
-    sinatra-webfinger (0.2.3)
-      multi_json (>= 1.0)
-      sinatra (>= 1.3)
-
 GEM
   remote: https://rubygems.org/
   specs:
@@ -85,7 +76,7 @@ GEM
     sinatra-cors (1.2.0)
     sqlite3 (1.4.2)
     temple (0.8.2)
-    test-unit (3.4.0)
+    test-unit (3.4.1)
       power_assert
     thin (1.8.0)
       daemons (~> 1.0, >= 1.0.9)
@@ -118,7 +109,6 @@ DEPENDENCIES
   sinatra-activerecord
   sinatra-contrib
   sinatra-cors
-  sinatra-webfinger!
   sqlite3
   test-unit
   thin

@@ -19,7 +19,6 @@ require 'webrick'
 require 'webrick/https'
 require 'net/http'
 require 'bcrypt'
-require 'sinatra/webfinger'
 
 OMEJDN_VERSION = '0.0.1'
 OMEJDN_LICENSE = 'Apache2.0'
@@ -89,7 +88,6 @@ class RequestCache
   end
 end
 
-webfinger YAML.load_file('config/webfinger.yml')
 
 # Initialize admin user if given in ENV
 if ENV['OMEJDN_ADMIN']
@@ -712,6 +710,28 @@ end
 put '/api/v1/config/webfinger' do
   Config.webfinger_config = JSON.parse request.body.read
   halt 200
+end
+
+get '/.well-known/webfinger' do
+  halt 400 if params[:resource].nil?
+
+  res = CGI.unescape(params[:resource].gsub('%20', '+'))
+  halt 400 unless res.start_with? "acct:"
+
+  email = res[5..]
+  YAML.load_file('config/webfinger.yml').each do |host,metadata|
+    next unless email.end_with? '@' + host
+    return JSON.generate(
+      {
+        'subject': 'acct:' + email,
+        'properties': {},
+        'links': [
+          'rel': 'http://openid.net/specs/connect/1.0/issuer',
+          'href': my_path
+        ]
+      })
+  end
+  halt 404
 end
 
 get '/about' do
