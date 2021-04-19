@@ -1,5 +1,7 @@
 # Omejdn _(Bavarian for "Log in")_
 
+[![build-server](https://github.com/Fraunhofer-AISEC/omejdn-server/actions/workflows/build-server.yml/badge.svg)](https://github.com/Fraunhofer-AISEC/omejdn-server/actions/workflows/build-server.yml) [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=Fraunhofer-AISEC_omejdn-server&metric=bugs)](https://sonarcloud.io/dashboard?id=Fraunhofer-AISEC_omejdn-server) [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=Fraunhofer-AISEC_omejdn-server&metric=vulnerabilities)](https://sonarcloud.io/dashboard?id=Fraunhofer-AISEC_omejdn-server) ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/Fraunhofer-AISEC/omejdn-server?sort=semver)
+
 Omejdn is an OAuth2/OpenID connect server for ...
 
   1. IoT devices which use their private keys to request OAuth2 access tokens in order to access protected resources
