@@ -27,6 +27,9 @@ class YamlUserDb < UserDb
       next if concretuser.username != user.username
 
       concretuser.attributes = user.attributes
+      concretuser.password = user.password
+      concretuser.backend = user.backend
+      concretuser.extern = user.extern
       user_in_yaml = true
     end
     write_user_db t_users if user_in_yaml
