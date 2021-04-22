@@ -52,14 +52,18 @@ class YamlUserDb < UserDb
 
   def users
     t_users = []
-    load_users.each do |arr|
-      user = User.new
-      user.username = arr['username']
-      user.extern = arr['extern']
-      user.password = BCrypt::Password.new(arr['password']) unless user.extern
-      user.attributes = arr['attributes']
-      user.backend = 'yaml'
-      t_users << user
+    load_users()&.each do |arr|
+      begin
+        user = User.new
+        user.username = arr['username']
+        user.extern = arr['extern']
+        user.password = BCrypt::Password.new(arr['password']) unless user.extern
+        user.attributes = arr['attributes']
+        user.backend = 'yaml'
+        t_users << user
+      rescue => e
+        p "Error adding user: #{e}"
+      end
     end
     t_users
   end
