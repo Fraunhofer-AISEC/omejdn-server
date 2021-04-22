@@ -38,7 +38,7 @@ class YamlUserDb < UserDb
 
   def load_users
     user_backend_config = Config.user_backend_config
-    YAML.safe_load File.read user_backend_config['yaml']['location']
+    (YAML.safe_load File.read user_backend_config['yaml']['location']) || []
   end
 
   def write_user_db(users)
@@ -52,18 +52,16 @@ class YamlUserDb < UserDb
 
   def users
     t_users = []
-    load_users()&.each do |arr|
-      begin
-        user = User.new
-        user.username = arr['username']
-        user.extern = arr['extern']
-        user.password = BCrypt::Password.new(arr['password']) unless user.extern
-        user.attributes = arr['attributes']
-        user.backend = 'yaml'
-        t_users << user
-      rescue => e
-        p "Error adding user: #{e}"
-      end
+    load_users.each do |arr|
+      user = User.new
+      user.username = arr['username']
+      user.extern = arr['extern']
+      user.password = BCrypt::Password.new(arr['password']) unless user.extern
+      user.attributes = arr['attributes']
+      user.backend = 'yaml'
+      t_users << user
+    rescue BCrypt::Errors::InvalidHash => e
+      p "Error adding user: #{e}"
     end
     t_users
   end

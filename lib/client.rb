@@ -76,18 +76,16 @@ class Client
     return nil if jwt_cid.nil?
 
     clients.each do |client|
-      begin
-        next unless client.client_id == jwt_cid
+      next unless client.client_id == jwt_cid
 
-        puts "Client #{jwt_cid} found"
-        # Try verify
-        aud = ENV['OMEJDN_JWT_AUD_OVERRIDE'] || ENV['HOST'] || Config.base_config['host']
-        JWT.decode jwt, client.pub_key, true, { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_alg }
-        return client
-      rescue StandardError => e
-        puts "Tried #{client.name}: #{e}" if ENV['APP_ENV'] != 'production'
-        return nil
-      end
+      puts "Client #{jwt_cid} found"
+      # Try verify
+      aud = ENV['OMEJDN_JWT_AUD_OVERRIDE'] || ENV['HOST'] || Config.base_config['host']
+      JWT.decode jwt, client.pub_key, true, { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_alg }
+      return client
+    rescue StandardError => e
+      puts "Tried #{client.name}: #{e}" if ENV['APP_ENV'] != 'production'
+      return nil
     end
     puts "ERROR: Client #{jwt_cid} does not exist"
     nil

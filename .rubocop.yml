@@ -3,6 +3,7 @@ AllCops:
   Exclude:
     - tests/*.rb
     - vendor/**/*
+  TargetRubyVersion: 2.5
 Metrics/BlockLength:
   Max: 75
 Metrics/MethodLength:
