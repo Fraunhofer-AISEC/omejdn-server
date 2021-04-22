@@ -132,14 +132,17 @@ class ApiTest < Test::Unit::TestCase
       'attributes' => [
         { 'key' => 'exampleKey', 'value' => 'exampleValue2' }
       ],
-      'password' => "$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi",
+      'password' => "secure",
       'extern' => nil
     }
     put '/api/v1/config/users/testUser', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
     get '/api/v1/config/users/testUser', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    new_user = JSON.parse(last_response.body)
+    user.delete('password')
+    new_user.delete('password')
     assert last_response.ok?
-    assert_equal user, JSON.parse(last_response.body)
+    assert_equal user, new_user
   end
 
   def test_delete_user
