@@ -18,13 +18,15 @@ require 'json'
 # environment variable you must use that value instead.
 #
 
+CLIENTID="testClient"
+
 def load_key
-  if File.exist? 'keys/testClient.key'
-    filename = 'keys/testClient.key'
+  if File.exist? "keys/#{CLIENTID}.key"
+    filename = "keys/#{CLIENTID}.key"
     rsa_key = OpenSSL::PKey::RSA.new File.read(filename)
   else
     rsa_key = OpenSSL::PKey::RSA.new 2048
-    pfile = File.new 'keys/testClient.key', File::CREAT | File::TRUNC | File::RDWR
+    pfile = File.new "keys/#{CLIENTID}.key", File::CREAT | File::TRUNC | File::RDWR
     pfile.write(rsa_key.to_pem)
     pfile.close
   end
@@ -33,7 +35,13 @@ end
 
 # Only for debugging!
 client_rsa_key = load_key
-payload = { 'iss' => 'testClient', 'sub' => 'testClient', 'exp' => Time.new.to_i + 3600, 'nbf' => Time.new.to_i,
-            'iat' => Time.new.to_i, 'aud' => 'https://api.localhost' }
+payload = {
+            'iss' => CLIENTID,
+            'sub' => CLIENTID,
+            'exp' => Time.new.to_i + 3600,
+            'nbf' => Time.new.to_i,
+            'iat' => Time.new.to_i,
+            'aud' => 'http://localhost:4567' # The omejdn host or OMEJDN_JWT_AUD_OVERRIDE value
+}
 token = JWT.encode payload, client_rsa_key, 'RS256'
 puts token
