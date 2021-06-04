@@ -67,8 +67,8 @@ By default, omejdn uses the following directory structure for configurations and
       |   \_ scope_mapping.yml
       \ keys/
           \_ signing_key.pem (The OAuth2 server RSA private key)
-          \_ <Base64(clientID1)>.cert (The public key certificate for clientID1)
-          \_ <Base64(clientID2)>.cert
+          \_ clientID1.cert (The public key certificate for clientID1)
+          \_ clientID2>.cert
           \_   ...
 
 It is recommended, that you create the directories *config/* and *keys/* locally and mount them using docker:
@@ -85,6 +85,12 @@ You should provide the config files in *config/* and can use the templates in th
 <a name="config"/>
 
 ## Configuring the server
+
+### Environment variables
+
+    - APP_ENV: May be set to 'production' to prevent debug output
+    - HOST: May be set to modify the host config variable (useful for docker-compose deployments)
+    - OMEJDN_JWT_AUD_OVERRIDE: May be set to modify the expected 'aud' claim in a JWT assertion in a client_credentials flow. The standard usually expects the claim to contain the host, hence use this only if necessary.
 
 ### Adding a client
 
@@ -108,6 +114,7 @@ Now you need to add your client ***clientID*** to the config file
           value: Attribute1-value (single value or array)
         - key: Attribute2-name
           value: Attribute2-value (single value or array)
+      certfile: <optional, the certificate file to use under keys/>
 
 
 ### Adding a user
