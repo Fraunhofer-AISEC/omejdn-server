@@ -4,6 +4,20 @@ require 'openssl'
 require 'jwt'
 require 'json'
 
+##
+# NOTE:
+# The client_id in config/clients.yml must match the 'iss' and 'sub' claim
+# of the JWT you generate.
+# Do not forget to configure the 'certfile' of your client so that
+# omejdn can find you public key which corrsponds to the private key you
+# use to sign this JWT.
+#
+# The 'aud' claim MUST correspond to the HOST environment parameter
+# or the 'host' value in the config/omejdn.yml.
+# Alternatively, if omejdn is started with the OMEJDN_JWT_AUD_OVERRIDE
+# environment variable you must use that value instead.
+#
+
 def load_key
   if File.exist? 'keys/testClient.key'
     filename = 'keys/testClient.key'
