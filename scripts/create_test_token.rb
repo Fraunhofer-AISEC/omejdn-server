@@ -18,7 +18,7 @@ require 'json'
 # environment variable you must use that value instead.
 #
 
-CLIENTID="testClient"
+CLIENTID = 'testClient'
 
 def load_key
   if File.exist? "keys/#{CLIENTID}.key"
@@ -36,12 +36,12 @@ end
 # Only for debugging!
 client_rsa_key = load_key
 payload = {
-            'iss' => CLIENTID,
-            'sub' => CLIENTID,
-            'exp' => Time.new.to_i + 3600,
-            'nbf' => Time.new.to_i,
-            'iat' => Time.new.to_i,
-            'aud' => 'http://localhost:4567' # The omejdn host or OMEJDN_JWT_AUD_OVERRIDE value
+  'iss' => CLIENTID,
+  'sub' => CLIENTID,
+  'exp' => Time.new.to_i + 3600,
+  'nbf' => Time.new.to_i,
+  'iat' => Time.new.to_i,
+  'aud' => 'http://localhost:4567' # The omejdn host or OMEJDN_JWT_AUD_OVERRIDE value
 }
 token = JWT.encode payload, client_rsa_key, 'RS256'
 puts token
