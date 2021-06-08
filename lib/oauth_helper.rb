@@ -83,8 +83,7 @@ class OAuthHelper
 
   def self.generate_jwks
     jwk = JSON::JWK.new(
-      # Check if keypair is loaded or just public key!
-      Server.load_key,
+      Server.load_key.public_key,
       kid: 'default'
     )
     JSON::JWK::Set.new jwk
