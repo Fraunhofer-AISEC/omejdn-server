@@ -122,6 +122,13 @@ Now you need to add your client ***clientID*** to the config file
 Users are added by editing `config/users.yml`. Passwords are stored in the
 bcrypt format. Scopes which can be granted by the user must be explicitly
 defined.
+To generate a password, you can execute (replace "mypassword" with an
+actual, secure password):
+
+```
+$ ruby -rbcrypt -e 'puts BCrypt::Password.create("mypassword")'
+```
+
  If you define an attribute for a scope in `config/scope_mapping.yml`, the
 resulting access token (and ID token) will also include this attribute.
 
