@@ -15,7 +15,9 @@ class Client
   def self.load_client_cert(cert_filename)
     unless cert_filename.nil? || cert_filename.empty?
       begin
-        return OpenSSL::X509::Certificate.new File.read "keys/#{cert_filename}"
+        cert = OpenSSL::X509::Certificate.new File.read "keys/#{cert_filename}"
+        now = Time.now
+        return cert unless cert.not_after < now || cert.not_before > now
       rescue StandardError => e
         p "Unable to load key ``keys/#{cert_filename}.cert'': #{e}"
       end
