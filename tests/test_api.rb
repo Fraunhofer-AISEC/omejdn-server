@@ -18,6 +18,7 @@ class ApiTest < Test::Unit::TestCase
   def setup
     client = Client.find_by_id 'testClient'
     @token = TokenHelper.build_access_token client, ['omejdn:api', 'omejdn:admin'], nil
+    @testCertificate = File.read './tests/keys/testClient.pem'
   end
 
   def teardown
@@ -268,21 +269,7 @@ class ApiTest < Test::Unit::TestCase
   def test_certificate_03_put
     cert = {
       'certfile' => "#{Base64.urlsafe_encode64('testClient')}.cert",
-      'certificate' => "-----BEGIN CERTIFICATE-----
-MIICQzCCAaygAwIBAgIBATANBgkqhkiG9w0BAQsFADAWMRQwEgYDVQQDDAt0ZXN0
-Q2xpZW50MjAeFw0yMDAzMTgxNzQzMzVaFw0yMTAzMTgxNzQzMzVaMBYxFDASBgNV
-BAMMC3Rlc3RDbGllbnQyMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDRymVJ
-kS2owmHhxmJ9HJkBHhu+X2AsCuBmNJnt/00PJH5sW/MU6gQrpKTDR/GQzNzE71wL
-F3oXEY8hxoGcmElj5n8WtITXR86pifaMIFkknqMYHLE0CEejt92zkhCzqTARkRAf
-xH+atGZpSDAPd3KhdoRbnP3+QWz/Xx/Sb68F7QIDAQABo4GgMIGdMAkGA1UdEwQC
-MAAwCwYDVR0PBAQDAgUgMB0GA1UdDgQWBBQO291LYnF0VVCEdUPAkQLyONaSdDAT
-BgNVHSUEDDAKBggrBgEFBQcDATAPBglghkgBhvhCAQ0EAhYAMD4GA1UdIwQ3MDWA
-FA7b3UticXRVUIR1Q8CRAvI41pJ0oRqkGDAWMRQwEgYDVQQDDAt0ZXN0Q2xpZW50
-MoIBATANBgkqhkiG9w0BAQsFAAOBgQAfts/lpn7kknjtZ4AcKxdCloBBdGLRGEaW
-b/x55UrJ8Ghso3MdpKB48IG0cBu+cGD9isNu77SKEqzPzJx+wnceJOt5GSaNNXYw
-/Y34Uo7+pNxj7Nn5h5rLgNgfcFh5FeeBQ+RE+7nO2O+JFptheis9mcSLOJxElXYN
-+i6yol5y8Q==
------END CERTIFICATE-----\n"
+      'certificate' => @testCertificate
     }
     put '/api/v1/config/clients/keys/testClient', cert.to_json,
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
@@ -314,21 +301,7 @@ PExqY4rJ43CWpPOjIWAxCLRic/x3P0K19ukZk9GHNdQerUvyAJiubo8iH366kXfu
   def test_certificate_00_post
     cert = {
       'certfile' => "#{Base64.urlsafe_encode64('testClient2')}.cert",
-      'certificate' => "-----BEGIN CERTIFICATE-----
-MIICQzCCAaygAwIBAgIBATANBgkqhkiG9w0BAQsFADAWMRQwEgYDVQQDDAt0ZXN0
-Q2xpZW50MjAeFw0yMDAzMTgxOTEyNDJaFw0yMTAzMTgxOTEyNDJaMBYxFDASBgNV
-BAMMC3Rlc3RDbGllbnQyMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC+XtuO
-xb5heLPf63qFIcT9PEkz9mnTOZeO2laSWVgKLB9lZLEliz/jT+0utG9ae5gHaJvQ
-CAE+54nO3PQYn5aHpjQxCHr4S0Bd5TmZIVNB3dZs3TgBcmp1zmqzE8x/sgzTCYwW
-SpD/8Fz0DHGWaRSDLS3e1wqohpgyc+FoL7WWtQIDAQABo4GgMIGdMAkGA1UdEwQC
-MAAwCwYDVR0PBAQDAgUgMB0GA1UdDgQWBBSeVx082PpdfjOwDppX1+WG9krGXzAT
-BgNVHSUEDDAKBggrBgEFBQcDATAPBglghkgBhvhCAQ0EAhYAMD4GA1UdIwQ3MDWA
-FJ5XHTzY+l1+M7AOmlfX5Yb2SsZfoRqkGDAWMRQwEgYDVQQDDAt0ZXN0Q2xpZW50
-MoIBATANBgkqhkiG9w0BAQsFAAOBgQA3dZXiU7/iamW0b+6fnhdz5myG/xgMdsTh
-RVi07KVPe2LvGoNr+jy8pxiOXXOE/lJ0NyDtQS1hJTemmATitFm1ct6JyII+uCke
-jGwgRDStkayeDGynlH+ROAqyERyMa22pLlYAXdhIKgs6MnUOPhPZbM6ewfqT670W
-xBcEdFWvuA==
------END CERTIFICATE-----\n"
+      'certificate' => @testCertificate
     }
     post '/api/v1/config/clients/keys/testClient2', cert.to_json,
          { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
