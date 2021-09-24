@@ -22,6 +22,14 @@ jobs:
         gem install --no-document test-unit rack-test webrick
         bundle exec ruby tests/test_api.rb
         bundle exec ruby tests/test_oauth_helper.rb
+    - uses: actions/checkout@v2
+      with:
+        name: SBOM
+        path: bom.xml
+    - name: SBOM generation
+      run: |
+        gem install --no-document cyclonedx-ruby
+        cyclonedx-ruby -p .
   docker-build:
     needs: test
     runs-on: ubuntu-latest

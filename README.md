@@ -51,36 +51,55 @@ these are the only grant types we will likely support for OAuth2.0 and OpenID Co
 
 ## Running an Omejdn server
 
-### Run with docker
-
 By default, omejdn uses the following directory structure for configurations and keys:
 
-    /opt
-      | config/
-      |   \_ omejdn.yml
-      |   \_ user_backend.yml
-      |   \_ clients.yml
-      |   \_ users.yml
-      |   \_ webfinger.yml
-      |   \_ oauth_providers.yml
-      |   \_ scope_description.yml
-      |   \_ scope_mapping.yml
-      \ keys/
-          \_ signing_key.pem (The OAuth2 server RSA private key)
-          \_ clientID1.cert (The public key certificate for clientID1)
-          \_ clientID2>.cert
-          \_   ...
+      config/
+        \_ omejdn.yml
+        \_ user_backend.yml
+        \_ clients.yml
+        \_ users.yml
+        \_ webfinger.yml
+        \_ oauth_providers.yml
+        \_ scope_description.yml
+        \_ scope_mapping.yml
+      keys/
+        \_ signing_key.pem (The OAuth2 server RSA private key)
+        \_ clientID1.cert (The public key certificate for clientID1)
+        \_ clientID2.cert
+        \_   ...
 
-It is recommended, that you create the directories *config/* and *keys/* locally and mount them using docker:
+You may use the default configurations from this repository as a starting
+point and create your own setup accordingly.
+In order to start the omejdn service, you need to install the dependencies and
+run it:
 
-    $ mkdir config
-    $ mkdir keys
-    $ docker run -d  --name=omejdn -p 4567:4567 -v $PWD/config:/opt/config -v $PWD/keys:/opt/keys <dockerimage>
+    $ bundle install
+    $ ruby omejdn.rb
 
-You should provide the config files in *config/* and can use the templates in this repo.
+**Alternatively**, you can use the Dockerfile in order to create an image and
+run it:
 
-**NOTE**: The server private key  will be generated if it does not exist, but you can also provide your own.
+    $ docker build . -t my-omejdn-server
+    $ docker run -d  --name=omejdn -p 4567:4567 \
+                 -v $PWD/config:/opt/config \
+                 -v $PWD/keys:/opt/keys my-omejdn-server
 
+In the example above, the `config` and `keys` folders are mounted as volumes
+into the docker container.
+
+### Signing keys
+
+The server public/private key pair used to sign tokens is configured in
+`config/omejdn.yml` through the `signing_key` property for both token types
+(ID Token and Access Token). The keys will be generated if they do not exist,
+but you can also provide your own. The keys must be in PEM format.
+
+In order to generate your own key pair with a self-signed pulic key
+for testing, your can execute:
+
+
+   $ openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -keyout key.pem -out cert.pem
+   $ mv key.pem keys/signing_key.pem
 
 <a name="config"/>
 
@@ -88,18 +107,35 @@ You should provide the config files in *config/* and can use the templates in th
 
 ### Environment variables
 
-    - APP_ENV: May be set to 'production' to prevent debug output
+    - APP_ENV: May be set to 'production' to prevent debug output such as logging sensitive information to stdout.
     - HOST: May be set to modify the host config variable (useful for docker-compose deployments)
     - OMEJDN_JWT_AUD_OVERRIDE: May be set to modify the expected 'aud' claim in a JWT assertion in a client_credentials flow. The standard usually expects the claim to contain the host, hence use this only if necessary.
 
+Setting the environment variables depends on how you run the service.
+If you are not using docker, you can set the variables as follows:
+
+   $ export APP_ENV="production"
+   $ export HOST="https://my-omejdn.example.tld"
+   $ ruby omejdn.rb
+
+When using docker, you need to set the variables accordingly through the
+command line arguments.
+
 ### Adding a client
 
-First, you need to create a public/private RSA key pair and a X.509 certificate.
-Then, add the public key certificate to omejdn:
+Public key certificates for clients can be issued by any certification
+authority or even be self-signed.
+As long as the public key certificate is registered with a client in omejdn
+(see below), it is able to retrieve a token.
 
-    $ cp path/to/your/public/x509.cert keys/<Base64(clientID)>.cert
+In order to generate your own key pair with a self-signed pulic key
+for testing, your can execute:
 
-Now you need to add your client ***clientID*** to the config file
+   $ openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -keyout key.pem -out cert.pem
+   $ cp cert.pem keys/<clientID>.cert
+
+You may choose any valid filename for the certificate.
+Then, you need to add your client ***clientID*** to the config file
 `config/clients.yml`:
 
     - clientID:
