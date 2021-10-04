@@ -139,7 +139,7 @@ Then, you need to add your client ***clientID*** to the config file
 `config/clients.yml`:
 
     - clientID:
-      name: My Clienti
+      name: My Client
       redirect_uri: <uri> (optional, required for OIDC)
       allowed_scopes:
         - <scope1>
@@ -262,6 +262,48 @@ You may retrieve the server configuration under
 Please do not forget to configure your external hostname in `omejdn.yml` under
 `host`.
 
-## Transport Layer Security
+## Example deployment
 
 This service does *not* include TLS. Omejdn _must_ be served/proxied through a TLS-enabled webserver, such as nginx.
+
+An example deployment using docker-compose could look like this:
+
+```
+version: '2'
+
+services:
+  nginx-proxy:
+    image: jwilder/nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - /path/to/certs:/etc/nginx/certs:ro
+      - /etc/nginx/vhost.d
+      - /usr/share/nginx/html
+
+  nginx-companion:
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    volumes:
+      - /path/to/certs:/etc/nginx/certs:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    volumes_from:
+      - nginx-proxy:rw
+
+
+  omejdn-server:
+    image: ghcr.io/fraunhofer-aisec/omejdn-server
+    ports:
+      - "4567:4567"
+    environment:
+      - HOST=https://<yourDomain>
+      - OMEJDN_ADMIN=<yourAdminUsername>:<superSecretPassword>
+      - VIRTUAL_PORT=4567
+      - VIRTUAL_HOST=<yourDomain>
+      - LETSENCRYPT_HOST=<yourDomain>
+      - LETSENCRYPT_EMAIL=<yourEmail>
+    volumes:
+      - /path/to/config:/opt/config
+      - /path/to/keys:/opt/keys
+```
