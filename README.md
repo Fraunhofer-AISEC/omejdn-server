@@ -198,19 +198,12 @@ with your private key.
 **Note**: You need to generate the respective private key yourself. It is not
 part of this repo.
 
-An example of a request using the preconfigured client `testClient` against
-omejdn to receive an access token looks like this:
+Example:
 
 ```
     $ curl localhost:4567/token --data "grant_type=client_credentials
                                         &client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
-                                        &client_assertion=eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJkZW1vY29ubmVjdG9yMSIsInN1YiI6ImRlbW9jb25uZWN0b3IxIiwiZXh
-                                                          wIjoxNTQ4Nzg1Mzg2LCJuYmYiOjE1NDg3ODE3ODYsImlhdCI6MTU0ODc4MTc4NiwiYXVkIjoiaHR0cHM6Ly9hcGk
-                                                          ubG9jYWxob3N0In0.JSQuMf-9Fd7DNna_-s-sR7eXgcSYNCau5WgurrGJTuCSLKqhZe3odXfunN2vRFgUhU21ADF
-                                                          lEq96mlbQDueBlMtaXrcHFPSpIUtvuIMIVqQcGYkDdSJr_VmDuAykCYpyTCkLa7a8DTV-N3sECp-AxUgmEzYIfh8
-                                                          jW0WS6ehgUzrnpH6t_h_GWXKkNSAg3ERakDc4NY02pBGmiN7bmtLZNt5b4LWALiiFiduC7JbIpx4awOU6skMApmz
-                                                          gLnZmmTG20JlJRg6hAqyHEz5Cd4rUgrt0twmpC0Us_CG23KdUF5fWI55dcO2qAVvhNQXpqz7IiPcF7-jgkrx4ouk
-                                                          YNY6eHA
+                                        &client_assertion=<JWT assertion>
                                         &scope=ids_connector security_level"
 ```
 
@@ -232,16 +225,7 @@ For details on JWT parameter values, refer to [RFC7519](https://tools.ietf.org/h
 A response looks like this:
 
 ```
-    {"access_token":"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZWN1cml0eV9sZXZlb
-                     CI6Nywic2NvcGVzIjpbImlkc19jb25uZWN0b3IiLCJzZWN1cml0eV9sZXZ
-                     lbCJdLCJhdWQiOiJJRFNfQ29ubmVjdG9yIiwic3ViIjoibXlDbGllbnQxI
-                     iwibmJmIjoxNTQ0MTM0NzMxLCJleHAiOjE1NDQxMzgzMzF9.RXvBfka9_o
-                     Nn7Pgu8royJY25l0ua9jj9REVZPftmggEZreb0oKfhr1bLk9KxWrcT5r2i
-                     svb3GXRONI5zg7S2KZehZK8PQltFQqcbdOOp1Yx0BbJd1ctRiQhCW9kpAo
-                     xHylEahniZXblQ3Z2koFxY82cyVZ48YxUo_8Tda98CeiFufj7ZW8msGfnT
-                     ac-lwk2yX8hRHoPVSX72GGQWgZGZd9ATubTypLYaqpLuF9hQ5JYk5WKsDq
-                     cFoqk7j_RxkdM0Uw7njnLWhi7GU7FZZ0UFQi-R8IAhUpIpSofcFsoVPynU
-                     HrjYWB0ANiL-W1kBqXSNCRS9r7SF3ny3LEOVKbuN5g",
+    {"access_token":"ey...",
       "expires_in":3600,
       "token_type":"bearer"}
 ```
