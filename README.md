@@ -214,6 +214,20 @@ omejdn to receive an access token looks like this:
                                         &scope=ids_connector security_level"
 ```
 
+The ```client_assertion``` parameter must adhere to
+[RFC7523](https://tools.ietf.org/html/rfc7523#section-2.2).
+At least, the JWT must contain the following parameters:
+
+  - ```iss```: The issuer of this assertion must match the client ID of the caller.
+  - ```sub```: The subject of this assertion must match the client ID of the caller.
+  - ```aud```: The audience of this assertion must match the ```host``` configuration parameter in your ```omejdn.yml``` configuration file.
+  - ```exp```, ```nbf```, ```iat```: The token must be valid at the time of processing.
+
+For details on JWT parameter values, refer to [RFC7519](https://tools.ietf.org/html/rfc7519).
+
+The script ```scripts/create_test_token.rb``` may be used to create a valid
+token. You will need to modify it to your own configuration.
+
 A response looks like this:
 
 ```
