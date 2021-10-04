@@ -204,7 +204,7 @@ Example:
     $ curl localhost:4567/token --data "grant_type=client_credentials
                                         &client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
                                         &client_assertion=<JWT assertion>
-                                        &scope=ids_connector security_level"
+                                        &scope=scopeA scopeB ..."
 ```
 
 The `client_assertion` parameter must adhere to
