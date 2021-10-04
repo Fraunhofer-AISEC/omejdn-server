@@ -138,7 +138,7 @@ You may choose any valid filename for the certificate.
 Then, you need to add your client ***clientID*** to the config file
 `config/clients.yml`:
 
-    - clientID:
+    - clientID: <client_id>
       name: My Client
       redirect_uri: <uri> (optional, required for OIDC)
       allowed_scopes:
