@@ -223,6 +223,10 @@ At least, the JWT must contain the following parameters:
   - `aud`: The audience of this assertion must match the `host` configuration parameter in your `config/omejdn.yml` configuration file.
   - `exp`, `nbf`, `iat`: The token must be valid at the time of processing.
 
+The signature and header of the JWT must match the public key configured through
+the `certfile` parameter of your client in the `config/clients.yml` file.
+Commonly the signature algorithm used is RSA with SHA256 (`"alg": "RS256"`).
+
 For details on JWT parameter values, refer to [RFC7519](https://tools.ietf.org/html/rfc7519).
 
 A response looks like this:
