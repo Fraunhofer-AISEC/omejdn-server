@@ -21,8 +21,10 @@ address:
 phone:
   - phone_number
   - phone_number_verified
-omejdn:api: 
-  - omejdn:api
+omejdn:read: 
+  - omejdn:read
+omejdn:write:
+  - omejdn:write
 omejdn:admin:
   - omejdn:admin
 openid:

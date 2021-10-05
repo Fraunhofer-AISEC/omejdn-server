@@ -65,7 +65,7 @@ class User
   end
 
   def self.update_user(user, _oauth_providers = nil)
-    # Extern User: Update omejdn:api scope if necessary
+    # Extern User: Update omejdn:write scope if necessary
     dbs = UserDbLoader.load_db
     dbs.each do |db|
       user_found = db.update_user(user)
@@ -99,6 +99,12 @@ class User
   end
 
   def claim?(claim)
+    # internal omejdn API attributes must be translated into scopes
+    # TODO: There is probably a cleaner way to do this
+    return attributes['omejdn']['value'] == 'admin' if claim == 'omejdn:admin'
+    return attributes['omejdn']['value'] == 'write' if claim == 'omejdn:write'
+    return attributes['omejdn']['value'] == 'read'  if claim == 'omejdn:read'
+    # handle the rest
     attributes.each do |a|
       return true if a['key'] == claim
     end

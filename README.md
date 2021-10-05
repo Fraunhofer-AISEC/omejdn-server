@@ -180,8 +180,9 @@ authorization.
 There are some special scopes you may want to use:
 
   - `openid`: This scope is required if the client shall be able to initia an openid flow.
-  - `omejdn:api`: This scope is required if you need to access the omejdn API.
-  - `omejdn:admin`: This scope is required if you need to access the omejdn API admin functions.
+  - `omejdn:read`: This scope is required if you need to access the omejdn API.
+  - `omejdn:write`: This scope is required if you need to write to the omejdn API. (Implies write access)
+  - `omejdn:admin`: This scope is required if you need to access the omejdn API admin functions. (Implies read/write access to the entire API)
 
 You can define any allowed client scopes directly in the client configuration.
 Please note that the user also needs to have the scopes configured in order to

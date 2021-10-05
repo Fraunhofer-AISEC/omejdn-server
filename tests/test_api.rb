@@ -17,7 +17,7 @@ class ApiTest < Test::Unit::TestCase
 
   def setup
     client = Client.find_by_id 'testClient'
-    @token = TokenHelper.build_access_token client, ['omejdn:api', 'omejdn:admin'], nil
+    @token = TokenHelper.build_access_token client, ['omejdn:admin'], nil
     @testCertificate = File.read './tests/keys/testClient.pem'
   end
 
