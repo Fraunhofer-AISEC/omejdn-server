@@ -22,10 +22,10 @@ phone:
   - phone_number
   - phone_number_verified
 omejdn:read: 
-  - omejdn:read
+  - omejdn
 omejdn:write:
-  - omejdn:write
+  - omejdn
 omejdn:admin:
-  - omejdn:admin
+  - omejdn
 openid:
   - openid

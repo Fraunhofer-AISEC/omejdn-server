@@ -2,5 +2,6 @@ profile: "Standard profile claims (e.g.: Name, picture, website, gender, birthda
 email: "Email-Address"
 address: "Address"
 phone: "Phone-number"
-omejdn:api: "Access to the Omejdn server API"
+omejdn:read: "Read access to the Omejdn server API"
+omejdn:write: "Write access to the Omejdn server API"
 omejdn:admin: "Access to the Omejdn server admin API"

@@ -202,17 +202,22 @@ get '/authorize' do
 
   params[:scope].split.each do |s|
     p "Checking scope #{s}"
-    has_scope = false
     session[:scopes].push(s) if s == 'openid'
+
+    # "key:value" scopes
+    if (s.include? ':') && user.claim?(s)
+      session[:scopes].push(s)
+      next
+    end
+
     next if scope_mapping[s].nil?
 
     scope_mapping[s].each do |claim|
       if user.claim?(claim)
-        has_scope = true
+        session[:scopes].push(s)
         break
       end
     end
-    session[:scopes].push(s) if has_scope
   end
   p "Granted scopes: #{session[:scopes]}"
   p "The user seems to be #{user.username}" if debug

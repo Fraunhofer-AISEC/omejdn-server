@@ -30,7 +30,7 @@ class ApiTest < Test::Unit::TestCase
   def users_to_yaml
     users = [{
       'username' => 'testUser',
-      'scopes' => ['omejdn:api', 'openid', 'profile'],
+      'scopes' => ['omejdn:write', 'openid', 'profile'],
       'attributes' => [
         { 'key' => 'email', 'value' => 'admin@example.com' },
         { 'key' => 'asdfasf', 'value' => 'asdfasf' },
@@ -45,14 +45,14 @@ class ApiTest < Test::Unit::TestCase
     clients = [{
       'client_id' => 'testClient',
       'name' => 'omejdn admin ui',
-      'allowed_scopes' => ['omejdn:api'],
+      'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
       'attributes' => []
     },
                {
                  'client_id' => 'testClient2',
                  'name' => 'omejdn admin ui',
-                 'allowed_scopes' => ['omejdn:api'],
+                 'allowed_scopes' => ['omejdn:write'],
                  'redirect_uri' => 'http://localhost:4200',
                  'attributes' => []
                }]
@@ -86,7 +86,7 @@ class ApiTest < Test::Unit::TestCase
     #p last_response
     assert last_response.ok?
     assert_equal '[{"username":"testUser",'\
-    '"scopes":["omejdn:api","openid","profile"],'\
+    '"scopes":["omejdn:write","openid","profile"],'\
     '"attributes":[{"key":"email","value":"admin@example.com"},'\
     '{"key":"asdfasf","value":"asdfasf"},'\
     '{"key":"exampleKey","value":"exampleValue"}],'\
