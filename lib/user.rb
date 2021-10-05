@@ -99,14 +99,15 @@ class User
   end
 
   def claim?(claim)
-    # internal omejdn API attributes must be translated into scopes
-    # TODO: There is probably a cleaner way to do this
-    return attributes['omejdn']['value'] == 'admin' if claim == 'omejdn:admin'
-    return attributes['omejdn']['value'] == 'write' if claim == 'omejdn:write'
-    return attributes['omejdn']['value'] == 'read'  if claim == 'omejdn:read'
-    # handle the rest
+    parts = claim.split(':',2)
+    searchkey = parts[0]
+    searchvalue = parts.length()>1 ? parts[1] : nil
     attributes.each do |a|
-      return true if a['key'] == claim
+      key = a['key']
+      next unless key == searchkey
+
+      return a['value'] == searchvalue unless searchvalue.nil?
+      return true
     end
     false
   end
