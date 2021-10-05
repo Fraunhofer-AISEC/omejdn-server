@@ -98,7 +98,7 @@ class ApiTest < Test::Unit::TestCase
     #p last_response
     assert last_response.ok?
     assert_equal '{"username":"testUser",'\
-    '"scopes":["omejdn:api","openid","profile"],'\
+    '"scopes":["omejdn:write","openid","profile"],'\
     '"attributes":[{"key":"email","value":"admin@example.com"},'\
     '{"key":"asdfasf","value":"asdfasf"},{"key":"exampleKey",'\
     '"value":"exampleValue"}],"password":"$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi"}', last_response.body
@@ -159,11 +159,11 @@ class ApiTest < Test::Unit::TestCase
     clients = [{
         "client_id" => "testClient",
         "name" => "omejdn admin ui",
-        "allowed_scopes" => ["omejdn:api"],
+        "allowed_scopes" => ["omejdn:write"],
         "redirect_uri" => "http://localhost:4200",
         "attributes" => []
       },{
-        "allowed_scopes" => ["omejdn:api"],
+        "allowed_scopes" => ["omejdn:write"],
         "name" => "omejdn admin ui",
         "client_id" => "testClient2",
         "redirect_uri" => "http://localhost:4200",
@@ -179,7 +179,7 @@ class ApiTest < Test::Unit::TestCase
     clnt = {
       "client_id" => "testClient",
       "name" => "omejdn admin ui",
-      "allowed_scopes" => ["omejdn:api"],
+      "allowed_scopes" => ["omejdn:write"],
       "redirect_uri" => "http://localhost:4200",
       "attributes" => []
     }
@@ -191,7 +191,7 @@ class ApiTest < Test::Unit::TestCase
       'client_id' => 'testClient2',
       'name' => 'omejdn admin ui',
       'certfile' => nil,
-      'allowed_scopes' => ['omejdn:api'],
+      'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
       'attributes' => []
     }
@@ -207,7 +207,7 @@ class ApiTest < Test::Unit::TestCase
       'client_id' => 'testClient3',
       'name' => 'omejdn admin ui',
       'certfile' => nil,
-      'allowed_scopes' => ['omejdn:api'],
+      'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
       'attributes' => []
     }
