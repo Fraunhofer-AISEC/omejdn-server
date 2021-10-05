@@ -210,13 +210,13 @@ get '/authorize' do
       next
     end
 
-    next if scope_mapping[s].nil?
+    next if scope_mapping[s].nil? || (s.include? ':')
 
     scope_mapping[s].each do |claim|
-      if user.claim?(claim)
-        session[:scopes].push(s)
-        break
-      end
+      next unless user.claim?(claim)
+
+      session[:scopes].push(s)
+      break
     end
   end
   p "Granted scopes: #{session[:scopes]}"
