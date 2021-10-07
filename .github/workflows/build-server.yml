@@ -47,7 +47,7 @@ jobs:
         if [[ $VERSION != v* ]]
         then
           export VERSION="git-${git_branch}-${git_hash}"
-          echo "Building version-less (master or feature branch)"
+          echo "Building version-less (${VERSION})"
         else
           export VERSION=${VERSION:1:${#VERSION}}
           echo "Building as ${VERSION}"
