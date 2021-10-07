@@ -20,7 +20,7 @@ require 'webrick/https'
 require 'net/http'
 require 'bcrypt'
 
-OMEJDN_VERSION = '1.0.0'
+OMEJDN_VERSION = '1.0.3'
 OMEJDN_LICENSE = 'Apache2.0'
 
 def debug
