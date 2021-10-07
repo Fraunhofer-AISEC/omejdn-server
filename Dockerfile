@@ -1,4 +1,5 @@
 FROM ruby:3
+ARG omejdn_version="unknown"
 
 WORKDIR /opt
 
@@ -6,6 +7,7 @@ WORKDIR /opt
 COPY Gemfile .
 COPY Gemfile.lock .
 RUN bundle install
+RUN echo $omejdn_version > .version
 
 COPY . .
 

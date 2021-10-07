@@ -20,8 +20,13 @@ require 'webrick/https'
 require 'net/http'
 require 'bcrypt'
 
-OMEJDN_VERSION = '1.0.3'
 OMEJDN_LICENSE = 'Apache2.0'
+
+def version
+  return File.read('.version').chomp if File.file? '.version'
+
+  'unknown'
+end
 
 def debug
   ENV['APP_ENV'] != 'production'
@@ -751,6 +756,6 @@ end
 
 get '/about' do
   headers['Content-Type'] = 'application/json'
-  return JSON.generate({ 'version' => OMEJDN_VERSION,
+  return JSON.generate({ 'version' => version,
                          'license' => OMEJDN_LICENSE })
 end
