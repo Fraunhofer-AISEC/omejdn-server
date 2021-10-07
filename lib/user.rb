@@ -65,7 +65,7 @@ class User
   end
 
   def self.update_user(user, _oauth_providers = nil)
-    # Extern User: Update omejdn:api scope if necessary
+    # Extern User: Update omejdn:write scope if necessary
     dbs = UserDbLoader.load_db
     dbs.each do |db|
       user_found = db.update_user(user)
@@ -99,8 +99,16 @@ class User
   end
 
   def claim?(claim)
+    parts = claim.split(':', 2)
+    searchkey = parts[0]
+    searchvalue = parts.length > 1 ? parts[1] : nil
     attributes.each do |a|
-      return true if a['key'] == claim
+      key = a['key']
+      next unless key == searchkey
+
+      return a['value'] == searchvalue unless searchvalue.nil?
+
+      return true
     end
     false
   end

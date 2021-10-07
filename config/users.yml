@@ -1,14 +1,15 @@
 ---
 - username: testUser
   scopes:
-  - omejdn:api
+  - omejdn:admin
   - openid
   - profile
   attributes:
   - key: email
     value: admin@example.com
-  - key: asdfasf
-    value: asdfasf
+  - key: omejdn
+    value: admin
   - key: exampleKey
     value: exampleValue
-  password: "$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi"
+  password: "$2a$12$0apoKS5lzSDI5zETS2Aa/OOFpbN7b3c/ZKfGc1coYQw6SRytbQM5S"
+

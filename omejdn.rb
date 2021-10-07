@@ -96,7 +96,7 @@ if ENV['OMEJDN_ADMIN']
   if admin.nil?
     admin = User.new
     admin.username = admin_name
-    admin.attributes = [{ 'key' => 'omejdn:api', 'value' => true }, { 'key' => 'omejdn:admin', 'value' => true },
+    admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
                         { 'key' => 'name', 'value' => 'Admin' }]
     admin.password = BCrypt::Password.create(admin_pw)
     User.add_user(admin, 'yaml')
@@ -202,17 +202,22 @@ get '/authorize' do
 
   params[:scope].split.each do |s|
     p "Checking scope #{s}"
-    has_scope = false
     session[:scopes].push(s) if s == 'openid'
-    next if scope_mapping[s].nil?
+
+    # "key:value" scopes
+    if (s.include? ':') && user.claim?(s)
+      session[:scopes].push(s)
+      next
+    end
+
+    next if scope_mapping[s].nil? || (s.include? ':')
 
     scope_mapping[s].each do |claim|
-      if user.claim?(claim)
-        has_scope = true
-        break
-      end
+      next unless user.claim?(claim)
+
+      session[:scopes].push(s)
+      break
     end
-    session[:scopes].push(s) if has_scope
   end
   p "Granted scopes: #{session[:scopes]}"
   p "The user seems to be #{user.username}" if debug
@@ -383,14 +388,18 @@ before '/api/v1/user/*' do
 
   jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
   halt 401 if jwt.nil? || jwt.empty?
-  @user_is_admin = false
+  @user_may_read  = false
+  @user_may_write = false
+  @user_is_admin  = false
   begin
     key = Server.load_key
     token = JWT.decode(jwt, key.public_key, true, { algorithm: 'RS256' })
-    halt 401 unless token[0]['scopes'].include? 'omejdn:api'
+    @user_is_admin  =  token[0]['scopes'].include? 'omejdn:admin'
+    @user_may_write = (token[0]['scopes'].include? 'omejdn:write') || @user_is_admin
+    @user_may_read  = (token[0]['scopes'].include? 'omejdn:read')  || @user_may_write
+    halt 401 unless @user_may_read
     @user = User.find_by_id token[0]['sub'] if token[0]['scopes'].include? 'openid'
     @client = Client.find_by_id token[0]['sub'] unless (token[0]['scopes']).include? 'openid'
-    @user_is_admin = token[0]['scopes'].include? 'omejdn:admin'
   rescue StandardError => e
     p e if debug
     @client = nil
@@ -400,6 +409,7 @@ before '/api/v1/user/*' do
 end
 
 put '/api/v1/user/:username/password' do
+  halt 401 unless @user_may_write
   user = User.find_by_id(params['username'])
   halt 401 unless (@user.username == user.username) || @user_is_admin
   json = (JSON.parse request.body.read)
@@ -421,6 +431,7 @@ get '/api/v1/user/:username' do
 end
 
 post '/api/v1/user/:username' do
+  halt 401 unless @user_may_write
   halt 401 unless (@user.username == params['username']) || @user_is_admin
   json = JSON.parse request.body.read
   user = User.from_json(json)
@@ -429,6 +440,7 @@ post '/api/v1/user/:username' do
 end
 
 put '/api/v1/user/:username' do
+  halt 401 unless @user_may_write
   halt 401 unless (@user.username == params['username']) || @user_is_admin
   user = User.from_json(JSON.parse(request.body.read))
   oauth_providers = Config.oauth_provider_config
@@ -437,6 +449,7 @@ put '/api/v1/user/:username' do
 end
 
 delete '/api/v1/user/:username' do
+  halt 401 unless @user_may_write
   halt 401 unless (@user.username == params['username']) || @user_is_admin
   User.delete_user(params['username'])
   halt 204
@@ -464,7 +477,6 @@ before '/api/v1/config/*' do
   begin
     key = Server.load_key
     token = JWT.decode(jwt, key.public_key, true, { algorithm: 'RS256' })
-    halt 401 unless token[0]['scopes'].include? 'omejdn:api'
     halt 401 unless token[0]['scopes'].include? 'omejdn:admin'
     @user = User.find_by_id token[0]['sub'] if token[0]['scopes'].include? 'openid'
     @client = Client.find_by_id token[0]['sub'] unless (token[0]['scopes']).include? 'openid'
