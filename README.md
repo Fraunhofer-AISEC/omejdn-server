@@ -98,8 +98,8 @@ In order to generate your own key pair with a self-signed pulic key
 for testing, your can execute:
 
 
-   $ openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -keyout key.pem -out cert.pem
-   $ mv key.pem keys/signing_key.pem
+    $ openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -keyout key.pem -out cert.pem
+    $ mv key.pem keys/signing_key.pem
 
 <a name="config"/>
 
@@ -114,9 +114,9 @@ for testing, your can execute:
 Setting the environment variables depends on how you run the service.
 If you are not using docker, you can set the variables as follows:
 
-   $ export APP_ENV="production"
-   $ export HOST="https://my-omejdn.example.tld"
-   $ ruby omejdn.rb
+    $ export APP_ENV="production"
+    $ export HOST="https://my-omejdn.example.tld"
+    $ ruby omejdn.rb
 
 When using docker, you need to set the variables accordingly through the
 command line arguments.
@@ -131,8 +131,8 @@ As long as the public key certificate is registered with a client in omejdn
 In order to generate your own key pair with a self-signed pulic key
 for testing, your can execute:
 
-   $ openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -keyout key.pem -out cert.pem
-   $ cp cert.pem keys/<clientID>.cert
+    $ openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -keyout key.pem -out cert.pem
+    $ cp cert.pem keys/<clientID>.cert
 
 You may choose any valid filename for the certificate.
 Then, you need to add your client ***clientID*** to the config file
