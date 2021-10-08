@@ -2,8 +2,8 @@
 
 # OAuth client helper class
 class Client
-  attr_accessor :client_id, :pub_key, :cert, :redirect_uri, :name,
-                :allowed_scopes, :attributes, :certificate_file
+  attr_accessor :client_id, :redirect_uri, :name,
+                :allowed_scopes, :attributes
 
   def self.find_by_id(client_id)
     load_clients.each do |client|
@@ -12,25 +12,25 @@ class Client
     nil
   end
 
-  def self.load_client_cert(cert_filename)
-    unless cert_filename.nil? || cert_filename.empty?
-      begin
-        cert = OpenSSL::X509::Certificate.new File.read "keys/#{cert_filename}"
-        now = Time.now
-        return cert unless cert.not_after < now || cert.not_before > now
-      rescue StandardError => e
-        p "Unable to load key ``keys/#{cert_filename}.cert'': #{e}"
-      end
+  def self.load_client_cert(client_id)
+    begin
+      filename = certificate_file client_id
+      cert = OpenSSL::X509::Certificate.new File.read filename
+      now = Time.now
+      return cert unless cert.not_after < now || cert.not_before > now
+    rescue StandardError => e
+      p "Unable to load key ``#{filename}'': #{e}"
     end
     nil
   end
 
-  def self.build_client_from_config(conf_string, cert)
+  def self.certificate_file(client_id)
+    "keys/#{Base64.urlsafe_encode64(client_id)}.cert"
+  end
+
+  def self.build_client_from_config(conf_string)
     client = Client.new
-    client.cert = cert
-    client.certificate_file = conf_string['certfile']
     client.client_id = conf_string['client_id']
-    client.pub_key = client.certificate&.public_key
     client.redirect_uri = conf_string['redirect_uri']
     client.name = conf_string['name']
     client.attributes = conf_string['attributes']
@@ -41,11 +41,11 @@ class Client
   def self.load_clients
     clients = []
     Config.client_config.each do |ccnf|
-      cert = load_client_cert(ccnf['certfile'])
-      clients << build_client_from_config(ccnf, cert)
+      clients << build_client_from_config(ccnf)
     end
     clients
   end
+
 
   def self.from_json(json)
     client = Client.new
@@ -54,10 +54,9 @@ class Client
     client.attributes = json['attributes']
     client.allowed_scopes = json['allowed_scopes']
     client.redirect_uri = json['redirect_uri']
-    client.certificate_file = json['certfile']
-    client.cert = load_client_cert(client.certificate_file)
     client
   end
+
 
   def self.extract_jwt_cid(jwt)
     begin
@@ -83,7 +82,7 @@ class Client
       puts "Client #{jwt_cid} found"
       # Try verify
       aud = ENV['OMEJDN_JWT_AUD_OVERRIDE'] || ENV['HOST'] || Config.base_config['host']
-      JWT.decode jwt, client.pub_key, true, { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_alg }
+      JWT.decode jwt, client.certificate&.public_key, true, { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_alg }
       return client
     rescue StandardError => e
       puts "Tried #{client.name}: #{e}" if ENV['APP_ENV'] != 'production'
@@ -100,7 +99,6 @@ class Client
       'redirect_uri' => @redirect_uri,
       'allowed_scopes' => @allowed_scopes,
       'attributes' => @attributes,
-      'certfile' => @certificate_file
     }
   end
 
@@ -115,23 +113,16 @@ class Client
   end
 
   def certificate
-    @cert
+    load_client_cert @client_id
   end
 
   def certificate=(new_cert)
+    # delete the certificate if set to nil
     if new_cert.nil?
-      delete_cert
+      File.delete certificate_file if File.exist? certificate_file
       return
     end
-    @cert = new_cert
-    @certificate_file = "#{Base64.urlsafe_encode64(@client_id)}.cert" if @certificate_file.nil?
-    File.open("keys/#{@certificate_file}", 'w') { |file| file.write(new_cert) }
+    File.open(certificate_file, 'w') { |file| file.write(new_cert) }
   end
 
-  def delete_cert
-    return if @certificate_file.nil?
-
-    File.delete("keys/#{@certificate_file}") if File.exist? "keys/#{@certificate_file}"
-    @certificate_file = nil
-  end
 end

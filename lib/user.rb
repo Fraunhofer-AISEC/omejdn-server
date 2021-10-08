@@ -22,6 +22,15 @@ class User
     false
   end
 
+  def self.all_users
+    users = []
+    dbs = UserDbLoader.load_db
+    dbs.each do |db|
+      users += db.load_users
+    end
+    users
+  end
+
   def self.find_by_id(username)
     dbs = UserDbLoader.load_db
     dbs.each do |db|
@@ -53,10 +62,12 @@ class User
 
   def self.delete_user(username)
     dbs = UserDbLoader.load_db
+    user_found = false
     dbs.each do |db|
       user_found = db.delete_user(username)
       break if user_found
     end
+    user_found
   end
 
   def self.add_user(user, user_backend)
@@ -65,6 +76,7 @@ class User
   end
 
   def self.update_user(user, _oauth_providers = nil)
+    # TODO: Why the _oauth_providers argument? Unimplemented feature?
     # Extern User: Update omejdn:write scope if necessary
     dbs = UserDbLoader.load_db
     dbs.each do |db|

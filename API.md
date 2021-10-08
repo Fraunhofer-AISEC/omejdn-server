@@ -1,10 +1,101 @@
-
-
 # API
 
-## Clients
+The Omejdn API consists of two parts:
 
-### List clients
+- A user self-service API at */api/v1/user*
+- An administrative API at */api/v1/config*
+
+## User Selfservice API
+
+Using this API requires an Access Token with scopes (in order of increasing access rights)
+- omejdn:read,
+- omejdn:write, or
+- omejdn:admin
+
+Every **GET** method requires at least omejdn:read,
+while every other method requires at least omejdn:write.
+
+#### Retrieving the current user
+
+**GET** */api/v1/user*
+
+Request payload: empty  
+Success response: ```200 OK```  
+Response payload:
+```
+{
+  "username": String,
+  "attributes": [
+    {
+      "key": String
+      "value": String/Boolean
+    },
+    ...
+  ]
+  "password": String
+}
+```
+
+#### Updating the current user
+
+**PUT** */api/v1/user*
+
+Request payload:
+```
+{
+  "attributes": [
+    {
+      "key": String
+      "value": String/Boolean
+    },
+    ...
+  ]
+}
+```
+
+Success response: ```204 No Content```  
+Response payload: empty
+
+#### Deleting the current user
+
+**DELETE** */api/v1/user*
+
+Request payload: empty
+Success response: ```204 No Content```  
+Response payload: empty
+
+#### Changing the user's password
+
+**PUT** */api/v1/user/password*
+
+Request payload:
+```
+{
+  "currentPassword": String
+  "newPassword": String
+}
+```
+
+Success response: ```204 No Content```  
+Response payload: empty
+
+#### Aquiring the user's provider
+
+**GET** */api/v1/user/provider*
+
+Request payload: empty  
+Success response: ```200 OK```  
+Response payload:
+```
+TBD
+```
+
+
+## Omejdn Admin API
+
+### Clients
+
+#### List clients
 
 **GET** */api/v1/config/clients*
 
@@ -16,16 +107,72 @@ Response payload:
   {
     "client_id": String,
     "name": String,
-    "scopes": Array<String>,
+    "allowed_scopes": Array<String>,
     "redirect_uri": String,
-    "user_attributes": Array<String>,
-    "attributes": Array<String>
+    "attributes": [
+      {
+        "key": String
+        "value": String/Boolean
+      },
+      ...
+    ]
   },
   ...
 ]
 ```
 
-### Show client
+#### Overwrite client list
+
+**PUT** */api/v1/config/clients*
+
+Request payload:
+```
+[
+  {
+    "client_id": String,
+    "name": String,
+    "allowed_scopes": Array<String>,
+    "redirect_uri": String,
+    "attributes": [
+      {
+        "key": String
+        "value": String/Boolean
+      },
+      ...
+    ]
+  },
+  ...
+]
+```
+
+Success response: ```204 No Content```  
+Response payload: empty
+
+#### Add client
+
+**POST** */api/v1/config/clients*
+
+Request payload:
+```
+{
+  "client_id": String,
+  "name": String,
+  "allowed_scopes": Array<String>,
+  "redirect_uri": String,
+  "attributes": [
+    {
+      "key": String
+      "value": String/Boolean
+    },
+    ...
+  ]
+}
+```
+Success response: ```201 Created```
+Response payload: empty  
+
+
+#### Show client
 
 **GET** */api/v1/config/clients/:client_id*
 
@@ -36,67 +183,62 @@ Response payload:
 {
   "client_id": String,
   "name": String,
-  "scopes": Array<String>,
+  "allowed_scopes": Array<String>,
   "redirect_uri": String,
-  "user_attributes": Array<String>,
-  "attributes": Array<String>
+  "attributes": [
+    {
+      "key": String
+      "value": String/Boolean
+    },
+    ...
+  ]
 }
 ```
 
-### Update client
+#### Update client
 
 **PUT** */api/v1/config/clients/:client_id*
 
 Request payload:
 ```
 {
-  "client_id": String,
   "name": String,
-  "scopes": Array<String>,
+  "allowed_scopes": Array<String>,
   "redirect_uri": String,
-  "user_attributes": Array<String>,
-  "attributes": Array<String>
+  "attributes": [
+    {
+      "key": String
+      "value": String/Boolean
+    },
+    ...
+  ]
 }
 ```
 
-Success response: ```200 OK```  
+Note: You may omitt some keys. Omitted keys remain unchanged.
+
+Success response: ```204 No Content```  
 Response payload: empty
 
-### Add client
-
-**POST** */api/v1/config/clients/:client_id*
-
-Request payload:
-```
-{
-  "client_id": String,
-  "name": String,
-  "scopes": Array<String>,
-  "redirect_uri": String,
-  "user_attributes": Array<String>,
-  "attributes": Array<String>
-}
-```
-Success response: ```200 OK```  
-Response payload: empty  
-
-
-### Delete client
+#### Delete client
 
 **DELETE** */api/v1/config/clients/:client_id*
 
 Request payload: empty   
-Success response: ```200 OK ```   
+Success response: ```204 No Content```
 Response payload: empty   
 
+### Client Certificates
 
-### Get a clients certificate
+Please Note that currently each client can only have a single certificate.
 
-**GET** */api/v1/config/clients/keys/:client_id*
+#### Get a clients certificate
 
-Request payload: empty    
+**GET** */api/v1/config/clients/:client_id/keys*
+
+Request payload: empty
 Success respnse: ```200 OK```    
-Response payload: 
+Response payload:
 
 ```
 {
@@ -105,9 +247,9 @@ Response payload:
 ```
 
 
-### Update a clients certificate
+#### Update a clients certificate
 
-**PUT** */api/v1/config/clients/keys/:client_id*
+**PUT** */api/v1/config/clients/:client_id/keys*
 
 Request payload: 
 
@@ -116,14 +258,14 @@ Request payload:
   "certificate": String
 }
 ```
-Success response: ```200 OK ```     
-Response payload: empty     
+Success response: ```204 No Content```     
+Response payload: empty
 
 
 
-### Add a clients certificate
+#### Add a clients certificate
 
-**POST** */api/v1/config/clients/keys/:client_id*
+**POST** */api/v1/config/clients/:client_id/keys*
 
 Request payload: 
 
@@ -132,198 +274,164 @@ Request payload:
   "certificate": String
 }
 ```
-Success response: ```200 OK ```     
-Response payload: empty     
+Success response: ```201 Created ```     
+Response payload: empty
 
 
 
-### Delete a clients certificate
+#### Delete a clients certificate
 
-**DELETE** */api/v1/config/clients/keys/:client_id*
+**DELETE** */api/v1/config/clients/:client_id/keys*
 
-Request payload: empty   
-Success response: ```200 OK ```   
-Response payload: empty  
-
-
-## Users
+Request payload: empty
+Success response: ```204 No Content```
+Response payload: empty
 
 
-### List users
+### Users
+
+
+#### List users
 
 **GET** */api/v1/config/users*
 
-Request payload: empty    
-Success response: ```200 OK```     
-Response payload    
+Request payload: empty
+Success response: ```200 OK```
+Response payload:    
 ```
 [
   {
     "username": String,
-    "scopes": Array <String>,
-    "attributes": Array <Attribute>,
+    "attributes": [
+      {
+        "key": String
+        "value": String/Boolean
+      },
+      ...
+    ]
     "password": String
   },
-   ...
+  ...
 ]
 ```
 
-Attribute:
-```
-{
-  key: String,
-  value: any
-}
-```
 
-### Show user
+#### Adding a user
 
-**GET***'/api/v1/config/users/:username*
+**POST** */api/v1/config/users*
 
-Request payload: empty    
-Success response: ```200 OK```    
-Response payload    
-
+Request payload:
 ```
 {
   "username": String,
-  "scopes": Array <String>,
-  "attributes": Array <Attribute>,
+  "attributes": [
+    {
+      "key": String
+      "value": String/Boolean
+    },
+    ...
+  ]
   "password": String
 }
 ```
 
-Attribute:
-```
-{
-  key: String,
-  value: any
-}
-```
+#### Retrieving a specific user
 
+**GET** */api/v1/config/users/:username*
 
-### Add user
-
-**POST** */api/v1/config/users/:username*
-
-Request payload
-
+Request payload: empty
+Success response: ```200 OK```
+Response payload:
 ```
 {
   "username": String,
-  "scopes": Array <String>,
-  "attributes": Array <Attribute>,
+  "attributes": [
+    {
+      "key": String
+      "value": String/Boolean
+    },
+    ...
+  ]
   "password": String
 }
 ```
 
-Attribute:
-```
-{
-  key: String,
-  value: any
-}
-```
-Success response: ```200 OK ```    
-Response payload: empty    
+Note: The password should be in the bcrypt format.
+Alternatively consider changing the password after creating the user.
 
-
-### Update user
+#### Updating a specific user
 
 **PUT** */api/v1/config/users/:username*
 
-Request payload
-
+Request payload:
 ```
 {
-  "username": String,
-  "scopes": Array <String>,
-  "attributes": Array <Attribute>,
-  "password": String
+  "attributes": [
+    {
+      "key": String
+      "value": String/Boolean
+    },
+    ...
+  ]
 }
 ```
 
-Attribute:
-```
-{
-  key: String,
-  value: any
-}
-```
-Success response: ```200 OK ```    
-Response payload: empty    
+Success response: ```204 No Content```  
+Response payload: empty
 
-
-### Delete user
+#### Deleting a specific user
 
 **DELETE** */api/v1/config/users/:username*
 
-Request payload: empty    
-Success response: ```200 OK ```    
-Response payload: empty    
+Request payload: empty
+Success response: ```204 No Content```  
+Response payload: empty
 
+#### Changing the user's password
 
-
-## Config
-
-### Show config
-
-**GET** */api/v1/config/omejdn*
-
-Request payload: empty    
-Success response: ```200 OK ```    
-Response payload:    
-
-```
-{
-  "host": String,
-  "openid": boolean,
-  "token":
-    {
-      "expiration": number,
-      "signing_key": String,
-      "algorithm": String,
-      "audience": String,
-      "issuer": String
-    },
-  "id_token":
-    {
-      "expiration": number,
-      "signing_key": String,
-      "algorithm": String,
-      "issuer": String
-    }
-  }
-```
-
-
-### Update config
-
-**PUT** */api/v1/config/omejdn*
+**PUT** */api/v1/user/password*
 
 Request payload:
-
 ```
 {
-  "host": String,
-  "openid": boolean,
-  "token":
-    {
-      "expiration": number,
-      "signing_key": String,
-      "algorithm": String,
-      "audience": String,
-      "issuer": String
-    },
-  "id_token":
-    {
-      "expiration": number,
-      "signing_key": String,
-      "algorithm": String,
-      "issuer": String
-    }
-  }
+  "newPassword": String
+}
 ```
+
+Success response: ```204 No Content```  
+Response payload: empty
+
+### Providers
+
+TODO: document.
+If in doubt, edit the oauth_providers file as described below
+
+### Config
+
+The Omejdn config files can be retrieved and overwritten in a JSON format.
+The format is exactly as in those files, they are simply translated between YAML and JSON
+
+```:file``` can take the possible values:
+- **omejdn** the base configuration file
+- **user_backend** the user backend configuration file
+- **webfinger** the webfinger configuration file
+- **oauth_providers** the oauth_providers configuration file
+
+
+#### Show config
+
+**GET** */api/v1/config/:file*
+
+Request payload: empty
 Success response: ```200 OK ```    
-Response payload: empty   
+Response payload: _file dependent_
+
+
+#### Update config
+
+**PUT** */api/v1/config/:file*
+
+Request payload: _file dependent_
+Success response: ```200 OK ```    
+Response payload: empty
 

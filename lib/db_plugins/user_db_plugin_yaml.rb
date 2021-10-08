@@ -31,6 +31,7 @@ class YamlUserDb < UserDb
       concretuser.backend = user.backend
       concretuser.extern = user.extern
       user_in_yaml = true
+      break
     end
     write_user_db t_users if user_in_yaml
     user_in_yaml

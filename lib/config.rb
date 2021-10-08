@@ -19,17 +19,6 @@ class Config
     file.close
   end
 
-  # FIXME: Not sure why we put this here.
-  # One reason is that we wanted to keep the User class plain
-  def self.all_users
-    users = []
-    dbs = UserDbLoader.load_db
-    dbs.each do |db|
-      users += db.load_users
-    end
-    users
-  end
-
   def self.client_config
     YAML.safe_load File.read OMEJDN_CLIENT_CONFIG_FILE
   end
