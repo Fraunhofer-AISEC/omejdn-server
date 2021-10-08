@@ -46,7 +46,6 @@ class Client
     clients
   end
 
-
   def self.from_json(json)
     client = Client.new
     client.client_id = json['client_id']
@@ -56,7 +55,6 @@ class Client
     client.redirect_uri = json['redirect_uri']
     client
   end
-
 
   def self.extract_jwt_cid(jwt)
     begin
@@ -82,7 +80,8 @@ class Client
       puts "Client #{jwt_cid} found"
       # Try verify
       aud = ENV['OMEJDN_JWT_AUD_OVERRIDE'] || ENV['HOST'] || Config.base_config['host']
-      JWT.decode jwt, client.certificate&.public_key, true, { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_alg }
+      JWT.decode jwt, client.certificate&.public_key, true,
+                 { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_alg }
       return client
     rescue StandardError => e
       puts "Tried #{client.name}: #{e}" if ENV['APP_ENV'] != 'production'
@@ -98,7 +97,7 @@ class Client
       'name' => @name,
       'redirect_uri' => @redirect_uri,
       'allowed_scopes' => @allowed_scopes,
-      'attributes' => @attributes,
+      'attributes' => @attributes
     }
   end
 
@@ -124,5 +123,4 @@ class Client
     end
     File.open(certificate_file, 'w') { |file| file.write(new_cert) }
   end
-
 end

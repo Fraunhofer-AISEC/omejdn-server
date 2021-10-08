@@ -412,7 +412,7 @@ before '/api/v1/user*' do
 end
 
 get '/api/v1/user' do
-  halt 200, JSON.generate @user
+  halt 200, JSON.generate(@user)
 end
 
 put '/api/v1/user' do
@@ -478,7 +478,7 @@ end
 
 # Users
 get '/api/v1/config/users' do
-  halt 200, JSON.generate User.all_users
+  halt 200, JSON.generate(User.all_users)
 end
 
 post '/api/v1/config/users' do
@@ -491,7 +491,7 @@ end
 get '/api/v1/config/users/:username' do
   user = User.find_by_id params['username']
   halt 404 if user.nil?
-  halt 200, JSON.generate user
+  halt 200, JSON.generate(user)
 end
 
 put '/api/v1/config/users/:username' do
@@ -600,7 +600,7 @@ end
 
 # Config files
 get '/api/v1/config/omejdn' do
-  halt 200, JSON.generate Config.base_config
+  halt 200, JSON.generate(Config.base_config)
 end
 
 put '/api/v1/config/omejdn' do
@@ -609,7 +609,7 @@ put '/api/v1/config/omejdn' do
 end
 
 get '/api/v1/config/user_backend' do
-  halt 200, JSON.generate Config.user_backend_config
+  halt 200, JSON.generate(Config.user_backend_config)
 end
 
 put '/api/v1/config/user_backend' do
@@ -618,7 +618,7 @@ put '/api/v1/config/user_backend' do
 end
 
 get '/api/v1/config/webfinger' do
-  halt 200, JSON.generate Config.webfinger_config
+  halt 200, JSON.generate(Config.webfinger_config)
 end
 
 put '/api/v1/config/webfinger' do
@@ -627,7 +627,7 @@ put '/api/v1/config/webfinger' do
 end
 
 get '/api/v1/config/oauth_providers' do
-  halt 200, JSON.generate Config.oauth_provider_config
+  halt 200, JSON.generate(Config.oauth_provider_config)
 end
 
 put '/api/v1/config/oauth_providers' do
