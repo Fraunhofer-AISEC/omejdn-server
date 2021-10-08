@@ -12,22 +12,6 @@ class Client
     nil
   end
 
-  def self.load_client_cert(client_id)
-    begin
-      filename = certificate_file client_id
-      cert = OpenSSL::X509::Certificate.new File.read filename
-      now = Time.now
-      return cert unless cert.not_after < now || cert.not_before > now
-    rescue StandardError => e
-      p "Unable to load key ``#{filename}'': #{e}"
-    end
-    nil
-  end
-
-  def self.certificate_file(client_id)
-    "keys/#{Base64.urlsafe_encode64(client_id)}.cert"
-  end
-
   def self.build_client_from_config(conf_string)
     client = Client.new
     client.client_id = conf_string['client_id']
@@ -111,16 +95,29 @@ class Client
     attrs
   end
 
+  def certificate_file
+    "keys/#{Base64.urlsafe_encode64(@client_id)}.cert"
+  end
+
   def certificate
-    load_client_cert @client_id
+    begin
+      filename = certificate_file
+      cert = OpenSSL::X509::Certificate.new File.read filename
+      now = Time.now
+      return cert unless cert.not_after < now || cert.not_before > now
+    rescue StandardError => e
+      p "Unable to load key ``#{filename}'': #{e}"
+    end
+    nil
   end
 
   def certificate=(new_cert)
     # delete the certificate if set to nil
+    filename = certificate_file
     if new_cert.nil?
-      File.delete certificate_file if File.exist? certificate_file
+      File.delete filename if File.exist? filename
       return
     end
-    File.open(certificate_file, 'w') { |file| file.write(new_cert) }
+    File.open(filename, 'w') { |file| file.write(new_cert) }
   end
 end

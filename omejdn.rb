@@ -491,14 +491,14 @@ end
 get '/api/v1/config/users/:username' do
   user = User.find_by_id params['username']
   halt 404 if user.nil?
-  halt 200, JSON.generate(user)
+  halt 200, { 'username' => user.username, 'password' => user.password, 'attributes' => user.attributes }.to_json
 end
 
 put '/api/v1/config/users/:username' do
   user = User.find_by_id params['username']
   halt 404 if user.nil?
   updated_user = User.from_json(JSON.parse(request.body.read))
-  updated_user['username'] = user.username
+  updated_user.username = user.username
   oauth_providers = Config.oauth_provider_config
   User.update_user(updated_user, oauth_providers)
   halt 204

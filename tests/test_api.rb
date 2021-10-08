@@ -98,10 +98,10 @@ class ApiTest < Test::Unit::TestCase
     #p last_response
     assert last_response.ok?
     assert_equal '{"username":"testUser",'\
-    '"scopes":["omejdn:write","openid","profile"],'\
+    '"password":"$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi",'\
     '"attributes":[{"key":"email","value":"admin@example.com"},'\
     '{"key":"asdfasf","value":"asdfasf"},{"key":"exampleKey",'\
-    '"value":"exampleValue"}],"password":"$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi"}', last_response.body
+    '"value":"exampleValue"}]}', last_response.body
   end
 
   def test_post_user
@@ -112,9 +112,8 @@ class ApiTest < Test::Unit::TestCase
       ],
       'password' => "somepw",
       'userBackend' => "yaml",
-      'extern' => nil
     }
-    post '/api/v1/config/users/testUser2', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    post '/api/v1/config/users', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     user.delete('userBackend')
     #p last_response
     assert last_response.created?
@@ -134,7 +133,6 @@ class ApiTest < Test::Unit::TestCase
         { 'key' => 'exampleKey', 'value' => 'exampleValue2' }
       ],
       'password' => "secure",
-      'extern' => nil
     }
     put '/api/v1/config/users/testUser', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
@@ -190,13 +188,12 @@ class ApiTest < Test::Unit::TestCase
     client = {
       'client_id' => 'testClient2',
       'name' => 'omejdn admin ui',
-      'certfile' => nil,
       'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
       'attributes' => []
     }
     put '/api/v1/config/clients/testClient2', client.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    assert last_response.ok?
+    assert last_response.no_content?
     get '/api/v1/config/clients/testClient2', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
     assert_equal client, JSON.parse(last_response.body)
@@ -206,12 +203,11 @@ class ApiTest < Test::Unit::TestCase
     client = {
       'client_id' => 'testClient3',
       'name' => 'omejdn admin ui',
-      'certfile' => nil,
       'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
       'attributes' => []
     }
-    post '/api/v1/config/clients/testClient3', client.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    post '/api/v1/config/clients', client.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.created?
     get '/api/v1/config/clients/testClient3', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
@@ -268,13 +264,12 @@ class ApiTest < Test::Unit::TestCase
 
   def test_certificate_03_put
     cert = {
-      'certfile' => "#{Base64.urlsafe_encode64('testClient')}.cert",
       'certificate' => @testCertificate
     }
-    put '/api/v1/config/clients/keys/testClient', cert.to_json,
+    put '/api/v1/config/clients/testClient/keys', cert.to_json,
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    assert last_response.ok?
-    get '/api/v1/config/clients/keys/testClient', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.no_content?
+    get '/api/v1/config/clients/testClient/keys', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
     assert_equal cert, JSON.parse(last_response.body)
     cert = {
@@ -300,13 +295,12 @@ PExqY4rJ43CWpPOjIWAxCLRic/x3P0K19ukZk9GHNdQerUvyAJiubo8iH366kXfu
 
   def test_certificate_00_post
     cert = {
-      'certfile' => "#{Base64.urlsafe_encode64('testClient2')}.cert",
       'certificate' => @testCertificate
     }
-    post '/api/v1/config/clients/keys/testClient2', cert.to_json,
+    post '/api/v1/config/clients/testClient2/keys', cert.to_json,
          { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.created?
-    get '/api/v1/config/clients/keys/testClient2', {},
+    get '/api/v1/config/clients/testClient2/keys', {},
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
     assert_equal cert, JSON.parse(last_response.body)
