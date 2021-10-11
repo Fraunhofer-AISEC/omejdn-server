@@ -70,7 +70,7 @@ class YamlUserDb < UserDb
   def change_password(user, password)
     t_users = users
     user_in_yaml = false
-    _users.each do |concretuser|
+    t_users.each do |concretuser|
       next if concretuser.username != user.username
 
       concretuser.password = password

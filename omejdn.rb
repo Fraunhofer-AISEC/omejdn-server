@@ -465,7 +465,7 @@ before '/api/v1/config/*' do
   begin
     key = Server.load_key
     token = JWT.decode(jwt, key.public_key, true, { algorithm: 'RS256' })
-    halt 401 unless token[0]['scopes'].include? 'omejdn:admin'
+    halt 403 unless token[0]['scopes'].include? 'omejdn:admin'
     @user = User.find_by_id token[0]['sub'] if token[0]['scopes'].include? 'openid'
     @client = Client.find_by_id token[0]['sub'] unless (token[0]['scopes']).include? 'openid'
   rescue StandardError => e
@@ -484,7 +484,7 @@ end
 post '/api/v1/config/users' do
   json = JSON.parse request.body.read
   user = User.from_json(json)
-  User.add_user(user, json['userBackend'])
+  User.add_user(user, json['userBackend'] || 'yaml')
   halt 201
 end
 
@@ -524,7 +524,17 @@ get '/api/v1/config/clients' do
 end
 
 put '/api/v1/config/clients' do
-  Config.client_config = JSON.parse request.body.read
+  clients = []
+  JSON.parse(request.body.read).each do |c|
+    client = Client.new
+    client.client_id = c['client_id']
+    client.name = c['name']
+    client.attributes = c['attributes']
+    client.allowed_scopes = c['allowed_scopes']
+    client.redirect_uri = c['redirect_uri']
+    clients << client
+  end
+  Config.client_config = clients
   halt 204
 end
 
@@ -574,6 +584,8 @@ end
 get '/api/v1/config/clients/:client_id/keys' do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
+  certificate = client.certificate
+  halt 404 if certificate.nil?
   halt 200, JSON.generate({ 'certificate' => client.certificate.to_s })
 end
 

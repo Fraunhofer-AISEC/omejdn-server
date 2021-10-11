@@ -8,7 +8,7 @@ require 'webrick/https'
 require_relative '../omejdn'
 require_relative '../lib/token_helper'
 
-class ApiTest < Test::Unit::TestCase
+class AdminApiTest < Test::Unit::TestCase
   include Rack::Test::Methods
 
   def app
@@ -18,49 +18,50 @@ class ApiTest < Test::Unit::TestCase
   def setup
     client = Client.find_by_id 'testClient'
     @token = TokenHelper.build_access_token client, ['omejdn:admin'], nil
+    @insufficient_token = TokenHelper.build_access_token client, ['omejdn:write'], nil
     @testCertificate = File.read './tests/keys/testClient.pem'
   end
 
   def teardown
-    File.open('./config/users.yml', 'w') { |file| file.write(users_to_yaml) }
-    File.open('./config/clients.yml', 'w') { |file| file.write(clients_to_yaml) }
-    File.open('./config/omejdn.yml', 'w') { |file| file.write(config_to_yaml) }
+    File.open('./config/users.yml', 'w') { |file| file.write(users.to_yaml) }
+    File.open('./config/clients.yml', 'w') { |file| file.write(clients.to_yaml) }
+    File.open('./config/omejdn.yml', 'w') { |file| file.write(config.to_yaml) }
   end
 
-  def users_to_yaml
-    users = [{
+  def users
+    [{
       'username' => 'testUser',
-      'scopes' => ['omejdn:write', 'openid', 'profile'],
       'attributes' => [
+        { 'key' => 'omejdn', 'value' => 'write' },
+        { 'key' => 'openid', 'value' => true },
+        { 'key' => 'profile', 'value' => true },
         { 'key' => 'email', 'value' => 'admin@example.com' },
         { 'key' => 'asdfasf', 'value' => 'asdfasf' },
         { 'key' => 'exampleKey', 'value' => 'exampleValue' }
       ],
       'password' => "$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi"
     }]
-    users.to_yaml
   end
 
-  def clients_to_yaml
-    clients = [{
+  def clients
+    [{
       'client_id' => 'testClient',
       'name' => 'omejdn admin ui',
       'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
       'attributes' => []
     },
-               {
-                 'client_id' => 'testClient2',
-                 'name' => 'omejdn admin ui',
-                 'allowed_scopes' => ['omejdn:write'],
-                 'redirect_uri' => 'http://localhost:4200',
-                 'attributes' => []
-               }]
-    clients.to_yaml
+    {
+      'client_id' => 'testClient2',
+      'name' => 'omejdn admin ui',
+      'allowed_scopes' => ['omejdn:write'],
+      'redirect_uri' => 'http://localhost:4200',
+      'attributes' => []
+    }]
   end
 
-  def config_to_yaml
-    config = {
+  def config
+    {
       'host' => 'http://localhost:4567',
       'openid' => true,
       'token' => {
@@ -71,37 +72,33 @@ class ApiTest < Test::Unit::TestCase
         'issuer' => 'http://localhost:4567'
       },
       'id_token' => {
-        'expiration' => 360_000,
+        'expiration' => 3600,
         'signing_key' => 'omejdn_priv.pem',
         'algorithm' => 'RS256',
         'issuer' => 'http://localhost:4567'
       },
       'user_backend' => [ 'yaml' ]
     }
-    config.to_yaml
+  end
+
+  def test_require_admin_scope
+    get '/api/v1/config/users', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@insufficient_token}" }
+    #p last_response
+    assert last_response.forbidden?
   end
 
   def test_get_users
     get '/api/v1/config/users', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     #p last_response
     assert last_response.ok?
-    assert_equal '[{"username":"testUser",'\
-    '"scopes":["omejdn:write","openid","profile"],'\
-    '"attributes":[{"key":"email","value":"admin@example.com"},'\
-    '{"key":"asdfasf","value":"asdfasf"},'\
-    '{"key":"exampleKey","value":"exampleValue"}],'\
-    '"password":"$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi"}]', last_response.body
+    assert_equal users, JSON.parse(last_response.body)
   end
 
   def test_get_user
     get '/api/v1/config/users/testUser', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     #p last_response
     assert last_response.ok?
-    assert_equal '{"username":"testUser",'\
-    '"password":"$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi",'\
-    '"attributes":[{"key":"email","value":"admin@example.com"},'\
-    '{"key":"asdfasf","value":"asdfasf"},{"key":"exampleKey",'\
-    '"value":"exampleValue"}]}', last_response.body
+    assert_equal users[0], JSON.parse(last_response.body)
   end
 
   def test_post_user
@@ -111,16 +108,15 @@ class ApiTest < Test::Unit::TestCase
         { 'key' => 'exampleKey2', 'value' => 'exampleValue2' }
       ],
       'password' => "somepw",
-      'userBackend' => "yaml",
     }
     post '/api/v1/config/users', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    user.delete('userBackend')
     #p last_response
     assert last_response.created?
     get '/api/v1/config/users/testUser2', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     #p last_response
     assert last_response.ok?
     new_user = JSON.parse(last_response.body)
+    assert_equal BCrypt::Password.new(new_user['password']), user['password']
     new_user.delete('password') # This will be a salted string
     user.delete('password')
     assert_equal user, new_user
@@ -137,10 +133,11 @@ class ApiTest < Test::Unit::TestCase
     put '/api/v1/config/users/testUser', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
     get '/api/v1/config/users/testUser', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.ok?
     new_user = JSON.parse(last_response.body)
+    assert_equal BCrypt::Password.new(new_user['password']), user['password']
     user.delete('password')
     new_user.delete('password')
-    assert last_response.ok?
     assert_equal user, new_user
   end
 
@@ -149,44 +146,46 @@ class ApiTest < Test::Unit::TestCase
     #p last_response
     assert last_response.no_content?
     get '/api/v1/config/users/testUser', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.not_found?
     assert_equal '', last_response.body
+  end
+
+  def test_change_user_password
+    payload = {
+      'newPassword' => "extremelysecure",
+    }
+    put '/api/v1/config/users/testUser/password', payload.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.no_content?
+    get '/api/v1/config/users/testUser', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.ok?
+    user = JSON.parse(last_response.body)
+    assert_equal BCrypt::Password.new(user['password']), payload['newPassword']
   end
 
   def test_get_clients
     get '/api/v1/config/clients', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    clients = [{
-        "client_id" => "testClient",
-        "name" => "omejdn admin ui",
-        "allowed_scopes" => ["omejdn:write"],
-        "redirect_uri" => "http://localhost:4200",
-        "attributes" => []
-      },{
-        "allowed_scopes" => ["omejdn:write"],
-        "name" => "omejdn admin ui",
-        "client_id" => "testClient2",
-        "redirect_uri" => "http://localhost:4200",
-        "attributes" => []
-    }]
     assert last_response.ok?
     assert_equal clients, JSON.parse(last_response.body)
+  end
+
+  def test_put_clients
+    new_clients = clients
+    new_clients[1]['name']="Test name"
+    put '/api/v1/config/clients', new_clients.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.no_content?
+    get '/api/v1/config/clients', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.ok?
+    assert_equal new_clients, JSON.parse(last_response.body)
   end
 
   def test_get_client
     get '/api/v1/config/clients/testClient', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    clnt = {
-      "client_id" => "testClient",
-      "name" => "omejdn admin ui",
-      "allowed_scopes" => ["omejdn:write"],
-      "redirect_uri" => "http://localhost:4200",
-      "attributes" => []
-    }
-    assert_equal clnt, JSON.parse(last_response.body)
+    assert_equal clients[0], JSON.parse(last_response.body)
   end
 
   def test_put_client
     client = {
-      'client_id' => 'testClient2',
       'name' => 'omejdn admin ui',
       'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
@@ -196,6 +195,7 @@ class ApiTest < Test::Unit::TestCase
     assert last_response.no_content?
     get '/api/v1/config/clients/testClient2', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
+    client['client_id'] = 'testClient2'
     assert_equal client, JSON.parse(last_response.body)
   end
 
@@ -215,54 +215,29 @@ class ApiTest < Test::Unit::TestCase
   end
 
   def test_delete_client
-    delete '/api/v1/config/clients/testClient', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    delete '/api/v1/config/clients/testClient2', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
-    get '/api/v1/config/clients/testClient', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    get '/api/v1/config/clients/testClient2', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.not_found?
     assert_equal '', last_response.body
   end
 
   def test_get_config
     get '/api/v1/config/omejdn', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal '{"host":"http://localhost:4567","openid":true,'\
-    '"token":{"expiration":3600,"signing_key":"omejdn_priv.pem",'\
-    '"algorithm":"RS256","audience":"TestServer",'\
-    '"issuer":"http://localhost:4567"},'\
-    '"id_token":{"expiration":360000,"signing_key":"omejdn_priv.pem",'\
-    '"algorithm":"RS256","issuer":"http://localhost:4567"},"user_backend":["yaml"]}', last_response.body
+    assert_equal config, JSON.parse(last_response.body)
   end
 
   def test_put_config
-    config = {
-      'host' => 'http://localhost:4567',
-      'openid' => true,
-      'token' => {
-        'expiration' => 3600,
-        'signing_key' => 'omejdn_priv.pem',
-        'algorithm' => 'RS256',
-        'audience' => 'TestServer',
-        'issuer' => 'http://localhost:4567'
-      },
-      'id_token' => {
-        'expiration' => 3600,
-        'signing_key' => 'omejdn_priv.pem',
-        'algorithm' => 'RS256',
-        'issuer' => 'http://localhost:4567'
-      }
-    }
+    
     put '/api/v1/config/omejdn', config.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
     get '/api/v1/config/omejdn', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal '{"host":"http://localhost:4567","openid":true,'\
-    '"token":{"expiration":3600,"signing_key":"omejdn_priv.pem",'\
-    '"algorithm":"RS256","audience":"TestServer",'\
-    '"issuer":"http://localhost:4567"},'\
-    '"id_token":{"expiration":3600,"signing_key":"omejdn_priv.pem",'\
-    '"algorithm":"RS256","issuer":"http://localhost:4567"}}', last_response.body
+    assert_equal config, JSON.parse(last_response.body)
   end
 
-  def test_certificate_03_put
+  def test_put_certificate
     cert = {
       'certificate' => @testCertificate
     }
@@ -293,7 +268,7 @@ PExqY4rJ43CWpPOjIWAxCLRic/x3P0K19ukZk9GHNdQerUvyAJiubo8iH366kXfu
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
   end
 
-  def test_certificate_00_post
+  def test_post_certificate
     cert = {
       'certificate' => @testCertificate
     }
@@ -304,6 +279,14 @@ PExqY4rJ43CWpPOjIWAxCLRic/x3P0K19ukZk9GHNdQerUvyAJiubo8iH366kXfu
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
     assert_equal cert, JSON.parse(last_response.body)
-    File.delete('./keys/' + "#{Base64.urlsafe_encode64('testClient2')}.cert")
+  end
+
+  def test_delete_certificate
+    delete '/api/v1/config/clients/testClient2/keys', {},
+         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.no_content?
+    get '/api/v1/config/clients/testClient2/keys', {},
+        { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.not_found?
   end
 end
