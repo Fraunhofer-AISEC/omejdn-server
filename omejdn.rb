@@ -412,7 +412,7 @@ before '/api/v1/user*' do
 end
 
 get '/api/v1/user' do
-  halt 200, JSON.generate(@user)
+  halt 200, { 'username' => @user.username, 'attributes' => @user.attributes }.to_json
 end
 
 put '/api/v1/user' do
@@ -422,12 +422,13 @@ put '/api/v1/user' do
   # And changing a password here skips checking for the current one
   # in the endpoint below
   updated_user = User.from_json(JSON.parse(request.body.read))
+  updated_user.username = @user.username
   User.update_user updated_user
   halt 204
 end
 
 delete '/api/v1/user' do
-  User.delete_user(@user)
+  User.delete_user(@user.username)
   halt 204
 end
 

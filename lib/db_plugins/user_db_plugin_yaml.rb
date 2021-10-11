@@ -26,10 +26,10 @@ class YamlUserDb < UserDb
     t_users.each do |concretuser|
       next if concretuser.username != user.username
 
-      concretuser.attributes = user.attributes
-      concretuser.password = user.password
-      concretuser.backend = user.backend
-      concretuser.extern = user.extern
+      concretuser.attributes = user.attributes unless user.attributes.nil?
+      concretuser.password = user.password unless user.password.nil?
+      concretuser.backend = user.backend unless user.backend.nil?
+      concretuser.extern = user.extern unless user.extern.nil?
       user_in_yaml = true
       break
     end
