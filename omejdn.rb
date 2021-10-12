@@ -394,9 +394,9 @@ end
 
 before '/api/v1/user*' do
   return if request.env['REQUEST_METHOD'] == 'OPTIONS'
-  
+
   @selfservice_config = Config.base_config['user_selfservice']
-  halt 403 unless @selfservice_config['enabled']
+  halt 403 unless !@selfservice_config.nil? && @selfservice_config['enabled']
 
   jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
   halt 401 if jwt.nil? || jwt.empty?

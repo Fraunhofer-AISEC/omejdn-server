@@ -19,16 +19,23 @@ class AdminApiTest < Test::Unit::TestCase
     client = Client.find_by_id 'testClient'
     @token = TokenHelper.build_access_token client, ['omejdn:admin'], nil
     @insufficient_token = TokenHelper.build_access_token client, ['omejdn:write'], nil
-    @testCertificate = File.read './tests/keys/testClient.pem'
+    @testCertificate = File.read './tests/test_resources/testClient.pem'
+
+    @backup_users   = File.read './config/users.yml'
+    @backup_clients = File.read './config/clients.yml'
+    @backup_omejdn  = File.read './config/omejdn.yml'
+    File.open('./config/users.yml', 'w')   { |file| file.write(users_testsetup.to_yaml) }
+    File.open('./config/clients.yml', 'w') { |file| file.write(clients_testsetup.to_yaml) }
+    File.open('./config/omejdn.yml', 'w')  { |file| file.write(config_testsetup.to_yaml) }
   end
 
   def teardown
-    File.open('./config/users.yml', 'w') { |file| file.write(users.to_yaml) }
-    File.open('./config/clients.yml', 'w') { |file| file.write(clients.to_yaml) }
-    File.open('./config/omejdn.yml', 'w') { |file| file.write(config.to_yaml) }
+    File.open('./config/users.yml', 'w')   { |file| file.write(@backup_users) }
+    File.open('./config/clients.yml', 'w') { |file| file.write(@backup_clients) }
+    File.open('./config/omejdn.yml', 'w')  { |file| file.write(@backup_omejdn) }
   end
 
-  def users
+  def users_testsetup
     [{
       'username' => 'testUser',
       'attributes' => [
@@ -43,7 +50,7 @@ class AdminApiTest < Test::Unit::TestCase
     }]
   end
 
-  def clients
+  def clients_testsetup
     [{
       'client_id' => 'testClient',
       'name' => 'omejdn admin ui',
@@ -60,7 +67,7 @@ class AdminApiTest < Test::Unit::TestCase
     }]
   end
 
-  def config
+  def config_testsetup
     {
       'host' => 'http://localhost:4567',
       'openid' => true,
@@ -91,14 +98,14 @@ class AdminApiTest < Test::Unit::TestCase
     get '/api/v1/config/users', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     #p last_response
     assert last_response.ok?
-    assert_equal users, JSON.parse(last_response.body)
+    assert_equal users_testsetup, JSON.parse(last_response.body)
   end
 
   def test_get_user
     get '/api/v1/config/users/testUser', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     #p last_response
     assert last_response.ok?
-    assert_equal users[0], JSON.parse(last_response.body)
+    assert_equal users_testsetup[0], JSON.parse(last_response.body)
   end
 
   def test_post_user
@@ -165,11 +172,11 @@ class AdminApiTest < Test::Unit::TestCase
   def test_get_clients
     get '/api/v1/config/clients', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal clients, JSON.parse(last_response.body)
+    assert_equal clients_testsetup, JSON.parse(last_response.body)
   end
 
   def test_put_clients
-    new_clients = clients
+    new_clients = clients_testsetup
     new_clients[1]['name']="Test name"
     put '/api/v1/config/clients', new_clients.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
@@ -181,7 +188,7 @@ class AdminApiTest < Test::Unit::TestCase
   def test_get_client
     get '/api/v1/config/clients/testClient', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal clients[0], JSON.parse(last_response.body)
+    assert_equal clients_testsetup[0], JSON.parse(last_response.body)
   end
 
   def test_put_client
@@ -225,16 +232,16 @@ class AdminApiTest < Test::Unit::TestCase
   def test_get_config
     get '/api/v1/config/omejdn', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal config, JSON.parse(last_response.body)
+    assert_equal config_testsetup, JSON.parse(last_response.body)
   end
 
   def test_put_config
     
-    put '/api/v1/config/omejdn', config.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    put '/api/v1/config/omejdn', config_testsetup.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
     get '/api/v1/config/omejdn', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal config, JSON.parse(last_response.body)
+    assert_equal config_testsetup, JSON.parse(last_response.body)
   end
 
   def test_put_certificate

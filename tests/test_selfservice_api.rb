@@ -21,14 +21,16 @@ class SelfsServiceApiTest < Test::Unit::TestCase
     @write_token = TokenHelper.build_access_token client, ['omejdn:write'], user
     @read_token = TokenHelper.build_access_token client, ['omejdn:read'], user
     @useless_token = TokenHelper.build_access_token client, [], user
-    @testCertificate = File.read './tests/keys/testClient.pem'
+
+    @backup_users   = File.read './config/users.yml'
+    File.open('./config/users.yml', 'w')   { |file| file.write(users_testsetup.to_yaml) }
   end
 
   def teardown
-    File.open('./config/users.yml', 'w') { |file| file.write(users.to_yaml) }
+    File.open('./config/users.yml', 'w')   { |file| file.write(@backup_users) }
   end
 
-  def users
+  def users_testsetup
     [{
       'username' => 'testUser',
       'attributes' => [
@@ -70,7 +72,7 @@ class SelfsServiceApiTest < Test::Unit::TestCase
   def test_get
     get '/api/v1/user', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@read_token}" }
     assert last_response.ok?
-    expected = users[0]
+    expected = users_testsetup[0]
     expected.delete('password')
     assert_equal expected, JSON.parse(last_response.body)
   end
