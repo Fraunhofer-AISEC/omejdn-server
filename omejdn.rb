@@ -394,6 +394,9 @@ end
 
 before '/api/v1/user*' do
   return if request.env['REQUEST_METHOD'] == 'OPTIONS'
+  
+  @selfservice_config = Config.base_config['user_selfservice']
+  halt 403 unless @selfservice_config['enabled']
 
   jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
   halt 401 if jwt.nil? || jwt.empty?
@@ -421,23 +424,25 @@ get '/api/v1/user' do
 end
 
 put '/api/v1/user' do
-  # FIXME: There are no checks as to what attributes can be altered
-  # A user could simply add additional claims like omejdn:admin.
-  # We should also ensure a user cannot change another user.
-  # And changing a password here skips checking for the current one
-  # in the endpoint below
-  updated_user = User.from_json(JSON.parse(request.body.read))
+  editable = @selfservice_config['editable_attributes'] || []
+  updated_user = User.new
   updated_user.username = @user.username
+  updated_user.attributes = []
+  JSON.parse(request.body.read)['attributes'].each do |e|
+    updated_user.attributes << e if editable.include? e['key']
+  end
   User.update_user updated_user
   halt 204
 end
 
 delete '/api/v1/user' do
+  halt 403 unless @selfservice_config['allow_deletion']
   User.delete_user(@user.username)
   halt 204
 end
 
 put '/api/v1/user/password' do
+  halt 403 unless @selfservice_config['allow_password_change']
   json = (JSON.parse request.body.read)
   current_password = json['currentPassword']
   new_password = json['newPassword']

@@ -3,14 +3,38 @@ host: http://localhost:4567
 openid: true
 token:
   expiration: 3600
-  signing_key: keys/signing_key.pem
+  signing_key: omejdn_priv.pem
   algorithm: RS256
   audience: TestServer
   issuer: http://localhost:4567
 id_token:
-  expiration: 360000
-  signing_key: keys/signing_key.pem
+  expiration: 3600
+  signing_key: omejdn_priv.pem
   algorithm: RS256
   issuer: http://localhost:4567
 user_backend:
 - yaml
+user_selfservice:
+  enabled: true
+  allow_deletion: true
+  allow_password_change: true
+  editable_attributes:
+    - name
+    - family_name
+    - given_name
+    - middle_name
+    - nickname
+    - preferred_username
+    - profile
+    - picture
+    - website
+    - gender
+    - birthdate
+    - zoneinfo
+    - locale
+    - updated_at
+    - email
+    - email_verified
+    - address
+    - phone_number
+    - phone_number_verified

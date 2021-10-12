@@ -78,7 +78,7 @@ class SelfsServiceApiTest < Test::Unit::TestCase
   def test_put
     payload = {
       'attributes' => [
-        { 'key' => 'omejdn', 'value' => 'write' }
+        { 'key' => 'name', 'value' => 'Dieter' }
       ]
     }
     put '/api/v1/user', payload.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@write_token}" }
