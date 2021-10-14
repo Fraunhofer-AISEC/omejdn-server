@@ -16,18 +16,24 @@ class SelfsServiceApiTest < Test::Unit::TestCase
   end
 
   def setup
+    @backup_users   = File.read './config/users.yml'
+    @backup_clients = File.read './config/clients.yml'
+    @backup_omejdn  = File.read './config/omejdn.yml'
+    File.open('./config/users.yml', 'w')   { |file| file.write(users_testsetup.to_yaml) }
+    File.open('./config/clients.yml', 'w') { |file| file.write(clients_testsetup.to_yaml) }
+    File.open('./config/omejdn.yml', 'w')  { |file| file.write(config_testsetup.to_yaml) }
+
     user = User.find_by_id 'testUser'
     client = Client.find_by_id 'testClient'
     @write_token = TokenHelper.build_access_token client, ['omejdn:write'], user
     @read_token = TokenHelper.build_access_token client, ['omejdn:read'], user
     @useless_token = TokenHelper.build_access_token client, [], user
-
-    @backup_users = File.read './config/users.yml'
-    File.open('./config/users.yml', 'w')   { |file| file.write(users_testsetup.to_yaml) }
   end
 
   def teardown
     File.open('./config/users.yml', 'w')   { |file| file.write(@backup_users) }
+    File.open('./config/clients.yml', 'w') { |file| file.write(@backup_clients) }
+    File.open('./config/omejdn.yml', 'w')  { |file| file.write(@backup_omejdn) }
   end
 
   def users_testsetup
@@ -50,6 +56,50 @@ class SelfsServiceApiTest < Test::Unit::TestCase
        ],
        'password' => '$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi'
      }]
+  end
+
+  def clients_testsetup
+    [{
+      'client_id' => 'testClient',
+      'name' => 'omejdn admin ui',
+      'allowed_scopes' => ['omejdn:write'],
+      'redirect_uri' => 'http://localhost:4200',
+      'attributes' => []
+    },
+     {
+       'client_id' => 'testClient2',
+       'name' => 'omejdn admin ui',
+       'allowed_scopes' => ['omejdn:write'],
+       'redirect_uri' => 'http://localhost:4200',
+       'attributes' => []
+     }]
+  end
+
+  def config_testsetup
+    {
+      'host' => 'http://localhost:4567',
+      'openid' => true,
+      'token' => {
+        'expiration' => 3600,
+        'signing_key' => 'omejdn_priv.pem',
+        'algorithm' => 'RS256',
+        'audience' => 'TestServer',
+        'issuer' => 'http://localhost:4567'
+      },
+      'id_token' => {
+        'expiration' => 3600,
+        'signing_key' => 'omejdn_priv.pem',
+        'algorithm' => 'RS256',
+        'issuer' => 'http://localhost:4567'
+      },
+      'user_backend' => ['yaml'],
+      'user_selfservice' => {
+        'enabled' => true,
+        'allow_deletion' => true,
+        'allow_password_change' => true,
+        'editable_attributes' => ['name']
+      }
+    }
   end
 
   def test_require_read_scope

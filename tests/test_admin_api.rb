@@ -16,17 +16,18 @@ class AdminApiTest < Test::Unit::TestCase
   end
 
   def setup
-    client = Client.find_by_id 'testClient'
-    @token = TokenHelper.build_access_token client, ['omejdn:admin'], nil
-    @insufficient_token = TokenHelper.build_access_token client, ['omejdn:write'], nil
-    @testCertificate = File.read './tests/test_resources/testClient.pem'
-
     @backup_users   = File.read './config/users.yml'
     @backup_clients = File.read './config/clients.yml'
     @backup_omejdn  = File.read './config/omejdn.yml'
     File.open('./config/users.yml', 'w')   { |file| file.write(users_testsetup.to_yaml) }
     File.open('./config/clients.yml', 'w') { |file| file.write(clients_testsetup.to_yaml) }
     File.open('./config/omejdn.yml', 'w')  { |file| file.write(config_testsetup.to_yaml) }
+    
+    client = Client.find_by_id 'testClient'
+    @token = TokenHelper.build_access_token client, ['omejdn:admin'], nil
+    @insufficient_token = TokenHelper.build_access_token client, ['omejdn:write'], nil
+    @testCertificate = File.read './tests/test_resources/testClient.pem'
+
   end
 
   def teardown
