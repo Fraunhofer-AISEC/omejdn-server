@@ -392,31 +392,29 @@ after '/api/v1/*' do
   headers['Content-Type'] = 'application/json'
 end
 
-before '/api/v1/user*' do
+before '/api/v1/*' do
   return if request.env['REQUEST_METHOD'] == 'OPTIONS'
 
-  @selfservice_config = Config.base_config['user_selfservice']
-  halt 403 unless !@selfservice_config.nil? && @selfservice_config['enabled']
-
-  jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
-  halt 401 if jwt.nil? || jwt.empty?
-  @user_is_admin  = false
-  @user_may_read  = false
-  @user_may_write = false
   begin
-    key = Server.load_key
-    token = JWT.decode(jwt, key.public_key, true, { algorithm: 'RS256' })
+    jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
+    halt 401 if jwt.nil? || jwt.empty?
+    token = JWT.decode(jwt, Server.load_key.public_key, true, { algorithm: 'RS256' })
     @scopes = token[0]['scope'].split
     @user_is_admin  = (@scopes.include? 'omejdn:admin')
     @user_may_write = (@scopes.include? 'omejdn:write') || @user_is_admin
     @user_may_read  = (@scopes.include? 'omejdn:read')  || @user_may_write
-    halt 403 unless @user_may_read
-    halt 403 unless @user_may_write || request.env['REQUEST_METHOD'] == 'GET'
     @user = User.find_by_id token[0]['sub']
+    @client = Client.find_by_id token[0]['sub']
   rescue StandardError => e
     p e if debug
-    @user = nil
+    halt 401
   end
+end
+
+before '/api/v1/user*' do
+  @selfservice_config = Config.base_config['user_selfservice']
+  halt 403 unless !@selfservice_config.nil? && @selfservice_config['enabled']
+  halt 403 unless request.env['REQUEST_METHOD'] == 'GET' ? @user_may_read : @user_may_write
   halt 401 if @user.nil?
 end
 
@@ -470,22 +468,7 @@ end
 ########## ADMIN API ##################
 
 before '/api/v1/config/*' do
-  return if request.env['REQUEST_METHOD'] == 'OPTIONS'
-
-  jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
-  halt 401 if jwt.nil? || jwt.empty?
-  begin
-    key = Server.load_key
-    token = JWT.decode(jwt, key.public_key, true, { algorithm: 'RS256' })
-    @scopes = token[0]['scope'].split
-    halt 403 unless @scopes.include? 'omejdn:admin'
-    @user = User.find_by_id token[0]['sub'] if @scopes.include? 'openid'
-    @client = Client.find_by_id token[0]['sub'] unless (@scopes).include? 'openid'
-  rescue StandardError => e
-    p e if debug
-    @client = nil
-    @user = nil
-  end
+  halt 403 unless @user_is_admin
   halt 401 if @client.nil? && @user.nil?
 end
 

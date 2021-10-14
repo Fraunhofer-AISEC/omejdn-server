@@ -18,7 +18,6 @@ class User
 
       return db.verify_credential(user, pass)
     end
-    puts 'User not found'
     false
   end
 
@@ -37,7 +36,6 @@ class User
       user = db.find_by_id(username)
       return user unless user.nil?
     end
-    puts 'User not found'
     nil
   end
 
