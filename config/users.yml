@@ -1,15 +1,19 @@
 ---
-- username: testUser
-  scopes:
-  - omejdn:admin
-  - openid
-  - profile
+# Add users here. Usernames must be unique
+- username: exampleUser
+  # Attributes may be flags with boolean values or have a string as value.
+  # The keys may consist of valid printable ASCII characters except 'SPACE', '"', '\' and ':'
+  # Scopes of the form "k:v" will be granted for a user
+  # iff an attribute is registered here with key k and string-value v,
+  # scopes without a ':' are granted iff an attribute with that key exists
   attributes:
-  - key: email
-    value: admin@example.com
   - key: omejdn
     value: admin
-  - key: exampleKey
-    value: exampleValue
-  password: "$2a$12$0apoKS5lzSDI5zETS2Aa/OOFpbN7b3c/ZKfGc1coYQw6SRytbQM5S"
-
+  - key: openid
+    value: true
+  - key: profile
+    value: true
+  - key: email
+    value: admin@example.com
+  # A password salted with BCrypt
+  password: "$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi"

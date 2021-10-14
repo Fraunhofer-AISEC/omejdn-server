@@ -243,44 +243,20 @@ class AdminApiTest < Test::Unit::TestCase
     assert_equal config_testsetup, JSON.parse(last_response.body)
   end
 
-  def test_put_certificate
-    cert = {
-      'certificate' => @testCertificate
-    }
-    put '/api/v1/config/clients/testClient/keys', cert.to_json,
-        { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    assert last_response.no_content?
-    get '/api/v1/config/clients/testClient/keys', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    assert last_response.ok?
-    assert_equal cert, JSON.parse(last_response.body)
-    cert = {
-      'certificate' => "-----BEGIN CERTIFICATE-----
-MIICQzCCAaygAwIBAgIBATANBgkqhkiG9w0BAQsFADAWMRQwEgYDVQQDDAt0ZXN0
-Q2xpZW50MjAeFw0yMDAzMTgxNzQzMzdaFw0yMTAzMTgxNzQzMzdaMBYxFDASBgNV
-BAMMC3Rlc3RDbGllbnQyMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDTO7ov
-BQ0FvgNIDIloz3uPKHe7XBiDerYwX+S+L1sWIUXvcKpY/igs0gqmNOWTknkrrVKW
-l62iPGOhrTsig+jOkHX5mmj8P0Y+bf0zMIWceX4S0d6O2ZC1lv08Be/CX/jGSUmU
-FRWSvGo+TKPQqWn/4Bf28DduVw2p6z917H30LwIDAQABo4GgMIGdMAkGA1UdEwQC
-MAAwCwYDVR0PBAQDAgUgMB0GA1UdDgQWBBRk8oaobfGpvv6kOd3Yw31YHV2jrDAT
-BgNVHSUEDDAKBggrBgEFBQcDATAPBglghkgBhvhCAQ0EAhYAMD4GA1UdIwQ3MDWA
-FGTyhqht8am+/qQ53djDfVgdXaOsoRqkGDAWMRQwEgYDVQQDDAt0ZXN0Q2xpZW50
-MoIBATANBgkqhkiG9w0BAQsFAAOBgQCo2oYpH/MzunB4eP7Mwek9UrRcXp10rL4D
-PExqY4rJ43CWpPOjIWAxCLRic/x3P0K19ukZk9GHNdQerUvyAJiubo8iH366kXfu
-9+XBMDtJ5tvhwn0nTylTTaWnSu47O/o9DWfzlGoYfLV1jTrvwUcozymVWprnmeCs
-3WF1B0RcEQ==
------END CERTIFICATE-----"
-    }
-    put '/api/v1/config/clients/keys/testClient', cert.to_json,
-        { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-  end
-
-  def test_post_delete_certificate
+  def test_post_put_delete_certificate
     cert = {
       'certificate' => @testCertificate
     }
     post '/api/v1/config/clients/testClient2/keys', cert.to_json,
          { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.created?
+    get '/api/v1/config/clients/testClient2/keys', {},
+        { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.ok?
+    assert_equal cert, JSON.parse(last_response.body)
+    put '/api/v1/config/clients/testClient2/keys', cert.to_json,
+        { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    assert last_response.no_content?
     get '/api/v1/config/clients/testClient2/keys', {},
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
