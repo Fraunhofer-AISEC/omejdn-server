@@ -406,9 +406,10 @@ before '/api/v1/user*' do
   begin
     key = Server.load_key
     token = JWT.decode(jwt, key.public_key, true, { algorithm: 'RS256' })
-    @user_is_admin  = (token[0]['scopes'].include? 'omejdn:admin')
-    @user_may_write = (token[0]['scopes'].include? 'omejdn:write') || @user_is_admin
-    @user_may_read  = (token[0]['scopes'].include? 'omejdn:read')  || @user_may_write
+    @scopes = token[0]['scope'].split
+    @user_is_admin  = (@scopes.include? 'omejdn:admin')
+    @user_may_write = (@scopes.include? 'omejdn:write') || @user_is_admin
+    @user_may_read  = (@scopes.include? 'omejdn:read')  || @user_may_write
     halt 403 unless @user_may_read
     halt 403 unless @user_may_write || request.env['REQUEST_METHOD'] == 'GET'
     @user = User.find_by_id token[0]['sub']
@@ -476,9 +477,10 @@ before '/api/v1/config/*' do
   begin
     key = Server.load_key
     token = JWT.decode(jwt, key.public_key, true, { algorithm: 'RS256' })
-    halt 403 unless token[0]['scopes'].include? 'omejdn:admin'
-    @user = User.find_by_id token[0]['sub'] if token[0]['scopes'].include? 'openid'
-    @client = Client.find_by_id token[0]['sub'] unless (token[0]['scopes']).include? 'openid'
+    @scopes = token[0]['scope'].split
+    halt 403 unless @scopes.include? 'omejdn:admin'
+    @user = User.find_by_id token[0]['sub'] if @scopes.include? 'openid'
+    @client = Client.find_by_id token[0]['sub'] unless (@scopes).include? 'openid'
   rescue StandardError => e
     p e if debug
     @client = nil

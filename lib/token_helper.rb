@@ -21,13 +21,14 @@ class TokenHelper
     base_config = Config.base_config
     now = Time.new.to_i
     {
-      'scopes' => scopes,
+      'scope' => (scopes.join ' '),
       'aud' => base_config['token']['audience'],
       'iss' => base_config['token']['issuer'],
       'nbf' => now,
       'iat' => now,
       'jti' => Base64.urlsafe_encode64(rand(2**64).to_s),
-      'exp' => now + base_config['token']['expiration']
+      'exp' => now + base_config['token']['expiration'],
+      'client_id' => client.client_id
     }.merge(map_claims_to_userinfo(attrs, [], client, scopes))
   end
 
@@ -42,7 +43,7 @@ class TokenHelper
       new_payload = build_access_token_stub(client.attributes, client, scopes)
       new_payload['sub'] = client.client_id if user.nil?
     end
-    JWT.encode new_payload, Server.load_key('token'), 'RS256', { typ: 'JWT', kid: 'default' }
+    JWT.encode new_payload, Server.load_key('token'), 'RS256', { typ: 'at+jwt', kid: 'default' }
   end
 
   def self.address_claim?(key)
