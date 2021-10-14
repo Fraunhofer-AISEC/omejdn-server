@@ -102,6 +102,8 @@ class Client
   def certificate
     begin
       filename = certificate_file
+      return nil unless File.exist? filename # no cert registered
+
       cert = OpenSSL::X509::Certificate.new File.read filename
       now = Time.now
       return cert unless cert.not_after < now || cert.not_before > now

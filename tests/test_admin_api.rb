@@ -46,7 +46,7 @@ class AdminApiTest < Test::Unit::TestCase
         { 'key' => 'asdfasf', 'value' => 'asdfasf' },
         { 'key' => 'exampleKey', 'value' => 'exampleValue' }
       ],
-      'password' => "$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi"
+      'password' => '$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi'
     }]
   end
 
@@ -58,13 +58,13 @@ class AdminApiTest < Test::Unit::TestCase
       'redirect_uri' => 'http://localhost:4200',
       'attributes' => []
     },
-    {
-      'client_id' => 'testClient2',
-      'name' => 'omejdn admin ui',
-      'allowed_scopes' => ['omejdn:write'],
-      'redirect_uri' => 'http://localhost:4200',
-      'attributes' => []
-    }]
+     {
+       'client_id' => 'testClient2',
+       'name' => 'omejdn admin ui',
+       'allowed_scopes' => ['omejdn:write'],
+       'redirect_uri' => 'http://localhost:4200',
+       'attributes' => []
+     }]
   end
 
   def config_testsetup
@@ -84,26 +84,26 @@ class AdminApiTest < Test::Unit::TestCase
         'algorithm' => 'RS256',
         'issuer' => 'http://localhost:4567'
       },
-      'user_backend' => [ 'yaml' ]
+      'user_backend' => ['yaml']
     }
   end
 
   def test_require_admin_scope
     get '/api/v1/config/users', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@insufficient_token}" }
-    #p last_response
+    # p last_response
     assert last_response.forbidden?
   end
 
   def test_get_users
     get '/api/v1/config/users', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    #p last_response
+    # p last_response
     assert last_response.ok?
     assert_equal users_testsetup, JSON.parse(last_response.body)
   end
 
   def test_get_user
     get '/api/v1/config/users/testUser', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    #p last_response
+    # p last_response
     assert last_response.ok?
     assert_equal users_testsetup[0], JSON.parse(last_response.body)
   end
@@ -114,13 +114,13 @@ class AdminApiTest < Test::Unit::TestCase
       'attributes' => [
         { 'key' => 'exampleKey2', 'value' => 'exampleValue2' }
       ],
-      'password' => "somepw",
+      'password' => 'somepw'
     }
     post '/api/v1/config/users', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    #p last_response
+    # p last_response
     assert last_response.created?
     get '/api/v1/config/users/testUser2', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    #p last_response
+    # p last_response
     assert last_response.ok?
     new_user = JSON.parse(last_response.body)
     assert_equal BCrypt::Password.new(new_user['password']), user['password']
@@ -135,7 +135,7 @@ class AdminApiTest < Test::Unit::TestCase
       'attributes' => [
         { 'key' => 'exampleKey', 'value' => 'exampleValue2' }
       ],
-      'password' => "secure",
+      'password' => 'secure'
     }
     put '/api/v1/config/users/testUser', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
@@ -150,7 +150,7 @@ class AdminApiTest < Test::Unit::TestCase
 
   def test_delete_user
     delete '/api/v1/config/users/testUser', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    #p last_response
+    # p last_response
     assert last_response.no_content?
     get '/api/v1/config/users/testUser', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.not_found?
@@ -159,7 +159,7 @@ class AdminApiTest < Test::Unit::TestCase
 
   def test_change_user_password
     payload = {
-      'newPassword' => "extremelysecure",
+      'newPassword' => 'extremelysecure'
     }
     put '/api/v1/config/users/testUser/password', payload.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
@@ -177,7 +177,7 @@ class AdminApiTest < Test::Unit::TestCase
 
   def test_put_clients
     new_clients = clients_testsetup
-    new_clients[1]['name']="Test name"
+    new_clients[1]['name'] = 'Test name'
     put '/api/v1/config/clients', new_clients.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
     get '/api/v1/config/clients', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
@@ -236,7 +236,6 @@ class AdminApiTest < Test::Unit::TestCase
   end
 
   def test_put_config
-    
     put '/api/v1/config/omejdn', config_testsetup.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
     get '/api/v1/config/omejdn', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
@@ -275,7 +274,7 @@ PExqY4rJ43CWpPOjIWAxCLRic/x3P0K19ukZk9GHNdQerUvyAJiubo8iH366kXfu
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
   end
 
-  def test_post_certificate
+  def test_post_delete_certificate
     cert = {
       'certificate' => @testCertificate
     }
@@ -286,11 +285,8 @@ PExqY4rJ43CWpPOjIWAxCLRic/x3P0K19ukZk9GHNdQerUvyAJiubo8iH366kXfu
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
     assert_equal cert, JSON.parse(last_response.body)
-  end
-
-  def test_delete_certificate
     delete '/api/v1/config/clients/testClient2/keys', {},
-         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+           { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
     get '/api/v1/config/clients/testClient2/keys', {},
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }

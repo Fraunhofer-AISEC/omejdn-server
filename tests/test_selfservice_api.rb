@@ -22,7 +22,7 @@ class SelfsServiceApiTest < Test::Unit::TestCase
     @read_token = TokenHelper.build_access_token client, ['omejdn:read'], user
     @useless_token = TokenHelper.build_access_token client, [], user
 
-    @backup_users   = File.read './config/users.yml'
+    @backup_users = File.read './config/users.yml'
     File.open('./config/users.yml', 'w')   { |file| file.write(users_testsetup.to_yaml) }
   end
 
@@ -41,15 +41,15 @@ class SelfsServiceApiTest < Test::Unit::TestCase
         { 'key' => 'asdfasf', 'value' => 'asdfasf' },
         { 'key' => 'exampleKey', 'value' => 'exampleValue' }
       ],
-      'password' => "$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC" # "mypassword"
+      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC' # "mypassword"
     },
-    {
-      'username' => 'testUser2',
-      'attributes' => [
-        { 'key' => 'omejdn', 'value' => 'write' },
-      ],
-      'password' => "$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi"
-    }]
+     {
+       'username' => 'testUser2',
+       'attributes' => [
+         { 'key' => 'omejdn', 'value' => 'write' }
+       ],
+       'password' => '$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi'
+     }]
   end
 
   def test_require_read_scope
