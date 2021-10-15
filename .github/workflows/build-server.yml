@@ -1,4 +1,4 @@
-name: build-server
+name: Test, Build and Release
 on:
   push:
     paths:
