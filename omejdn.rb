@@ -388,84 +388,77 @@ end
 
 ########## User Selfservice ##########
 
-before '/api/v1/user/*' do
-  return if request.env['REQUEST_METHOD'] == 'OPTIONS'
-
-  jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
-  halt 401 if jwt.nil? || jwt.empty?
-  @user_may_read  = false
-  @user_may_write = false
-  @user_is_admin  = false
-  begin
-    key = Server.load_key
-    token = JWT.decode(jwt, key.public_key, true, { algorithm: 'RS256' })
-    @user_is_admin  =  token[0]['scopes'].include? 'omejdn:admin'
-    @user_may_write = (token[0]['scopes'].include? 'omejdn:write') || @user_is_admin
-    @user_may_read  = (token[0]['scopes'].include? 'omejdn:read')  || @user_may_write
-    halt 401 unless @user_may_read
-    @user = User.find_by_id token[0]['sub'] if token[0]['scopes'].include? 'openid'
-    @client = Client.find_by_id token[0]['sub'] unless (token[0]['scopes']).include? 'openid'
-  rescue StandardError => e
-    p e if debug
-    @client = nil
-    @user = nil
-  end
-  halt 401 if @client.nil? && @user.nil?
+after '/api/v1/*' do
+  headers['Content-Type'] = 'application/json'
 end
 
-put '/api/v1/user/:username/password' do
-  halt 401 unless @user_may_write
-  user = User.find_by_id(params['username'])
-  halt 401 unless (@user.username == user.username) || @user_is_admin
+before '/api/v1/*' do
+  return if request.env['REQUEST_METHOD'] == 'OPTIONS'
+
+  begin
+    jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
+    halt 401 if jwt.nil? || jwt.empty?
+    token = JWT.decode(jwt, Server.load_key.public_key, true, { algorithm: 'RS256' })
+    @scopes = token[0]['scope'].split
+    @user_is_admin  = (@scopes.include? 'omejdn:admin')
+    @user_may_write = (@scopes.include? 'omejdn:write') || @user_is_admin
+    @user_may_read  = (@scopes.include? 'omejdn:read')  || @user_may_write
+    @user = User.find_by_id token[0]['sub']
+    @client = Client.find_by_id token[0]['sub']
+  rescue StandardError => e
+    p e if debug
+    halt 401
+  end
+end
+
+before '/api/v1/user*' do
+  @selfservice_config = Config.base_config['user_selfservice']
+  halt 403 unless !@selfservice_config.nil? && @selfservice_config['enabled']
+  halt 403 unless request.env['REQUEST_METHOD'] == 'GET' ? @user_may_read : @user_may_write
+  halt 401 if @user.nil?
+end
+
+get '/api/v1/user' do
+  halt 200, { 'username' => @user.username, 'attributes' => @user.attributes }.to_json
+end
+
+put '/api/v1/user' do
+  editable = @selfservice_config['editable_attributes'] || []
+  updated_user = User.new
+  updated_user.username = @user.username
+  updated_user.attributes = []
+  JSON.parse(request.body.read)['attributes'].each do |e|
+    updated_user.attributes << e if editable.include? e['key']
+  end
+  User.update_user updated_user
+  halt 204
+end
+
+delete '/api/v1/user' do
+  halt 403 unless @selfservice_config['allow_deletion']
+  User.delete_user(@user.username)
+  halt 204
+end
+
+put '/api/v1/user/password' do
+  halt 403 unless @selfservice_config['allow_password_change']
   json = (JSON.parse request.body.read)
   current_password = json['currentPassword']
   new_password = json['newPassword']
-  unless User.verify_credential(user, current_password)
+  unless User.verify_credential(@user, current_password)
     halt 403, { 'passwordChange' => 'not successfull, password incorrect' }
   end
-  User.change_password(user, new_password)
+  User.change_password(@user, new_password)
   halt 204
 end
 
-get '/api/v1/user/:username' do
-  halt 401 unless (@user.username == params['username']) || @user_is_admin
-  Config.all_users.each do |key|
-    return JSON.generate key if key['username'].eql?(params['username'])
-  end
-  halt 404
-end
-
-post '/api/v1/user/:username' do
-  halt 401 unless @user_may_write
-  halt 401 unless (@user.username == params['username']) || @user_is_admin
-  json = JSON.parse request.body.read
-  user = User.from_json(json)
-  User.add_user(user, json['userBackend'])
-  halt 201
-end
-
-put '/api/v1/user/:username' do
-  halt 401 unless @user_may_write
-  halt 401 unless (@user.username == params['username']) || @user_is_admin
-  user = User.from_json(JSON.parse(request.body.read))
-  oauth_providers = Config.oauth_provider_config
-  User.update_user(user, oauth_providers)
-  halt 204
-end
-
-delete '/api/v1/user/:username' do
-  halt 401 unless @user_may_write
-  halt 401 unless (@user.username == params['username']) || @user_is_admin
-  User.delete_user(params['username'])
-  halt 204
-end
-
-get '/api/v1/user/:username/provider/:provider' do
-  halt 401 unless (@user.username == params['username']) || @user_is_admin
-  halt 401 unless @user.extern == params['provider']
+get '/api/v1/user/provider' do
+  # TODO: We probably do not want to send out the entire provider including secrets
+  # to any user with API access
+  halt 404 if @user.extern.nil?
   providers = Config.oauth_provider_config
   providers.each do |provider|
-    next unless provider['name'] == params['provider']
+    next unless provider['name'] == @user.extern
 
     return JSON.generate provider
   end
@@ -475,127 +468,98 @@ end
 ########## ADMIN API ##################
 
 before '/api/v1/config/*' do
-  return if request.env['REQUEST_METHOD'] == 'OPTIONS'
-
-  jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
-  halt 401 if jwt.nil? || jwt.empty?
-  begin
-    key = Server.load_key
-    token = JWT.decode(jwt, key.public_key, true, { algorithm: 'RS256' })
-    halt 401 unless token[0]['scopes'].include? 'omejdn:admin'
-    @user = User.find_by_id token[0]['sub'] if token[0]['scopes'].include? 'openid'
-    @client = Client.find_by_id token[0]['sub'] unless (token[0]['scopes']).include? 'openid'
-  rescue StandardError => e
-    p e if debug
-    @client = nil
-    @user = nil
-  end
+  halt 403 unless @user_is_admin
   halt 401 if @client.nil? && @user.nil?
 end
 
-after '/api/v1/*' do
-  headers['Content-Type'] = 'application/json'
-end
-
-get '/api/v1/config/omejdn' do
-  JSON.generate Config.base_config
-end
-
-put '/api/v1/config/omejdn' do
-  Config.base_config = JSON.parse request.body.read
-  halt 204
-end
-
-post '/api/v1/config/omejdn' do
-  begin
-    setting = JSON.parse request.body.read
-    Config.base_config = setting
-  rescue StandardError
-    halt 400
-  end
-  halt 201
-end
-
+# Users
 get '/api/v1/config/users' do
-  JSON.generate Config.all_users
+  halt 200, JSON.generate(User.all_users)
+end
+
+post '/api/v1/config/users' do
+  json = JSON.parse request.body.read
+  user = User.from_json(json)
+  User.add_user(user, json['userBackend'] || 'yaml')
+  halt 201
 end
 
 get '/api/v1/config/users/:username' do
-  Config.all_users.each do |key|
-    return JSON.generate key if key['username'].eql?(params['username'])
-  end
-  halt 404
-end
-
-post '/api/v1/config/users/:username' do
-  json = JSON.parse request.body.read
-  user = User.from_json(json)
-  User.add_user(user, json['userBackend'])
-  halt 201
+  user = User.find_by_id params['username']
+  halt 404 if user.nil?
+  halt 200, { 'username' => user.username, 'password' => user.password, 'attributes' => user.attributes }.to_json
 end
 
 put '/api/v1/config/users/:username' do
-  user = User.from_json(JSON.parse(request.body.read))
+  user = User.find_by_id params['username']
+  halt 404 if user.nil?
+  updated_user = User.from_json(JSON.parse(request.body.read))
+  updated_user.username = user.username
   oauth_providers = Config.oauth_provider_config
-  User.update_user(user, oauth_providers)
+  User.update_user(updated_user, oauth_providers)
   halt 204
 end
 
 delete '/api/v1/config/users/:username' do
-  User.delete_user(params['username'])
+  user_found = User.delete_user(params['username'])
+  halt 404 unless user_found
   halt 204
 end
 
-put '/api/v1/config/users/password/:username' do
-  user = User.find_by_id(params[:username])
+put '/api/v1/config/users/:username/password' do
+  user = User.find_by_id params['username']
+  halt 404 if user.nil?
   json = (JSON.parse request.body.read)
-  current_password = json['currentPassword']
-  new_password = json['newPassword']
-  unless User.verify_credential(user, current_password)
-    halt 403, { 'passwordChange' => 'not successfull, password incorrect' }
-  end
-  User.change_password(user, new_password)
+  User.change_password(user, json['newPassword'])
   halt 204
 end
 
+# Clients
 get '/api/v1/config/clients' do
   JSON.generate Config.client_config
 end
 
-get '/api/v1/config/clients/:client_id' do
-  Config.client_config.each do |key|
-    next unless key['client_id'].eql?(params['client_id'])
-
-    halt 200, JSON.generate(key)
+put '/api/v1/config/clients' do
+  clients = []
+  JSON.parse(request.body.read).each do |c|
+    client = Client.new
+    client.client_id = c['client_id']
+    client.name = c['name']
+    client.attributes = c['attributes']
+    client.allowed_scopes = c['allowed_scopes']
+    client.redirect_uri = c['redirect_uri']
+    clients << client
   end
-  halt 404
+  Config.client_config = clients
+  halt 204
 end
 
 post '/api/v1/config/clients' do
-  Config.client_config = JSON.parse request.body.read
-  halt 201
-end
-
-post '/api/v1/config/clients/:client_id' do
   client = Client.from_json(JSON.parse(request.body.read))
   clients = Client.load_clients
   clients << client
   Config.client_config = clients
-  halt 201, client.to_json
+  halt 201
+end
+
+get '/api/v1/config/clients/:client_id' do
+  client = Client.find_by_id params['client_id']
+  halt 404 if client.nil?
+  halt 200, client.to_json
 end
 
 put '/api/v1/config/clients/:client_id' do
-  client = Client.from_json(JSON.parse(request.body.read))
+  json = JSON.parse(request.body.read)
   clients = Client.load_clients
   clients.each do |stored_client|
-    next if stored_client.client_id != client.client_id
+    next if stored_client.client_id != params['client_id']
 
-    stored_client.attributes = client.attributes
-    stored_client.allowed_scopes = client.allowed_scopes
-    stored_client.redirect_uri = client.redirect_uri
-    stored_client.certificate = client.certificate
+    stored_client.name = json['name'] unless json['name'].nil?
+    stored_client.attributes = json['attributes'] unless json['attributes'].nil?
+    stored_client.allowed_scopes = json['allowed_scopes'] unless json['allowed_scopes'].nil?
+    stored_client.redirect_uri = json['redirect_uri'] unless json['redirect_uri'].nil?
     Config.client_config = clients
-    halt 200, stored_client.to_json
+    halt 204
   end
   halt 404
 end
@@ -612,67 +576,71 @@ delete '/api/v1/config/clients/:client_id' do
   halt 404
 end
 
-get '/api/v1/config/clients/keys/:client_id' do
-  clients = Client.load_clients
-  clients.each do |stored_client|
-    next unless stored_client.client_id.eql?(params['client_id'])
-
-    return JSON.generate({ 'certfile' => stored_client.certificate_file,
-                           'certificate' => stored_client.certificate.to_s })
-  end
-  halt 404
+# Client Keys
+get '/api/v1/config/clients/:client_id/keys' do
+  client = Client.find_by_id params['client_id']
+  halt 404 if client.nil?
+  certificate = client.certificate
+  halt 404 if certificate.nil?
+  halt 200, JSON.generate({ 'certificate' => client.certificate.to_s })
 end
 
-put '/api/v1/config/clients/keys/:client_id' do
-  cert = JSON.parse(request.body.read)
-  clients = Client.load_clients
-  clients.each do |stored_client|
-    next unless stored_client.client_id.eql?(params['client_id'])
-
-    stored_client.certificate = cert['certificate']
-    Config.client_config = clients
-    halt 200, JSON.generate({ 'certfile' => stored_client.certificate_file,
-                              'certificate' => stored_client.certificate.to_s })
-  end
-  halt 404
+put '/api/v1/config/clients/:client_id/keys' do
+  client = Client.find_by_id params['client_id']
+  halt 404 if client.nil?
+  client.certificate = JSON.parse(request.body.read)['certificate']
+  halt 204
 end
 
-post '/api/v1/config/clients/keys/:client_id' do
-  cert = JSON.parse(request.body.read)
-  clients = Client.load_clients
-  clients.each do |stored_client|
-    next unless stored_client.client_id.eql?(params['client_id'])
-
-    stored_client.certificate = cert['certificate']
-    Config.client_config = clients
-    halt 201, JSON.generate({ 'certfile' => stored_client.certificate_file,
-                              'certificate' => stored_client.certificate.to_s })
-  end
-  halt 404
+post '/api/v1/config/clients/:client_id/keys' do
+  client = Client.find_by_id params['client_id']
+  halt 404 if client.nil?
+  client.certificate = JSON.parse(request.body.read)['certificate']
+  halt 201
 end
 
-delete '/api/v1/config/clients/keys/:client_id' do
-  clients = Client.load_clients
-  clients.each do |stored_client|
-    if stored_client.client_id.eql?(params['client_id'])
-      stored_client.deleteCert
-      halt 200
-    end
-  end
-  halt 404
+delete '/api/v1/config/clients/:client_id/keys' do
+  client = Client.find_by_id params['client_id']
+  halt 404 if client.nil?
+  client.certificate = nil
+  halt 204
+end
+
+# Config files
+get '/api/v1/config/omejdn' do
+  halt 200, JSON.generate(Config.base_config)
+end
+
+put '/api/v1/config/omejdn' do
+  Config.base_config = JSON.parse request.body.read
+  halt 204
 end
 
 get '/api/v1/config/user_backend' do
-  JSON.generate Config.user_backend_config
+  halt 200, JSON.generate(Config.user_backend_config)
 end
 
 put '/api/v1/config/user_backend' do
   Config.user_backend_config = JSON.parse request.body.read
-  halt 200
+  halt 204
+end
+
+get '/api/v1/config/webfinger' do
+  halt 200, JSON.generate(Config.webfinger_config)
+end
+
+put '/api/v1/config/webfinger' do
+  Config.webfinger_config = JSON.parse request.body.read
+  halt 204
 end
 
 get '/api/v1/config/oauth_providers' do
-  JSON.generate Config.oauth_provider_config
+  halt 200, JSON.generate(Config.oauth_provider_config)
+end
+
+put '/api/v1/config/oauth_providers' do
+  Config.oauth_provider_config = JSON.parse request.body.read
+  halt 204
 end
 
 get '/api/v1/config/oauth_providers/:provider' do
@@ -716,16 +684,6 @@ delete '/api/v1/config/oauth_providers/:provider' do
     halt 200
   end
   halt 404
-end
-
-get '/api/v1/config/webfinger' do
-  JSON.generate Config.webfinger_config
-  halt 200
-end
-
-put '/api/v1/config/webfinger' do
-  Config.webfinger_config = JSON.parse request.body.read
-  halt 200
 end
 
 get '/.well-known/webfinger' do

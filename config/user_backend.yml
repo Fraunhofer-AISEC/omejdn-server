@@ -1,16 +1,25 @@
 ---
+# You may configure user storage backends here
+
+# YAML (required)
 yaml:
+  # Location of the YAML file
   location: config/users.yml
-sqlite:
-  location: config/users.db
-ldap:
-  host: whitepages.bfh.ch
-  port: 636
-  baseDN: dc=bfh,dc=ch
-  uidKey: mail
-  userAttributes:
-    - givenname
-    - fullname
-    - telephonenumber
-    - ou
+
+# SQLite
+#sqlite:
+#  # Location of the database
+#  location: config/users.db
+
+# LDAP Directories
+#ldap:
+#  host: whitepages.bfh.ch
+#  port: 636
+#  baseDN: dc=bfh,dc=ch
+#  uidKey: mail
+#  userAttributes:
+#    - givenname
+#    - fullname
+#    - telephonenumber
+#    - ou
 

@@ -26,11 +26,12 @@ class YamlUserDb < UserDb
     t_users.each do |concretuser|
       next if concretuser.username != user.username
 
-      concretuser.attributes = user.attributes
-      concretuser.password = user.password
-      concretuser.backend = user.backend
-      concretuser.extern = user.extern
+      concretuser.attributes = user.attributes unless user.attributes.nil?
+      concretuser.password = user.password unless user.password.nil?
+      concretuser.backend = user.backend unless user.backend.nil?
+      concretuser.extern = user.extern unless user.extern.nil?
       user_in_yaml = true
+      break
     end
     write_user_db t_users if user_in_yaml
     user_in_yaml
@@ -69,7 +70,7 @@ class YamlUserDb < UserDb
   def change_password(user, password)
     t_users = users
     user_in_yaml = false
-    _users.each do |concretuser|
+    t_users.each do |concretuser|
       next if concretuser.username != user.username
 
       concretuser.password = password

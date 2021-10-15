@@ -19,19 +19,8 @@ class Config
     file.close
   end
 
-  # FIXME: Not sure why we put this here.
-  # One reason is that we wanted to keep the User class plain
-  def self.all_users
-    users = []
-    dbs = UserDbLoader.load_db
-    dbs.each do |db|
-      users += db.load_users
-    end
-    users
-  end
-
   def self.client_config
-    YAML.safe_load File.read OMEJDN_CLIENT_CONFIG_FILE
+    YAML.safe_load File.read OMEJDN_CLIENT_CONFIG_FILE, fallback: []
   end
 
   def self.client_config=(clients)
@@ -54,7 +43,7 @@ class Config
   end
 
   def self.user_backend_config
-    YAML.safe_load File.read OMEJDN_USER_BACKEND_CONFIG
+    YAML.safe_load File.read OMEJDN_USER_BACKEND_CONFIG, fallback: {}
   end
 
   def self.user_backend_config=(config)
@@ -78,7 +67,7 @@ class Config
   end
 
   def self.oauth_provider_config
-    YAML.safe_load File.read OMEJDN_OAUTH_PROVIDER_CONFIG
+    YAML.safe_load File.read OMEJDN_OAUTH_PROVIDER_CONFIG, fallback: []
   end
 
   def self.oauth_provider_config=(providers)
@@ -86,15 +75,15 @@ class Config
   end
 
   def self.scope_description_config
-    YAML.safe_load File.read SCOPE_DESCRIPTION_CONFIG
+    YAML.safe_load File.read SCOPE_DESCRIPTION_CONFIG, fallback: {}
   end
 
   def self.scope_mapping_config
-    YAML.safe_load File.read SCOPE_MAPPING_CONFIG
+    YAML.safe_load File.read SCOPE_MAPPING_CONFIG, fallback: {}
   end
 
   def self.webfinger_config
-    YAML.safe_load File.read WEBFINGER_CONFIG
+    YAML.safe_load File.read WEBFINGER_CONFIG, fallback: {}
   end
 
   def self.webfinger_config=(config)

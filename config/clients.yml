@@ -1,13 +1,13 @@
 ---
-- client_id: testClient
-  name: omejdn admin ui
+# Clients can be added like this. The client_id must be unique
+- client_id: exampleClient
+  # The client's name
+  name: This is an example Client name
+  # A client may request these scopes for access tokens
   allowed_scopes:
-  - omejdn:admin
+  - omejdn:write
+  - openid
+  # A redirect URI
   redirect_uri: http://localhost:4200
-  attributes: []
-- client_id: testClient2
-  name: omejdn admin ui
-  allowed_scopes:
-  - omejdn:admin
-  redirect_uri: http://localhost:4200
+  # Attributes
   attributes: []
