@@ -21,6 +21,7 @@ It is **NOT** a production grade solution and should not be used as such.
 - [Running an Omejdn server](#running)
 - [Configuring the server](#config)
 - [Requesting an access token](#req)
+- [API](#api)
 
 
 <a name="spec"/>
@@ -307,3 +308,7 @@ services:
       - /path/to/config:/opt/config
       - /path/to/keys:/opt/keys
 ```
+
+## API
+
+See [./API.md] for API usage
