@@ -69,24 +69,21 @@ class AlgsTest < Test::Unit::TestCase
       'name' => 'omejdn admin ui',
       'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
-      'attributes' => [],
-      'certfile' => 'ec256.cert'
+      'attributes' => []
     },
     {
       'client_id' => 'ec512',
       'name' => 'omejdn admin ui',
       'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
-      'attributes' => [],
-      'certfile' => 'ec512.cert'
+      'attributes' => []
     },
     {
       'client_id' => 'rsa',
       'name' => 'omejdn admin ui',
       'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
-      'attributes' => [],
-      'certfile' => 'rsa.cert'
+      'attributes' => []
     }]
   end
 
@@ -111,7 +108,7 @@ class AlgsTest < Test::Unit::TestCase
     }
   end
 
-  def generate_token(alg, iss)
+  def generate_token(alg, iss, key)
     base_config = Config.base_config
     now = Time.new.to_i
     payload = { aud: base_config['token']['issuer'],
@@ -121,23 +118,11 @@ class AlgsTest < Test::Unit::TestCase
               nbf: now,
               exp: now + 3600
               }
-    if alg == "ES256"
-      jwt = JWT.encode payload, @priv_key_ec256, 'ES256'
-    elsif alg == "ES512"
-      jwt = JWT.encode payload, @priv_key_ec512, 'ES512'
-    elsif alg == "RS256"
-      jwt = JWT.encode payload, @priv_key_rsa, 'RS256'
-    elsif alg == "RS512"
-      jwt = JWT.encode payload, @priv_key_rsa, 'RS512'
-    elsif alg == "PS256"
-      jwt = JWT.encode payload, @priv_key_rsa, 'PS256'
-    elsif alg == "PS512"
-      jwt = JWT.encode payload, @priv_key_rsa, 'PS512'
-    end
+    JWT.encode payload, key, alg
   end
 
   def test_es256
-    jwt = generate_token "ES256", "ec256"
+    jwt = generate_token "ES256", "ec256", @priv_key_ec256
     post '/token', {
         'grant_type' => 'client_credentials',
         'client_assertion_type' => 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
@@ -148,7 +133,7 @@ class AlgsTest < Test::Unit::TestCase
   end
 
   def test_es512
-    jwt = generate_token "ES512", "ec512"
+    jwt = generate_token "ES512", "ec512", @priv_key_ec512
     post '/token', {
         'grant_type' => 'client_credentials',
         'client_assertion_type' => 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
@@ -159,7 +144,7 @@ class AlgsTest < Test::Unit::TestCase
   end
 
   def test_rs512
-    jwt = generate_token "RS512", "rsa"
+    jwt = generate_token "RS512", "rsa", @priv_key_rsa
     post '/token', {
         'grant_type' => 'client_credentials',
         'client_assertion_type' => 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
@@ -170,7 +155,7 @@ class AlgsTest < Test::Unit::TestCase
   end
 
   def test_rs256
-    jwt = generate_token "RS256", "rsa"
+    jwt = generate_token "RS256", "rsa", @priv_key_rsa
     post '/token', {
         'grant_type' => 'client_credentials',
         'client_assertion_type' => 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
@@ -181,7 +166,7 @@ class AlgsTest < Test::Unit::TestCase
   end
 
   def test_ps512
-    jwt = generate_token "PS512", "rsa"
+    jwt = generate_token "PS512", "rsa", @priv_key_rsa
     post '/token', {
         'grant_type' => 'client_credentials',
         'client_assertion_type' => 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
@@ -192,7 +177,7 @@ class AlgsTest < Test::Unit::TestCase
   end
 
   def test_ps256
-    jwt = generate_token "PS256", "rsa"
+    jwt = generate_token "PS256", "rsa", @priv_key_rsa
     post '/token', {
         'grant_type' => 'client_credentials',
         'client_assertion_type' => 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
