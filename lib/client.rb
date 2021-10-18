@@ -12,21 +12,30 @@ class Client
     nil
   end
 
-  def self.build_client_from_config(conf_string)
-    client = Client.new
-    client.client_id = conf_string['client_id']
-    client.redirect_uri = conf_string['redirect_uri']
-    client.name = conf_string['name']
-    client.attributes = conf_string['attributes']
-    client.allowed_scopes = conf_string['allowed_scopes']
-    client
+  def apply_values(ccnf)
+    @client_id = ccnf['client_id']
+    @redirect_uri = ccnf['redirect_uri']
+    @name = ccnf['name']
+    @attributes = ccnf['attributes']
+    @allowed_scopes = ccnf['allowed_scopes']
   end
 
   def self.load_clients
-    clients = []
-    Config.client_config.each do |ccnf|
-      clients << build_client_from_config(ccnf)
+    needs_save = false
+    clients = Config.client_config.map do |ccnf|
+      client = Client.new
+      client.apply_values(ccnf)
+      if ccnf['import_certfile']
+        begin
+          client.certificate = OpenSSL::X509::Certificate.new File.read ccnf['import_certfile']
+          needs_save = true
+        rescue StandardError => e
+          p "Unable to load key ``#{filename}'': #{e}"
+        end
+      end
+      client
     end
+    Config.client_config = clients if needs_save
     clients
   end
 
