@@ -24,10 +24,7 @@ class Config
   end
 
   def self.client_config=(clients)
-    clients_yaml = []
-    clients.each do |client|
-      clients_yaml << client.to_dict
-    end
+    clients_yaml = clients.map(&:to_dict)
     write_config(OMEJDN_CLIENT_CONFIG_FILE, clients_yaml.to_yaml)
   end
 
