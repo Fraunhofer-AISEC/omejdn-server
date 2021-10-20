@@ -3,7 +3,7 @@
 # OAuth client helper class
 class Client
   attr_accessor :client_id, :redirect_uri, :name,
-                :allowed_scopes, :attributes
+                :allowed_scopes, :attributes, :allowed_resources
 
   def self.find_by_id(client_id)
     load_clients.each do |client|
@@ -18,6 +18,7 @@ class Client
     @name = ccnf['name']
     @attributes = ccnf['attributes']
     @allowed_scopes = ccnf['allowed_scopes']
+    @allowed_resources = ccnf['allowed_resources']
   end
 
   def self.load_clients
@@ -41,11 +42,7 @@ class Client
 
   def self.from_json(json)
     client = Client.new
-    client.client_id = json['client_id']
-    client.name = json['name']
-    client.attributes = json['attributes']
-    client.allowed_scopes = json['allowed_scopes']
-    client.redirect_uri = json['redirect_uri']
+    client.apply_values(json)
     client
   end
 
@@ -85,13 +82,15 @@ class Client
   end
 
   def to_dict
-    {
+    result = {
       'client_id' => @client_id,
       'name' => @name,
       'redirect_uri' => @redirect_uri,
       'allowed_scopes' => @allowed_scopes,
       'attributes' => @attributes
     }
+    result['allowed_resources'] = @allowed_resources unless @allowed_resources.nil?
+    result
   end
 
   def allowed_scoped_attributes(scopes)
@@ -102,6 +101,12 @@ class Client
       attrs += scope[1]
     end
     attrs
+  end
+
+  def resources_allowed?(resources)
+    return true if @allowed_resources.nil?
+
+    resources.reject { |r| @allowed_resources.include? r }.empty?
   end
 
   def certificate_file

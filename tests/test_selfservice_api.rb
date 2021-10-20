@@ -25,9 +25,9 @@ class SelfsServiceApiTest < Test::Unit::TestCase
 
     user = User.find_by_id 'testUser'
     client = Client.find_by_id 'testClient'
-    @write_token = TokenHelper.build_access_token client, ['omejdn:write'], user
-    @read_token = TokenHelper.build_access_token client, ['omejdn:read'], user
-    @useless_token = TokenHelper.build_access_token client, [], user
+    @write_token = TokenHelper.build_access_token client, ['omejdn:write'], "test", user
+    @read_token = TokenHelper.build_access_token client, ['omejdn:read'], "test", user
+    @useless_token = TokenHelper.build_access_token client, [], "test", user
   end
 
   def teardown
