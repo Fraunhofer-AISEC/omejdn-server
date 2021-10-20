@@ -29,7 +29,7 @@ jobs:
         bundle exec ruby tests/test_admin_api.rb
         bundle exec ruby tests/test_selfservice_api.rb
         bundle exec ruby tests/test_oauth_helper.rb
-        bundle exec ruby tests/test_algorithms.rb
+        bundle exec ruby tests/test_oauth2.rb
     - name: SBOM generation
       run: |
         gem install --no-document cyclonedx-ruby
