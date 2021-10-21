@@ -73,7 +73,7 @@ class OAuth2Test < Test::Unit::TestCase
        'allowed_scopes' => ['omejdn:write'],
        'redirect_uri' => 'http://localhost:4200',
        'attributes' => [],
-       'allowed_resources' => ['http://example.org']
+       'allowed_resources' => ['http://example.org','http://localhost:4567/api']
      }]
   end
 
@@ -138,7 +138,7 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], [config_testsetup['token']['audience']]
+    assert_equal at['aud'], [config_testsetup['token']['audience'], config_testsetup['host']+'/api']
     assert_equal at['iss'], config_testsetup['token']['issuer']
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
@@ -157,7 +157,7 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], @client2.allowed_resources
+    assert_equal at['aud'], ['http://example.org', config_testsetup['host']+'/api']
     assert_equal at['iss'], config_testsetup['token']['issuer']
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
@@ -184,12 +184,12 @@ class OAuth2Test < Test::Unit::TestCase
     assert_equal "http://localhost:4567/login", last_response.original_headers['Location']
     
     # GET /authorize
-    get  (p '/authorize?response_type=code'+
+    get  ('/authorize?response_type=code'+
           '&scope=omejdn:write'+
           '&client_id='+client.client_id+
           '&redirect_uri='+client.redirect_uri+
           '&state=testState'+query_additions), {}, {}
-    p last_response
+    # p last_response
     good_so_far &= last_response.ok?
     assert good_so_far if should_work
     
@@ -218,7 +218,7 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], [config_testsetup['token']['audience']]
+    assert_equal at['aud'], [config_testsetup['token']['audience'], config_testsetup['host']+'/api']
     assert_equal at['iss'], config_testsetup['token']['issuer']
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
@@ -241,7 +241,7 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], ['http://example.org']
+    assert_equal at['aud'], ['http://example.org', config_testsetup['host']+'/api']
     assert_equal at['iss'], config_testsetup['token']['issuer']
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
