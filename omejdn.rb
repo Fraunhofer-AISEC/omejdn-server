@@ -23,9 +23,9 @@ require 'bcrypt'
 OMEJDN_LICENSE = 'Apache2.0'
 
 def version
-  return File.read('.version').chomp if File.file? '.version'
+  return File.readlines('.version').map(&:chomp) if File.file? '.version'
 
-  'unknown'
+  ['unknown','unknown']
 end
 
 def debug
@@ -714,6 +714,7 @@ end
 
 get '/about' do
   headers['Content-Type'] = 'application/json'
-  return JSON.generate({ 'version' => version,
-                         'license' => OMEJDN_LICENSE })
+  return JSON.generate({ 'version' => version[0],
+                         'license' => OMEJDN_LICENSE,
+                         'build_time' => version[1]})
 end
