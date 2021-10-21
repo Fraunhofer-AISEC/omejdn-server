@@ -25,7 +25,7 @@ OMEJDN_LICENSE = 'Apache2.0'
 def version
   return File.readlines('.version').map(&:chomp) if File.file? '.version'
 
-  ['unknown','unknown']
+  %w[unknown unknown]
 end
 
 def debug
@@ -716,5 +716,5 @@ get '/about' do
   headers['Content-Type'] = 'application/json'
   return JSON.generate({ 'version' => version[0],
                          'license' => OMEJDN_LICENSE,
-                         'build_time' => version[1]})
+                         'build_time' => version[1] })
 end
