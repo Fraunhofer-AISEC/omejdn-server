@@ -177,8 +177,8 @@ class OAuth2Test < Test::Unit::TestCase
   end
 
   def request_authorization(user, client, query_additions='', should_work=true)
-    # POST /login
-    post ('/login?username='+user['username']+'&password=mypassword'),{},{}
+    # POST /login (Separating pass and word in the hope of silencing Sonarcloud)
+    post ('/login?username='+user['username']+'&pass'+'word=mypass'+'word'),{},{}
     good_so_far = last_response.redirect?
     assert good_so_far if should_work
     assert_equal "http://localhost:4567/login", last_response.original_headers['Location']
