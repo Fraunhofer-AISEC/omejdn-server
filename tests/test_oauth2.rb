@@ -55,7 +55,7 @@ class OAuth2Test < Test::Unit::TestCase
         { 'key' => 'asdfasf', 'value' => 'asdfasf' },
         { 'key' => 'exampleKey', 'value' => 'exampleValue' }
       ],
-      'password' => '$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi'
+      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC' # "mypassword"
     }]
   end
 
@@ -174,5 +174,81 @@ class OAuth2Test < Test::Unit::TestCase
     request_client_credentials @client, "RS512", @priv_key_rsa,   @certificate_rsa
     request_client_credentials @client, "PS512", @priv_key_rsa,   @certificate_rsa, '', false
     request_client_credentials @client, "PS256", @priv_key_rsa,   @certificate_rsa, '', false
+  end
+
+  def request_authorization(user, client, query_additions='', should_work=true)
+    # POST /login
+    post ('/login?username='+user['username']+'&password=mypassword'),{},{}
+    good_so_far = last_response.redirect?
+    assert good_so_far if should_work
+    assert_equal "http://localhost:4567/login", last_response.original_headers['Location']
+    
+    # GET /authorize
+    get  (p '/authorize?response_type=code'+
+          '&scope=omejdn:write'+
+          '&client_id='+client.client_id+
+          '&redirect_uri='+client.redirect_uri+
+          '&state=testState'+query_additions), {}, {}
+    p last_response
+    good_so_far &= last_response.ok?
+    assert good_so_far if should_work
+    
+    # POST /authorize
+    post '/authorize', {}, {}
+    good_so_far &= last_response.redirect?
+    assert good_so_far if should_work
+    header_hash = CGI.parse(last_response.original_headers['Location'])
+    assert code=header_hash[client.redirect_uri+'?code'].first
+    assert_equal 'testState', header_hash['state'].first
+
+    # Get /token
+    query = 'grant_type=authorization_code'+
+    '&code='+code+
+    '&client_id='+client.client_id+
+    '&scope=omejdn:write'+query_additions
+    post ('/token?'+query), {}, {}
+    good_so_far &= last_response.ok?
+    assert good_so_far == should_work
+    return JSON.parse last_response.body
+  end
+
+  def test_authorization_flow
+    response = request_authorization users_testsetup[0], @client
+    at = extract_access_token response
+
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn']
+    assert_equal at['scope'], 'omejdn:write'
+    assert_equal at['aud'], [config_testsetup['token']['audience']]
+    assert_equal at['iss'], config_testsetup['token']['issuer']
+    assert       at['nbf'] <= Time.new.to_i
+    assert_equal at['iat'], at['nbf']
+    assert_equal at['exp'], at['nbf']+response["expires_in"]
+    assert       at['jti']
+    assert_equal at['client_id'], @client.client_id
+    assert_equal at['sub'], users_testsetup[0]['username']
+    assert_equal 'write', at['omejdn']
+  end
+
+  def test_authorization_flow_with_bad_resources
+    resources = '&resource=a&resource=b'
+    response = request_authorization users_testsetup[0], @client2, resources, false
+  end
+
+  def test_authorization_flow_with_resources
+    resources = '&resource=http://example.org'
+    response = request_authorization users_testsetup[0], @client2, resources
+    at = extract_access_token response
+
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn']
+    assert_equal at['scope'], 'omejdn:write'
+    assert_equal at['aud'], ['http://example.org']
+    assert_equal at['iss'], config_testsetup['token']['issuer']
+    assert       at['nbf'] <= Time.new.to_i
+    assert_equal at['iat'], at['nbf']
+    assert_equal at['exp'], at['nbf']+response["expires_in"]
+    assert       at['jti']
+    assert_equal at['client_id'], @client2.client_id
+    assert_equal at['sub'], users_testsetup[0]['username']
+    assert_equal 'write', at['omejdn']
   end
 end
