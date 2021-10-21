@@ -7,6 +7,11 @@
   allowed_scopes:
   - omejdn:write
   - openid
+  # By default, a client may request access to any resource (RFC8707),
+  # Provided it has the required scope.
+  # You may specify allowed resources explicitly here
+  allowed_resources:
+  - http://example.org
   # A redirect URI
   redirect_uri: http://localhost:4200
   # Attributes
