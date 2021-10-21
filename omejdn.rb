@@ -212,11 +212,11 @@ get '/authorize' do
   redirect to("#{my_path}/login") if session['user'].nil?
   user = nil
   unless params[:response_type] == 'code'
-    return OAuthHelper.error_response 'unsupported_response_type', "Given: #{params[:response_type]}"
+    halt 400, OAuthHelper.error_response('unsupported_response_type', "Given: #{params[:response_type]}")
   end
 
   user = UserSession.get[session['user']]
-  return OAuthHelper.error_response 'invalid_user', '' if user.nil?
+  halt 400, OAuthHelper.error_response('invalid_user', '') if user.nil?
 
   session[:scopes] = []
   scope_mapping = Config.scope_mapping_config
@@ -243,15 +243,15 @@ get '/authorize' do
   p "Granted scopes: #{session[:scopes]}"
   p "The user seems to be #{user.username}" if debug
   client = Client.find_by_id params['client_id']
-  return OAuthHelper.error_response 'invalid_client' if client.nil?
+  halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
 
   escaped_redir = CGI.unescape(params[:redirect_uri].gsub('%20', '+'))
-  return OAuthHelper.error_response 'invalid_redirect_uri', '' unless [client.redirect_uri, 'localhost'].any? do |uri|
+  halt 400, OAuthHelper.error_response('invalid_redirect_uri', '') unless [client.redirect_uri, 'localhost'].any? do |uri|
                                                                         escaped_redir.include? uri
                                                                       end
 
   session[:resources] = [params['resource'] || Config.base_config['token']['audience']].flatten
-  return OAuthHelper.error_response 'invalid_target' unless client.resources_allowed? session[:resources]
+  halt 400, OAuthHelper.error_response('invalid_target') unless client.resources_allowed? session[:resources]
 
   # Seems to be in order
   return haml :authorization_page, locals: {
@@ -274,8 +274,8 @@ post '/authorize' do
   RequestCache.get[code][:claims] = JSON.parse session[:url_params]['claims'] if session[:url_params].key?('claims')
   unless session[:url_params][:code_challenge].nil?
     unless session[:url_params][:code_challenge_method] == 'S256'
-      return OAuthHelper.error_response 'invalid_request',
-                                        'Transform algorithm not supported'
+      halt 400, OAuthHelper.error_response('invalid_request',
+                                        'Transform algorithm not supported')
     end
 
     RequestCache.get[code][:pkce] = session[:url_params][:code_challenge]
