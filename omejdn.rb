@@ -2,6 +2,8 @@
 
 require 'rubygems'
 require 'bundler/setup'
+require 'rack'
+require 'cgi'
 
 require_relative './lib/client'
 require_relative './lib/config'
@@ -77,6 +79,7 @@ end
 #                             :user => User,
 #                             :nonce => <oauth nonce> (optional)
 #                             :scopes => Requested scopes
+#                             :resources => Requested resources
 #                             :claims => claim parameter
 #                             :pkce => Code challenge
 #                             :pkce_method => Code challenge method
@@ -112,6 +115,10 @@ if ENV['OMEJDN_ADMIN']
 end
 
 before do
+  # Sinatra does not parse multiple values to params as arrays.
+  # This line fixes this
+  params.merge!(CGI.parse(request.query_string).transform_values { |v| v.length == 1 ? v[0] : v })
+
   return if request.get_header('HTTP_ORIGIN').nil?
   unless request.get_header('HTTP_ORIGIN').start_with?('chrome-extension://') ||
          request.get_header('HTTP_ORIGIN').start_with?('moz-extension://')
@@ -125,6 +132,7 @@ end
 post '/token' do
   client = nil
   scopes = []
+  resources = [params['resource'] || []].flatten
   if params[:grant_type] == 'client_credentials'
     if params[:client_assertion_type] != 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
       halt 400, OAuthHelper.error_response('invalid_request', 'Invalid client_assertion_type')
@@ -133,6 +141,9 @@ post '/token' do
     halt 400, OAuthHelper.error_response('invalid_client', 'Assertion missing') if jwt.nil?
     client = Client.find_by_jwt jwt
     halt 400, OAuthHelper.error_response('invalid_client', 'Client unknown') if client.nil?
+    resources = [Config.base_config['token']['audience']] if resources.empty?
+    halt 400, OAuthHelper.error_response('invalid_target', '') unless client.resources_allowed? resources
+
   elsif (params[:grant_type] == 'authorization_code') && Config.base_config['openid']
     code = params[:code]
     # Only verify PKCE if given in request
@@ -150,11 +161,18 @@ post '/token' do
     halt 400, OAuthHelper.error_response('invalid_code', '') if code.nil?
     halt 400, OAuthHelper.error_response('invalid_code', '') unless RequestCache.get.keys.include?(code)
     scopes = RequestCache.get[code][:scopes] unless RequestCache.get[code][:scopes].nil?
+    resources = RequestCache.get[code][:resources] if resources.empty?
+    halt 400, OAuthHelper.error_response('invalid_target', '') unless resources.reject do |r|
+                                                                        RequestCache.get[code][:resources].include? r
+                                                                      end.empty?
+
   else
     halt 400, OAuthHelper.error_response('unsupported_grant_type', "Given: #{params[:grant_type]}")
   end
   headers['Content-Type'] = 'application/json'
   scopes = params[:scope]&.split if scopes.empty?
+  resources << ("#{Config.base_config['host']}/userinfo") if scopes.include? 'openid'
+  resources << ("#{Config.base_config['host']}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
   # FIXME: filter scopes! Clients that are not authorized must be notified.
   id_token_claims = {}
   if !RequestCache.get[code].nil? &&
@@ -166,7 +184,7 @@ post '/token' do
     user = nil
     user = RequestCache.get[code][:user] unless RequestCache.get[code].nil?
     # https://tools.ietf.org/html/draft-bertocci-oauth-access-token-jwt-00#section-2.2
-    access_token = TokenHelper.build_access_token client, scopes, user
+    access_token = TokenHelper.build_access_token client, scopes, resources, user
     if scopes.include?('openid')
       id_token = TokenHelper.build_id_token client, user,
                                             RequestCache.get[code][:nonce],
@@ -196,11 +214,11 @@ get '/authorize' do
   redirect to("#{my_path}/login") if session['user'].nil?
   user = nil
   unless params[:response_type] == 'code'
-    return OAuthHelper.error_response 'unsupported_response_type', "Given: #{params[:response_type]}"
+    halt 400, OAuthHelper.error_response('unsupported_response_type', "Given: #{params[:response_type]}")
   end
 
   user = UserSession.get[session['user']]
-  return OAuthHelper.error_response 'invalid_user', '' if user.nil?
+  halt 400, OAuthHelper.error_response('invalid_user', '') if user.nil?
 
   session[:scopes] = []
   scope_mapping = Config.scope_mapping_config
@@ -227,12 +245,16 @@ get '/authorize' do
   p "Granted scopes: #{session[:scopes]}"
   p "The user seems to be #{user.username}" if debug
   client = Client.find_by_id params['client_id']
-  return OAuthHelper.error_response 'invalid_client' if client.nil?
+  halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
 
   escaped_redir = CGI.unescape(params[:redirect_uri].gsub('%20', '+'))
-  return OAuthHelper.error_response 'invalid_redirect_uri', '' unless [client.redirect_uri, 'localhost'].any? do |uri|
-                                                                        escaped_redir.include? uri
-                                                                      end
+  halt 400, OAuthHelper.error_response('invalid_redirect_uri', '') unless [client.redirect_uri,
+                                                                           'localhost'].any? do |uri|
+                                                                            escaped_redir.include? uri
+                                                                          end
+
+  session[:resources] = [params['resource'] || Config.base_config['token']['audience']].flatten
+  halt 400, OAuthHelper.error_response('invalid_target') unless client.resources_allowed? session[:resources]
 
   # Seems to be in order
   return haml :authorization_page, locals: {
@@ -249,13 +271,14 @@ post '/authorize' do
   RequestCache.get[code] = {}
   RequestCache.get[code][:user] = UserSession.get[session['user']]
   RequestCache.get[code][:scopes] = session[:scopes]
+  RequestCache.get[code][:resources] = session[:resources]
   RequestCache.get[code][:nonce] = session[:url_params][:nonce]
   RequestCache.get[code][:claims] = {}
   RequestCache.get[code][:claims] = JSON.parse session[:url_params]['claims'] if session[:url_params].key?('claims')
   unless session[:url_params][:code_challenge].nil?
     unless session[:url_params][:code_challenge_method] == 'S256'
-      return OAuthHelper.error_response 'invalid_request',
-                                        'Transform algorithm not supported'
+      halt 400, OAuthHelper.error_response('invalid_request',
+                                           'Transform algorithm not supported')
     end
 
     RequestCache.get[code][:pkce] = session[:url_params][:code_challenge]
@@ -279,8 +302,9 @@ before '/userinfo' do
   halt 401 if jwt.nil? || jwt.empty?
   begin
     key = Server.load_key
-    @token = JWT.decode jwt, key.public_key, true, { algorithm: 'RS256' }
+    @token = JWT.decode jwt, key.public_key, true, { algorithm: Config.base_config['token']['algorithm'] }
     @user = User.find_by_id(@token[0]['sub'])
+    halt 403 unless [@token[0]['aud']].flatten.include?("#{Config.base_config['host']}/userinfo")
   rescue StandardError => e
     p e if debug
     @user = nil
@@ -290,7 +314,6 @@ end
 
 get '/userinfo' do
   headers['Content-Type'] = 'application/json'
-  # JSON.generate OAuthHelper.access_token_to_userinfo(@token)
   JSON.generate OAuthHelper.userinfo(@user, @token)
 end
 
@@ -398,7 +421,8 @@ before '/api/v1/*' do
   begin
     jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
     halt 401 if jwt.nil? || jwt.empty?
-    token = JWT.decode(jwt, Server.load_key.public_key, true, { algorithm: 'RS256' })
+    token = JWT.decode(jwt, Server.load_key.public_key, true, { algorithm: Config.base_config['token']['algorithm'] })
+    halt 403 unless [token[0]['aud']].flatten.include?("#{Config.base_config['host']}/api")
     @scopes = token[0]['scope'].split
     @user_is_admin  = (@scopes.include? 'omejdn:admin')
     @user_may_write = (@scopes.include? 'omejdn:write') || @user_is_admin
@@ -545,7 +569,7 @@ end
 get '/api/v1/config/clients/:client_id' do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
-  halt 200, client.to_json
+  halt 200, client.to_dict.to_json
 end
 
 put '/api/v1/config/clients/:client_id' do

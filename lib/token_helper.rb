@@ -17,12 +17,12 @@ end
 class TokenHelper
   def server_key; end
 
-  def self.build_access_token_stub(attrs, client, scopes)
+  def self.build_access_token_stub(attrs, client, scopes, resources)
     base_config = Config.base_config
     now = Time.new.to_i
     {
       'scope' => (scopes.join ' '),
-      'aud' => base_config['token']['audience'],
+      'aud' => resources,
       'iss' => base_config['token']['issuer'],
       'nbf' => now,
       'iat' => now,
@@ -33,14 +33,14 @@ class TokenHelper
   end
 
   # Builds a JWT access token for client including scopes and attributes
-  def self.build_access_token(client, scopes, user)
+  def self.build_access_token(client, scopes, resources, user)
     # Use user attributes if we have a user context, else use client
     # attributes.
     if user
-      new_payload = build_access_token_stub(user.attributes, client, scopes)
+      new_payload = build_access_token_stub(user.attributes, client, scopes, resources)
       new_payload['sub'] = user.username
     else
-      new_payload = build_access_token_stub(client.attributes, client, scopes)
+      new_payload = build_access_token_stub(client.attributes, client, scopes, resources)
       new_payload['sub'] = client.client_id if user.nil?
     end
     JWT.encode new_payload, Server.load_key('token'), 'RS256', { typ: 'at+jwt', kid: 'default' }
