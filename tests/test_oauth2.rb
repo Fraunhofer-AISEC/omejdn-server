@@ -168,6 +168,23 @@ class OAuth2Test < Test::Unit::TestCase
     assert_equal at['sub'], at['client_id']
   end
 
+  def test_client_credentials_scope_rejection
+    additional_scopes = ' abc'
+    response = request_client_credentials @client, "ES256", @priv_key_ec256, @certificate_ec256, additional_scopes
+    at = extract_access_token response
+
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
+    assert_equal at['scope'], 'omejdn:write'
+    assert_equal at['aud'], [config_testsetup['token']['audience'], config_testsetup['host']+'/api']
+    assert_equal at['iss'], config_testsetup['token']['issuer']
+    assert       at['nbf'] <= Time.new.to_i
+    assert_equal at['iat'], at['nbf']
+    assert_equal at['exp'], at['nbf']+response["expires_in"]
+    assert       at['jti']
+    assert_equal at['client_id'], @client.client_id
+    assert_equal at['sub'], at['client_id']
+  end
+
   def test_algorithms
     request_client_credentials @client, "ES256", @priv_key_ec256, @certificate_ec256
     request_client_credentials @client, "ES512", @priv_key_ec512, @certificate_ec512

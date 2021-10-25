@@ -93,14 +93,12 @@ class Client
     result
   end
 
-  def allowed_scoped_attributes(scopes)
-    attrs = []
-    Config.scope_mapping_config.each do |scope|
-      next unless scopes.include?(scope[0]) && allowed_scopes.include?(scope[0])
+  def filter_scopes(scopes)
+    (scopes || []).select { |s| allowed_scopes.include? s }
+  end
 
-      attrs += scope[1]
-    end
-    attrs
+  def allowed_scoped_attributes(scopes)
+    filter_scopes(scopes).map { |s| Config.scope_mapping_config[s] }.compact.flatten.uniq
   end
 
   def resources_allowed?(resources)
