@@ -93,6 +93,7 @@ class SelfsServiceApiTest < Test::Unit::TestCase
         'issuer' => 'http://localhost:4567'
       },
       'user_backend' => ['yaml'],
+      'user_backend_default' => 'yaml',
       'user_selfservice' => {
         'enabled' => true,
         'allow_deletion' => true,

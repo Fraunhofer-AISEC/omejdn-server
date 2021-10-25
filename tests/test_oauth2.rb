@@ -94,7 +94,8 @@ class OAuth2Test < Test::Unit::TestCase
         'algorithm' => 'RS256',
         'issuer' => 'http://localhost:4567'
       },
-      'user_backend' => ['yaml']
+      'user_backend' => ['yaml'],
+      'user_backend_default' => 'yaml'
     }
   end
 
