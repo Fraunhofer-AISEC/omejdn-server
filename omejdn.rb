@@ -107,7 +107,7 @@ if ENV['OMEJDN_ADMIN']
     admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
                         { 'key' => 'name', 'value' => 'Admin' }]
     admin.password = BCrypt::Password.create(admin_pw)
-    User.add_user(admin, 'yaml')
+    User.add_user(admin, Config.base_config['user_backend_default'])
   else
     admin.password = BCrypt::Password.create(admin_pw)
     User.update_user(admin)
@@ -504,7 +504,7 @@ end
 post '/api/v1/config/users' do
   json = JSON.parse request.body.read
   user = User.from_json(json)
-  User.add_user(user, json['userBackend'] || 'yaml')
+  User.add_user(user, json['userBackend'] || Config.base_config['user_backend_default'])
   halt 201
 end
 

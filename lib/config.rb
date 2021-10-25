@@ -44,23 +44,7 @@ class Config
   end
 
   def self.user_backend_config=(config)
-    user_backend_yaml = {
-      'admin' => {
-        'location' => config['admin'] ['location']
-      },
-      'yaml' => {
-        'location' => config['yaml'] ['location']
-      },
-      'sqlite' => {
-        'location' => config['sqlite'] ['location']
-      },
-      'ldap' => {
-        'host' => config['ldap'] ['host'],
-        'port' => config['ldap'] ['port'],
-        'treebase' => config['ldap'] ['treebase']
-      }
-    }
-    write_config OMEJDN_USER_BACKEND_CONFIG, user_backend_yaml.to_yaml
+    write_config OMEJDN_USER_BACKEND_CONFIG, config.to_yaml
   end
 
   def self.oauth_provider_config

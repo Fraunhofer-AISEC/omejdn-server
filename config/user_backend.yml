@@ -1,7 +1,7 @@
 ---
 # You may configure user storage backends here
 
-# YAML (required)
+# YAML
 yaml:
   # Location of the YAML file
   location: config/users.yml

@@ -21,6 +21,8 @@ id_token:
 # Enabled user backends (can be configured in user_backend.yml)
 user_backend:
 - yaml
+# Default user backend
+user_backend_default: yaml
 
 # User Selfservice API
 user_selfservice:
