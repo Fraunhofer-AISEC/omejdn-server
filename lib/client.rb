@@ -31,7 +31,7 @@ class Client
           client.certificate = OpenSSL::X509::Certificate.new File.read ccnf['import_certfile']
           needs_save = true
         rescue StandardError => e
-          p "Unable to load key ``#{filename}'': #{e}"
+          p "Unable to load key ``#{ccnf['import_certfile']}'': #{e}"
         end
       end
       client
