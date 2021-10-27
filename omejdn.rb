@@ -553,6 +553,7 @@ put '/api/v1/config/clients' do
     client.attributes = c['attributes']
     client.allowed_scopes = c['allowed_scopes']
     client.redirect_uri = c['redirect_uri']
+    client.allowed_resources = c['allowed_resources']
     clients << client
   end
   Config.client_config = clients
