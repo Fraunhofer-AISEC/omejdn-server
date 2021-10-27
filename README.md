@@ -15,6 +15,8 @@ the [Industrial Data Space](https://industrial-data-space.github.io/trusted-conn
 under the hood to support research projects.
 It is **NOT** a production grade solution and should not be used as such.
 
+Before updating, please take a look at `release_notes.md` to see if an update requires manual intervention.
+
 ## Table of Contents
 
 - [Supported Standards](#spec)
