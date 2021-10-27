@@ -107,7 +107,7 @@ if ENV['OMEJDN_ADMIN']
     admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
                         { 'key' => 'name', 'value' => 'Admin' }]
     admin.password = BCrypt::Password.create(admin_pw)
-    User.add_user(admin, 'yaml')
+    User.add_user(admin, Config.base_config['user_backend_default'])
   else
     admin.password = BCrypt::Password.create(admin_pw)
     User.update_user(admin)
@@ -141,6 +141,7 @@ post '/token' do
     halt 400, OAuthHelper.error_response('invalid_client', 'Assertion missing') if jwt.nil?
     client = Client.find_by_jwt jwt
     halt 400, OAuthHelper.error_response('invalid_client', 'Client unknown') if client.nil?
+    scopes = client.filter_scopes(params[:scope]&.split) || []
     resources = [Config.base_config['token']['audience']] if resources.empty?
     halt 400, OAuthHelper.error_response('invalid_target', '') unless client.resources_allowed? resources
 
@@ -152,15 +153,17 @@ post '/token' do
       unless OAuthHelper.validate_pkce(RequestCache.get[code][:pkce],
                                        params[:code_verifier],
                                        RequestCache.get[code][:pkce_method])
-        halt 400,
-             OAuthHelper.error_response('invalid_request', 'Code verifier mismatch')
+        halt 400, OAuthHelper.error_response('invalid_request', 'Code verifier mismatch')
       end
     end
     client = Client.find_by_id params[:client_id]
     halt 400, OAuthHelper.error_response('invalid_client', 'No client_id given') if client.nil?
     halt 400, OAuthHelper.error_response('invalid_code', '') if code.nil?
     halt 400, OAuthHelper.error_response('invalid_code', '') unless RequestCache.get.keys.include?(code)
-    scopes = RequestCache.get[code][:scopes] unless RequestCache.get[code][:scopes].nil?
+    scopes = client.filter_scopes(params[:scope]&.split) || RequestCache.get[code][:scopes] || []
+    halt 400, OAuthHelper.error_response('invalid_scope', '') unless scopes.reject do |s|
+                                                                       RequestCache.get[code][:scopes].include? s
+                                                                     end.empty?
     resources = RequestCache.get[code][:resources] if resources.empty?
     halt 400, OAuthHelper.error_response('invalid_target', '') unless resources.reject do |r|
                                                                         RequestCache.get[code][:resources].include? r
@@ -170,10 +173,9 @@ post '/token' do
     halt 400, OAuthHelper.error_response('unsupported_grant_type', "Given: #{params[:grant_type]}")
   end
   headers['Content-Type'] = 'application/json'
-  scopes = params[:scope]&.split if scopes.empty?
+  halt 400, OAuthHelper.error_response('access_denied', '') if scopes.empty?
   resources << ("#{Config.base_config['host']}/userinfo") if scopes.include? 'openid'
   resources << ("#{Config.base_config['host']}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
-  # FIXME: filter scopes! Clients that are not authorized must be notified.
   id_token_claims = {}
   if !RequestCache.get[code].nil? &&
      RequestCache.get[code][:claims].key?('id_token') &&
@@ -206,10 +208,7 @@ end
 
 # Handle authorization request
 get '/authorize' do
-  unless Config.base_config['openid']
-    status 404
-    return
-  end
+  halt 404 unless Config.base_config['openid']
   session[:url_params] = params
   redirect to("#{my_path}/login") if session['user'].nil?
   user = nil
@@ -220,11 +219,15 @@ get '/authorize' do
   user = UserSession.get[session['user']]
   halt 400, OAuthHelper.error_response('invalid_user', '') if user.nil?
 
+  client = Client.find_by_id params['client_id']
+  halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
+
   session[:scopes] = []
   scope_mapping = Config.scope_mapping_config
 
-  params[:scope].split.each do |s|
+  client.filter_scopes(params[:scope].split).each do |s|
     p "Checking scope #{s}"
+
     session[:scopes].push(s) if s == 'openid'
 
     # "key:value" scopes
@@ -244,8 +247,6 @@ get '/authorize' do
   end
   p "Granted scopes: #{session[:scopes]}"
   p "The user seems to be #{user.username}" if debug
-  client = Client.find_by_id params['client_id']
-  halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
 
   escaped_redir = CGI.unescape(params[:redirect_uri].gsub('%20', '+'))
   halt 400, OAuthHelper.error_response('invalid_redirect_uri', '') unless [client.redirect_uri,
@@ -504,7 +505,7 @@ end
 post '/api/v1/config/users' do
   json = JSON.parse request.body.read
   user = User.from_json(json)
-  User.add_user(user, json['userBackend'] || 'yaml')
+  User.add_user(user, json['userBackend'] || Config.base_config['user_backend_default'])
   halt 201
 end
 
@@ -552,6 +553,7 @@ put '/api/v1/config/clients' do
     client.attributes = c['attributes']
     client.allowed_scopes = c['allowed_scopes']
     client.redirect_uri = c['redirect_uri']
+    client.allowed_resources = c['allowed_resources']
     clients << client
   end
   Config.client_config = clients

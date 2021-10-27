@@ -7,6 +7,7 @@ require 'rack/test'
 require 'webrick/https'
 require_relative '../omejdn'
 require_relative '../lib/token_helper'
+require_relative 'config_testsetup'
 
 class OAuth2Test < Test::Unit::TestCase
   include Rack::Test::Methods
@@ -24,78 +25,17 @@ class OAuth2Test < Test::Unit::TestCase
     @certificate_ec512 = File.read './tests/test_resources/ec512.cert'
     @certificate_rsa = File.read './tests/test_resources/rsa.cert'
 
-    @backup_users   = File.read './config/users.yml'
-    @backup_clients = File.read './config/clients.yml'
-    @backup_omejdn  = File.read './config/omejdn.yml'
-    File.open('./config/users.yml', 'w')   { |file| file.write(users_testsetup.to_yaml) }
-    File.open('./config/clients.yml', 'w') { |file| file.write(clients_testsetup.to_yaml) }
-    File.open('./config/omejdn.yml', 'w')  { |file| file.write(config_testsetup.to_yaml) }
-    
+    TestSetup.setup
+
     @client  = Client.find_by_id 'testClient'
     @client2 = Client.find_by_id 'testClient2'
     @testCertificate = File.read './tests/test_resources/testClient.pem'
   end
 
   def teardown
-    File.open('./config/users.yml', 'w')   { |file| file.write(@backup_users) }
-    File.open('./config/clients.yml', 'w') { |file| file.write(@backup_clients) }
-    File.open('./config/omejdn.yml', 'w')  { |file| file.write(@backup_omejdn) }
+    TestSetup.teardown
     @client.certificate = nil
     @client2.certificate = nil
-  end
-
-  def users_testsetup
-    [{
-      'username' => 'testUser',
-      'attributes' => [
-        { 'key' => 'omejdn', 'value' => 'write' },
-        { 'key' => 'openid', 'value' => true },
-        { 'key' => 'profile', 'value' => true },
-        { 'key' => 'email', 'value' => 'admin@example.com' },
-        { 'key' => 'asdfasf', 'value' => 'asdfasf' },
-        { 'key' => 'exampleKey', 'value' => 'exampleValue' }
-      ],
-      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC' # "mypassword"
-    }]
-  end
-
-  def clients_testsetup
-    [{
-      'client_id' => 'testClient',
-      'name' => 'omejdn admin ui',
-      'allowed_scopes' => ['omejdn:write'],
-      'redirect_uri' => 'http://localhost:4200',
-      'attributes' => []
-    },
-     {
-       'client_id' => 'testClient2',
-       'name' => 'omejdn admin ui',
-       'allowed_scopes' => ['omejdn:write'],
-       'redirect_uri' => 'http://localhost:4200',
-       'attributes' => [],
-       'allowed_resources' => ['http://example.org','http://localhost:4567/api']
-     }]
-  end
-
-  def config_testsetup
-    {
-      'host' => 'http://localhost:4567',
-      'openid' => true,
-      'token' => {
-        'expiration' => 3600,
-        'signing_key' => 'omejdn_priv.pem',
-        'algorithm' => 'RS256',
-        'audience' => 'TestServer',
-        'issuer' => 'http://localhost:4567'
-      },
-      'id_token' => {
-        'expiration' => 3600,
-        'signing_key' => 'omejdn_priv.pem',
-        'algorithm' => 'RS256',
-        'issuer' => 'http://localhost:4567'
-      },
-      'user_backend' => ['yaml']
-    }
   end
 
   def request_client_credentials(client, alg, key, certificate, query_additions='', should_work=true)
@@ -119,15 +59,15 @@ class OAuth2Test < Test::Unit::TestCase
 
   def extract_access_token(response)
     check_keys response, ["access_token","expires_in","token_type","scope"]
-    assert_equal response["expires_in"], config_testsetup['token']['expiration']
+    assert_equal response["expires_in"], TestSetup.config['token']['expiration']
     assert_equal response["token_type"], "bearer"
     assert_equal response["scope"], "omejdn:write"
 
-    jwt = JWT.decode(response['access_token'], Server.load_key.public_key, true, { algorithm: config_testsetup['token']['algorithm'] })
+    jwt = JWT.decode(response['access_token'], Server.load_key.public_key, true, { algorithm: TestSetup.config['token']['algorithm'] })
     check_keys jwt[1], ['typ','kid','alg']
     assert_equal jwt[1]['typ'], 'at+jwt'
     assert_equal jwt[1]['kid'], 'default'
-    assert_equal jwt[1]['alg'], config_testsetup['token']['algorithm']
+    assert_equal jwt[1]['alg'], TestSetup.config['token']['algorithm']
 
     return jwt[0]
   end
@@ -138,8 +78,8 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], [config_testsetup['token']['audience'], config_testsetup['host']+'/api']
-    assert_equal at['iss'], config_testsetup['token']['issuer']
+    assert_equal at['aud'], [TestSetup.config['token']['audience'], TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config['token']['issuer']
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
     assert_equal at['exp'], at['nbf']+response["expires_in"]
@@ -157,13 +97,30 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], ['http://example.org', config_testsetup['host']+'/api']
-    assert_equal at['iss'], config_testsetup['token']['issuer']
+    assert_equal at['aud'], ['http://example.org', TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config['token']['issuer']
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
     assert_equal at['exp'], at['nbf']+response["expires_in"]
     assert       at['jti']
     assert_equal at['client_id'], @client2.client_id
+    assert_equal at['sub'], at['client_id']
+  end
+
+  def test_client_credentials_scope_rejection
+    additional_scopes = ' abc'
+    response = request_client_credentials @client, "ES256", @priv_key_ec256, @certificate_ec256, additional_scopes
+    at = extract_access_token response
+
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
+    assert_equal at['scope'], 'omejdn:write'
+    assert_equal at['aud'], [TestSetup.config['token']['audience'], TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config['token']['issuer']
+    assert       at['nbf'] <= Time.new.to_i
+    assert_equal at['iat'], at['nbf']
+    assert_equal at['exp'], at['nbf']+response["expires_in"]
+    assert       at['jti']
+    assert_equal at['client_id'], @client.client_id
     assert_equal at['sub'], at['client_id']
   end
 
@@ -213,42 +170,42 @@ class OAuth2Test < Test::Unit::TestCase
   end
 
   def test_authorization_flow
-    response = request_authorization users_testsetup[0], @client
+    response = request_authorization TestSetup.users[0], @client
     at = extract_access_token response
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], [config_testsetup['token']['audience'], config_testsetup['host']+'/api']
-    assert_equal at['iss'], config_testsetup['token']['issuer']
+    assert_equal at['aud'], [TestSetup.config['token']['audience'], TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config['token']['issuer']
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
     assert_equal at['exp'], at['nbf']+response["expires_in"]
     assert       at['jti']
     assert_equal at['client_id'], @client.client_id
-    assert_equal at['sub'], users_testsetup[0]['username']
+    assert_equal at['sub'], TestSetup.users[0]['username']
     assert_equal 'write', at['omejdn']
   end
 
   def test_authorization_flow_with_bad_resources
     resources = '&resource=a&resource=b'
-    response = request_authorization users_testsetup[0], @client2, resources, false
+    response = request_authorization TestSetup.users[0], @client2, resources, false
   end
 
   def test_authorization_flow_with_resources
     resources = '&resource=http://example.org'
-    response = request_authorization users_testsetup[0], @client2, resources
+    response = request_authorization TestSetup.users[0], @client2, resources
     at = extract_access_token response
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], ['http://example.org', config_testsetup['host']+'/api']
-    assert_equal at['iss'], config_testsetup['token']['issuer']
+    assert_equal at['aud'], ['http://example.org', TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config['token']['issuer']
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
     assert_equal at['exp'], at['nbf']+response["expires_in"]
     assert       at['jti']
     assert_equal at['client_id'], @client2.client_id
-    assert_equal at['sub'], users_testsetup[0]['username']
+    assert_equal at['sub'], TestSetup.users[0]['username']
     assert_equal 'write', at['omejdn']
   end
 end
