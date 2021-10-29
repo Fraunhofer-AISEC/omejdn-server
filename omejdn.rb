@@ -13,7 +13,7 @@ require_relative './lib/oauth_helper'
 require_relative './lib/user_db'
 require 'sinatra'
 require 'sinatra/cookies'
-require 'sinatra/cors'
+# require 'sinatra/cors'
 require 'sinatra/activerecord'
 require 'securerandom'
 require 'json/jwt'
@@ -116,6 +116,17 @@ if ENV['OMEJDN_ADMIN']
 end
 
 before do
+  headers['Access-Control-Allow-Origin'] = Config.base_config['allow_origin']
+  headers['Access-Control-Allow-Headers'] = 'content-type,if-modified-since, authorization'
+  if request.env['REQUEST_METHOD'] == 'OPTIONS'
+    options = (%w[HEAD GET POST PUT DELETE].reject do |verb|
+      settings.routes[verb].select { |r, _c, _b| request.path_info == '*' || !r.match(request.path_info).nil? }.empty?
+    end)
+    halt 404 if options.empty?
+    headers['Allow'] = options.join(',')
+    headers['Content-Type'] ||= 'text/html'
+    halt 200, options.join(',')
+  end
   # Sinatra does not parse multiple values to params as arrays.
   # This line fixes this
   params.merge!(CGI.parse(request.query_string).transform_values { |v| v.length == 1 ? v[0] : v })
@@ -125,8 +136,6 @@ before do
          request.get_header('HTTP_ORIGIN').start_with?('moz-extension://')
     return
   end
-  
-  response.headers['Access-Control-Allow-Origin'] = request.get_header('HTTP_ORIGIN').to_s
 end
 
 # Handle token request
