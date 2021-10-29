@@ -60,7 +60,7 @@ class Client
 
   def self.find_by_jwt(jwt)
     clients = load_clients
-    puts "looking for client of #{jwt}" if ENV['APP_ENV'] != 'production'
+    puts "looking for client of #{jwt}" if Config.base_config['app_env'] != 'production'
     jwt_alg, jwt_cid = extract_jwt_cid jwt
     return nil if jwt_cid.nil?
 
@@ -69,12 +69,12 @@ class Client
 
       puts "Client #{jwt_cid} found"
       # Try verify
-      aud = ENV['OMEJDN_JWT_AUD_OVERRIDE'] || ENV['HOST'] || Config.base_config['host']
+      aud = ENV['OMEJDN_JWT_AUD_OVERRIDE'] || Config.base_config['host']
       JWT.decode jwt, client.certificate&.public_key, true,
                  { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_alg }
       return client
     rescue StandardError => e
-      puts "Tried #{client.name}: #{e}" if ENV['APP_ENV'] != 'production'
+      puts "Tried #{client.name}: #{e}" if Config.base_config['app_env'] != 'production'
       return nil
     end
     puts "ERROR: Client #{jwt_cid} does not exist"

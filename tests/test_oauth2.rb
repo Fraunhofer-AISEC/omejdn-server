@@ -1,7 +1,4 @@
 # frozen_string_literal: true
-
-ENV['APP_ENV'] = 'test'
-
 require 'test/unit'
 require 'rack/test'
 require 'webrick/https'
