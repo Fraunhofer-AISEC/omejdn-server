@@ -13,7 +13,7 @@ require_relative './lib/oauth_helper'
 require_relative './lib/user_db'
 require 'sinatra'
 require 'sinatra/cookies'
-require 'sinatra/cors'
+# require 'sinatra/cors'
 require 'sinatra/activerecord'
 require 'securerandom'
 require 'json/jwt'
@@ -30,20 +30,21 @@ def version
   'unknown'
 end
 
+# account for environment overrides
+base_config = Config.base_config
+base_config['host'] = ENV['HOST'] || base_config['host']
+base_config['path_prefix'] = ENV['OMEJDN_PATH_PREFIX'] || base_config['path_prefix'] || ''
+base_config['bind_to'] = ENV['BIND_TO'] || base_config['bind_to'] || '0.0.0.0'
+base_config['allow_origin'] = ENV['ALLOW_ORIGIN'] || base_config['allow_origin'] || '*'
+base_config['app_env'] = ENV['APP_ENV'] || base_config['app_env'] || 'debug'
+Config.base_config = base_config
+
 def debug
-  ENV['APP_ENV'] != 'production'
-end
-
-def host
-  ENV['HOST'] || Config.base_config['host']
-end
-
-def my_prefix
-  ENV['OMEJDN_PATH_PREFIX'] || ''
+  Config.base_config['app_env'] != 'production'
 end
 
 def my_path
-  host + my_prefix
+  Config.base_config['host'] + Config.base_config['path_prefix']
 end
 
 configure do
@@ -52,12 +53,12 @@ configure do
   set :show_exceptions, debug && ENV['HOST']
 end
 
-set :bind, ENV['BIND_TO'] || '0.0.0.0'
+set :bind, Config.base_config['bind_to']
 enable :sessions
-set :sessions, secure: (host.start_with? 'https://')
+set :sessions, secure: (Config.base_config['host'].start_with? 'https://')
 set :session_store, Rack::Session::Pool
 
-set :allow_origin, ENV['ALLOW_ORIGIN'] || 'http://localhost:4200'
+set :allow_origin, Config.base_config['allow_origin']
 set :allow_methods, 'GET,HEAD,POST,PUT,DELETE'
 set :allow_headers, 'content-type,if-modified-since, authorization'
 set :expose_headers, 'location,link'
@@ -115,6 +116,17 @@ if ENV['OMEJDN_ADMIN']
 end
 
 before do
+  headers['Access-Control-Allow-Origin'] = Config.base_config['allow_origin']
+  headers['Access-Control-Allow-Headers'] = 'content-type,if-modified-since, authorization'
+  if request.env['REQUEST_METHOD'] == 'OPTIONS'
+    options = (%w[HEAD GET POST PUT DELETE].reject do |verb|
+      settings.routes[verb].select { |r, _c, _b| request.path_info == '*' || !r.match(request.path_info).nil? }.empty?
+    end)
+    halt 404 if options.empty?
+    headers['Allow'] = options.join(',')
+    headers['Content-Type'] ||= 'text/html'
+    halt 200, options.join(',')
+  end
   # Sinatra does not parse multiple values to params as arrays.
   # This line fixes this
   params.merge!(CGI.parse(request.query_string).transform_values { |v| v.length == 1 ? v[0] : v })
@@ -124,8 +136,6 @@ before do
          request.get_header('HTTP_ORIGIN').start_with?('moz-extension://')
     return
   end
-
-  response.headers['Access-Control-Allow-Origin'] = request.get_header('HTTP_ORIGIN').to_s
 end
 
 # Handle token request
@@ -160,7 +170,8 @@ post '/token' do
     halt 400, OAuthHelper.error_response('invalid_client', 'No client_id given') if client.nil?
     halt 400, OAuthHelper.error_response('invalid_code', '') if code.nil?
     halt 400, OAuthHelper.error_response('invalid_code', '') unless RequestCache.get.keys.include?(code)
-    scopes = client.filter_scopes(params[:scope]&.split) || RequestCache.get[code][:scopes] || []
+    scopes = client.filter_scopes(params[:scope]&.split)
+    scopes = RequestCache.get[code][:scopes] || [] if scopes.empty?
     halt 400, OAuthHelper.error_response('invalid_scope', '') unless scopes.reject do |s|
                                                                        RequestCache.get[code][:scopes].include? s
                                                                      end.empty?
@@ -202,8 +213,8 @@ end
 
 get '/.well-known/openid-configuration' do
   headers['Content-Type'] = 'application/json'
-  p "Host #{host},#{my_path}"
-  JSON.generate OAuthHelper.openid_configuration(host, my_path)
+  p "Host #{Config.base_config['host']},#{my_path}"
+  JSON.generate OAuthHelper.openid_configuration(Config.base_config['host'], my_path)
 end
 
 # Handle authorization request
@@ -322,11 +333,13 @@ end
 
 get '/logout' do
   session['user'] = nil
-  redirect to("#{my_path}/login")
+  redirect_uri = params['post_logout_redirect_uri'] || "#{my_path}/login"
+  redirect to(redirect_uri)
 end
 
 post '/logout' do
-  redirect_uri = session['post_logout_redirect_uri']
+  session['user'] = nil
+  redirect_uri = params['post_logout_redirect_uri'] || "#{my_path}/login"
   redirect to(redirect_uri)
 end
 

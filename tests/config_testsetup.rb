@@ -60,6 +60,9 @@ class TestSetup
   def self.config
     {
       'host' => 'http://localhost:4567',
+      'bind_to' => '0.0.0.0',
+      'path_prefix' => '',
+      'app_env' => 'test',
       'openid' => true,
       'token' => {
         'expiration' => 3600,
