@@ -187,7 +187,7 @@ post '/token' do
     user = RequestCache.get[code][:user] unless RequestCache.get[code].nil?
     # https://tools.ietf.org/html/draft-bertocci-oauth-access-token-jwt-00#section-2.2
     access_token = TokenHelper.build_access_token client, scopes, resources, user
-    if scopes.include?('openid')
+    if scopes.include?('openid') && Config.base_config['openid']
       id_token = TokenHelper.build_id_token client, user,
                                             RequestCache.get[code][:nonce],
                                             id_token_claims, scopes
@@ -344,8 +344,7 @@ get '/login' do
       providers.push({ url: url.to_s, name: provider['name'], logo: provider['logo'] })
     end
   end
-  no_password_login = Config.base_config['no_password_login']
-  no_password_login = false if no_password_login.nil?
+  no_password_login = Config.base_config['no_password_login'] || false
   return haml :login, locals: {
     no_password_login: no_password_login,
     host: my_path,
@@ -719,7 +718,7 @@ get '/.well-known/webfinger' do
   halt 400 unless res.start_with? 'acct:'
 
   email = res[5..-1]
-  YAML.load_file('config/webfinger.yml').each do |wfhost, _|
+  Config.webfinger_config.each do |wfhost, _|
     next unless email.end_with? "@#{wfhost}"
 
     return JSON.generate(

@@ -35,7 +35,7 @@ class Config
   def self.base_config=(config)
     # Make sure those are integers
     config['token']['expiration'] = config['token']['expiration'].to_i
-    config['id_token']['expiration'] = config['token']['expiration'].to_i
+    config['id_token']['expiration'] = config['id_token']['expiration'].to_i if config['id_token'] && config['id_token']['expiration']
     write_config OMEJDN_BASE_CONFIG_FILE, config.to_yaml
   end
 
