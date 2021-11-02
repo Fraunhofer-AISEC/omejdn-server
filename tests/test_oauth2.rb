@@ -1,13 +1,10 @@
 # frozen_string_literal: true
-
-ENV['APP_ENV'] = 'test'
-
 require 'test/unit'
 require 'rack/test'
 require 'webrick/https'
+require_relative 'config_testsetup'
 require_relative '../omejdn'
 require_relative '../lib/token_helper'
-require_relative 'config_testsetup'
 
 class OAuth2Test < Test::Unit::TestCase
   include Rack::Test::Methods
@@ -29,6 +26,7 @@ class OAuth2Test < Test::Unit::TestCase
 
     @client  = Client.find_by_id 'testClient'
     @client2 = Client.find_by_id 'testClient2'
+    @client_dyn_claims = Client.find_by_id 'dynamic_claims'
     @testCertificate = File.read './tests/test_resources/testClient.pem'
   end
 
@@ -124,6 +122,34 @@ class OAuth2Test < Test::Unit::TestCase
     assert_equal at['sub'], at['client_id']
   end
 
+  def test_client_credentials_dynamic_claims
+    requested_claims = {
+      '*' => {
+        'dynattribute'=> { # should be included
+          'value' => 'myvalue'
+        },
+        'nondynattribute'=> { # should get rejected
+          'value' => 'myvalue'
+        }
+      }
+    }
+    query_additions = '&claims='+URI.encode_www_form_component(requested_claims.to_json)
+    response = request_client_credentials @client_dyn_claims, "ES256", @priv_key_ec256, @certificate_ec256, query_additions
+    at = extract_access_token response
+
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'dynattribute']
+    assert_equal at['scope'], 'omejdn:write'
+    assert_equal at['aud'], [TestSetup.config['token']['audience'], TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config['token']['issuer']
+    assert       at['nbf'] <= Time.new.to_i
+    assert_equal at['iat'], at['nbf']
+    assert_equal at['exp'], at['nbf']+response["expires_in"]
+    assert       at['jti']
+    assert_equal at['client_id'], @client_dyn_claims.client_id
+    assert_equal at['sub'], at['client_id']
+    assert_equal at['dynattribute'], requested_claims['*']['dynattribute']['value']
+  end
+
   def test_algorithms
     request_client_credentials @client, "ES256", @priv_key_ec256, @certificate_ec256
     request_client_credentials @client, "ES512", @priv_key_ec512, @certificate_ec512
@@ -207,5 +233,34 @@ class OAuth2Test < Test::Unit::TestCase
     assert_equal at['client_id'], @client2.client_id
     assert_equal at['sub'], TestSetup.users[0]['username']
     assert_equal 'write', at['omejdn']
+  end
+
+  def test_authorization_flow_with_claims
+    requested_claims = {
+      '*' => {
+        'dynattribute'=> { # should be included
+          'value' => 'myvalue'
+        },
+        'nondynattribute'=> { # should get rejected
+          'value' => 'myvalue'
+        }
+      }
+    }
+    query_additions = '&claims='+URI.encode_www_form_component(requested_claims.to_json)
+    response = request_authorization TestSetup.users[2], @client, query_additions
+    at = extract_access_token response
+
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn', 'dynattribute']
+    assert_equal at['scope'], 'omejdn:write'
+    assert_equal at['aud'], [TestSetup.config['token']['audience'], TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config['token']['issuer']
+    assert       at['nbf'] <= Time.new.to_i
+    assert_equal at['iat'], at['nbf']
+    assert_equal at['exp'], at['nbf']+response["expires_in"]
+    assert       at['jti']
+    assert_equal at['client_id'], @client.client_id
+    assert_equal at['sub'], TestSetup.users[2]['username']
+    assert_equal 'write', at['omejdn']
+    assert_equal at['dynattribute'], requested_claims['*']['dynattribute']['value']
   end
 end

@@ -33,6 +33,11 @@ This server implements:
 
   - [RFC7523 JWT bearer client authentication](https://tools.ietf.org/html/rfc7523#section-2.2) for [OAuth2](https://tools.ietf.org/html/rfc6749).
   - [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) with [discovery support](https://openid.net/specs/openid-connect-discovery-1_0.html) and [dynamic client registration](https://openid.net/specs/openid-connect-registration-1_0.html)
+  - [RFC8707 Resource Indicators](https://datatracker.ietf.org/doc/html/rfc8707) for [OAuth 2.0](https://tools.ietf.org/html/rfc6749)
+
+Supported non-Standards:
+  
+  - [draft-spencer-oauth-claims-00](https://tools.ietf.org/id/draft-spencer-oauth-claims-00.html#rfc.section.3)
 
 **NOTE**: Omejdn only implements *two* grant types:
 
@@ -71,7 +76,7 @@ By default, omejdn uses the following directory structure for configurations and
         \_   ...
 
 You may use the default configurations from this repository as a starting
-point and create your own setup accordingly.
+point and create your own setup accordingly. Please refer to [the wiki](https://github.com/Fraunhofer-AISEC/omejdn-server/wiki/) for a description of available configuration options.
 In order to start the omejdn service, you need to install the dependencies and
 run it:
 
@@ -111,6 +116,10 @@ for testing, your can execute:
 
     - APP_ENV: May be set to 'production' to prevent debug output such as logging sensitive information to stdout.
     - HOST: May be set to modify the host config variable (useful for docker-compose deployments)
+    - OMEJDN_PATH_PREFIX: May be set to modify the path_prefix config variable
+    - BIND_TO: May be set to modify the bind_to config variable
+    - ALLOW_ORIGIN: May be set to modify the allow_origin config variable
+    - OMEJDN_ADMIN: May be set to username:password to create an admin user
     - OMEJDN_JWT_AUD_OVERRIDE: May be set to modify the expected 'aud' claim in a JWT assertion in a client_credentials flow. The standard usually expects the claim to contain the host, hence use this only if necessary.
 
 Setting the environment variables depends on how you run the service.
@@ -134,26 +143,10 @@ In order to generate your own key pair with a self-signed pulic key
 for testing, your can execute:
 
     $ openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -keyout key.pem -out cert.pem
-    $ cp cert.pem keys/<clientID>.cert
 
 You may choose any valid filename for the certificate.
 Then, you need to add your client ***clientID*** to the config file
-`config/clients.yml`:
-
-    - clientID: <client_id>
-      name: My Client
-      redirect_uri: <uri> (optional, required for OIDC)
-      allowed_scopes:
-        - <scope1>
-        - <scope2>
-        - ...
-      attributes:
-        - key: Attribute1-name
-          value: Attribute1-value (single value or array)
-        - key: Attribute2-name
-          value: Attribute2-value (single value or array)
-      certfile: <optional, the certificate file to use under keys/>
-
+`config/clients.yml` as described [in the Wiki](https://github.com/Fraunhofer-AISEC/omejdn-server/wiki/clients.yml---The-client-database).
 
 ### Adding a user
 

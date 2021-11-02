@@ -1,13 +1,10 @@
 # frozen_string_literal: true
-
-ENV['APP_ENV'] = 'test'
-
 require 'test/unit'
 require 'rack/test'
 require 'webrick/https'
+require_relative 'config_testsetup'
 require_relative '../omejdn'
 require_relative '../lib/token_helper'
-require_relative 'config_testsetup'
 
 class AdminApiTest < Test::Unit::TestCase
   include Rack::Test::Methods
@@ -20,8 +17,8 @@ class AdminApiTest < Test::Unit::TestCase
     TestSetup.setup
     
     client = Client.find_by_id 'testClient'
-    @token = TokenHelper.build_access_token client, ['omejdn:admin'], TestSetup.config['host']+"/api", nil
-    @insufficient_token = TokenHelper.build_access_token client, ['omejdn:write'], "test", nil
+    @token = TokenHelper.build_access_token client, ['omejdn:admin'], TestSetup.config['host']+"/api", nil, {}
+    @insufficient_token = TokenHelper.build_access_token client, ['omejdn:write'], "test", nil, {}
     @testCertificate = File.read './tests/test_resources/testClient.pem'
   end
 

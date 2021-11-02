@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+# Always load this BEFORE omejdn.rb
+ENV['OMEJDN_IGNORE_ENV'] = "true"
+
+
 class TestSetup
 
   def self.setup
@@ -36,6 +40,14 @@ class TestSetup
         { 'key' => 'omejdn', 'value' => 'write' }
       ],
       'password' => '$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi'
+    },
+    {
+      'username' => 'dynamic_claims',
+      'attributes' => [
+        { 'key' => 'omejdn', 'value' => 'write' },
+        { 'key' => 'dynattribute', 'dynamic' => true }
+      ],
+      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC'
     }]
   end
 
@@ -54,12 +66,23 @@ class TestSetup
        'redirect_uri' => 'http://localhost:4200',
        'attributes' => [],
        'allowed_resources' => ['http://example.org','http://localhost:4567/api']
-     }]
+     },{
+      'client_id' => 'dynamic_claims',
+      'name' => 'omejdn admin ui',
+      'allowed_scopes' => ['omejdn:write'],
+      'redirect_uri' => 'http://localhost:4200',
+      'attributes' => [
+        { 'key' => 'dynattribute', 'dynamic' => true }
+      ]
+    }]
   end
 
   def self.config
     {
       'host' => 'http://localhost:4567',
+      'bind_to' => '0.0.0.0',
+      'path_prefix' => '',
+      'app_env' => 'test',
       'openid' => true,
       'token' => {
         'expiration' => 3600,

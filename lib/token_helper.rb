@@ -17,7 +17,7 @@ end
 class TokenHelper
   def server_key; end
 
-  def self.build_access_token_stub(attrs, client, scopes, resources)
+  def self.build_access_token_stub(attrs, client, scopes, resources, claims)
     base_config = Config.base_config
     now = Time.new.to_i
     {
@@ -29,18 +29,18 @@ class TokenHelper
       'jti' => Base64.urlsafe_encode64(rand(2**64).to_s),
       'exp' => now + base_config['token']['expiration'],
       'client_id' => client.client_id
-    }.merge(map_claims_to_userinfo(attrs, [], client, scopes))
+    }.merge(map_claims_to_userinfo(attrs, claims, client, scopes))
   end
 
   # Builds a JWT access token for client including scopes and attributes
-  def self.build_access_token(client, scopes, resources, user)
+  def self.build_access_token(client, scopes, resources, user, claims)
     # Use user attributes if we have a user context, else use client
     # attributes.
     if user
-      new_payload = build_access_token_stub(user.attributes, client, scopes, resources)
+      new_payload = build_access_token_stub(user.attributes, client, scopes, resources, claims)
       new_payload['sub'] = user.username
     else
-      new_payload = build_access_token_stub(client.attributes, client, scopes, resources)
+      new_payload = build_access_token_stub(client.attributes, client, scopes, resources, claims)
       new_payload['sub'] = client.client_id if user.nil?
     end
     JWT.encode new_payload, Server.load_key('token'), 'RS256', { typ: 'at+jwt', kid: 'default' }
@@ -62,21 +62,26 @@ class TokenHelper
 
   def self.map_claims_to_userinfo(attrs, claims, client, scopes)
     new_payload = {}
-    attrs.each do |attribute|
-      # Add attribute if it was specifically requested through OIDC
-      # claims parameter.
-      if !claims.empty? &&
-         claims.key?(attribute['key']) &&
-         !claims[attribute['key']].nil?
-        add_jwt_claim(new_payload, attribute['key'], attribute['value'])
-        next
+
+    # Add attribute if it was requested indirectly through OIDC
+    # scope and scope is allowed for client.
+    allowed_scoped_attrs = client.allowed_scoped_attributes(scopes)
+    attrs.select { |a| allowed_scoped_attrs.include?(a['key']) }
+         .each { |a| add_jwt_claim(new_payload, a['key'], a['value']) }
+    return new_payload if claims.empty?
+
+    # Add attribute if it was specifically requested through OIDC
+    # claims parameter.
+    attrs.each do |attr|
+      next unless claims.key?(attr['key']) && !claims[attr['key']].nil?
+
+      if    attr['dynamic'] && claims[attr['key']]['value']
+        add_jwt_claim(new_payload, attr['key'], claims[attr['key']]['value'])
+      elsif attr['dynamic'] && claims[attr['key']]['values']
+        add_jwt_claim(new_payload, attr['key'], claims[attr['key']]['values'][0])
+      elsif attr['value']
+        add_jwt_claim(new_payload, attr['key'], attr['value'])
       end
-
-      # Add attribute if it was requested indirectly through OIDC
-      # scope and scope is allowed for client.
-      next unless client.allowed_scoped_attributes(scopes).include?(attribute['key'])
-
-      add_jwt_claim(new_payload, attribute['key'], attribute['value'])
     end
     new_payload
   end

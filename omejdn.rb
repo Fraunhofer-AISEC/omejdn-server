@@ -13,7 +13,7 @@ require_relative './lib/oauth_helper'
 require_relative './lib/user_db'
 require 'sinatra'
 require 'sinatra/cookies'
-require 'sinatra/cors'
+# require 'sinatra/cors'
 require 'sinatra/activerecord'
 require 'securerandom'
 require 'json/jwt'
@@ -31,20 +31,45 @@ def version
 end
 
 def debug
-  ENV['APP_ENV'] != 'production'
-end
-
-def host
-  ENV['HOST'] || Config.base_config['host']
-end
-
-def my_prefix
-  ENV['OMEJDN_PATH_PREFIX'] || ''
+  Config.base_config['app_env'] != 'production'
 end
 
 def my_path
-  host + my_prefix
+  Config.base_config['host'] + Config.base_config['path_prefix']
 end
+
+def adjust_config
+  # account for environment overrides
+  base_config = Config.base_config
+  base_config['host'] = ENV['HOST'] || base_config['host']
+  base_config['path_prefix'] = ENV['OMEJDN_PATH_PREFIX'] || base_config['path_prefix'] || ''
+  base_config['bind_to'] = ENV['BIND_TO'] || base_config['bind_to'] || '0.0.0.0'
+  base_config['allow_origin'] = ENV['ALLOW_ORIGIN'] || base_config['allow_origin'] || '*'
+  base_config['app_env'] = ENV['APP_ENV'] || base_config['app_env'] || 'debug'
+  Config.base_config = base_config
+end
+
+def create_admin
+  # Initialize admin user if given in ENV
+  return unless ENV['OMEJDN_ADMIN']
+
+  admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
+  p "Setting admin username `#{admin_name}' and password `#{admin_pw}'" if debug
+  admin = User.find_by_id(admin_name)
+  if admin.nil?
+    admin = User.new
+    admin.username = admin_name
+    admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
+                        { 'key' => 'name', 'value' => 'Admin' }]
+    admin.password = BCrypt::Password.create(admin_pw)
+    User.add_user(admin, base_config['user_backend_default'])
+  else
+    admin.password = BCrypt::Password.create(admin_pw)
+    User.update_user(admin)
+  end
+end
+adjust_config unless ENV['OMEJDN_IGNORE_ENV'] # We need this to not overwrite the config during tests
+create_admin  unless ENV['OMEJDN_IGNORE_ENV']
 
 configure do
   # Easier debugging for local tests
@@ -52,12 +77,12 @@ configure do
   set :show_exceptions, debug && ENV['HOST']
 end
 
-set :bind, ENV['BIND_TO'] || '0.0.0.0'
+set :bind, Config.base_config['bind_to']
 enable :sessions
-set :sessions, secure: (host.start_with? 'https://')
+set :sessions, secure: (Config.base_config['host'].start_with? 'https://')
 set :session_store, Rack::Session::Pool
 
-set :allow_origin, ENV['ALLOW_ORIGIN'] || 'http://localhost:4200'
+set :allow_origin, Config.base_config['allow_origin']
 set :allow_methods, 'GET,HEAD,POST,PUT,DELETE'
 set :allow_headers, 'content-type,if-modified-since, authorization'
 set :expose_headers, 'location,link'
@@ -96,25 +121,18 @@ class RequestCache
   end
 end
 
-# Initialize admin user if given in ENV
-if ENV['OMEJDN_ADMIN']
-  admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
-  p "Setting admin username `#{admin_name}' and password `#{admin_pw}'" if debug
-  admin = User.find_by_id(admin_name)
-  if admin.nil?
-    admin = User.new
-    admin.username = admin_name
-    admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
-                        { 'key' => 'name', 'value' => 'Admin' }]
-    admin.password = BCrypt::Password.create(admin_pw)
-    User.add_user(admin, Config.base_config['user_backend_default'])
-  else
-    admin.password = BCrypt::Password.create(admin_pw)
-    User.update_user(admin)
-  end
-end
-
 before do
+  headers['Access-Control-Allow-Origin'] = Config.base_config['allow_origin']
+  headers['Access-Control-Allow-Headers'] = 'content-type,if-modified-since, authorization'
+  if request.env['REQUEST_METHOD'] == 'OPTIONS'
+    options = (%w[HEAD GET POST PUT DELETE].reject do |verb|
+      settings.routes[verb].select { |r, _c, _b| request.path_info == '*' || !r.match(request.path_info).nil? }.empty?
+    end)
+    halt 404 if options.empty?
+    headers['Allow'] = options.join(',')
+    headers['Content-Type'] ||= 'text/html'
+    halt 200, options.join(',')
+  end
   # Sinatra does not parse multiple values to params as arrays.
   # This line fixes this
   params.merge!(CGI.parse(request.query_string).transform_values { |v| v.length == 1 ? v[0] : v })
@@ -124,8 +142,6 @@ before do
          request.get_header('HTTP_ORIGIN').start_with?('moz-extension://')
     return
   end
-
-  response.headers['Access-Control-Allow-Origin'] = request.get_header('HTTP_ORIGIN').to_s
 end
 
 # Handle token request
@@ -133,6 +149,8 @@ post '/token' do
   client = nil
   scopes = []
   resources = [params['resource'] || []].flatten
+  requested_token_claims = {}
+
   if params[:grant_type] == 'client_credentials'
     if params[:client_assertion_type] != 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
       halt 400, OAuthHelper.error_response('invalid_request', 'Invalid client_assertion_type')
@@ -144,6 +162,7 @@ post '/token' do
     scopes = client.filter_scopes(params[:scope]&.split) || []
     resources = [Config.base_config['token']['audience']] if resources.empty?
     halt 400, OAuthHelper.error_response('invalid_target', '') unless client.resources_allowed? resources
+    requested_token_claims = JSON.parse params[:claims] if params[:claims]
 
   elsif (params[:grant_type] == 'authorization_code') && Config.base_config['openid']
     code = params[:code]
@@ -160,7 +179,8 @@ post '/token' do
     halt 400, OAuthHelper.error_response('invalid_client', 'No client_id given') if client.nil?
     halt 400, OAuthHelper.error_response('invalid_code', '') if code.nil?
     halt 400, OAuthHelper.error_response('invalid_code', '') unless RequestCache.get.keys.include?(code)
-    scopes = client.filter_scopes(params[:scope]&.split) || RequestCache.get[code][:scopes] || []
+    scopes = client.filter_scopes(params[:scope]&.split)
+    scopes = RequestCache.get[code][:scopes] || [] if scopes.empty?
     halt 400, OAuthHelper.error_response('invalid_scope', '') unless scopes.reject do |s|
                                                                        RequestCache.get[code][:scopes].include? s
                                                                      end.empty?
@@ -168,6 +188,8 @@ post '/token' do
     halt 400, OAuthHelper.error_response('invalid_target', '') unless resources.reject do |r|
                                                                         RequestCache.get[code][:resources].include? r
                                                                       end.empty?
+    requested_token_claims = RequestCache.get[code][:claims] || {}
+    requested_token_claims = JSON.parse params[:claims] if params[:claims]
 
   else
     halt 400, OAuthHelper.error_response('unsupported_grant_type', "Given: #{params[:grant_type]}")
@@ -176,21 +198,21 @@ post '/token' do
   halt 400, OAuthHelper.error_response('access_denied', '') if scopes.empty?
   resources << ("#{Config.base_config['host']}/userinfo") if scopes.include? 'openid'
   resources << ("#{Config.base_config['host']}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
-  id_token_claims = {}
-  if !RequestCache.get[code].nil? &&
-     RequestCache.get[code][:claims].key?('id_token') &&
-     !RequestCache.get[code][:claims].empty?
-    id_token_claims = RequestCache.get[code][:claims]['id_token']
-  end
+
+  requested_token_claims['id_token'] ||= {}
+  requested_token_claims['access_token'] ||= {}
+  requested_token_claims['id_token'].merge!(requested_token_claims['*'] || {})
+  requested_token_claims['access_token'].merge!(requested_token_claims['*'] || {})
   begin
     user = nil
     user = RequestCache.get[code][:user] unless RequestCache.get[code].nil?
     # https://tools.ietf.org/html/draft-bertocci-oauth-access-token-jwt-00#section-2.2
-    access_token = TokenHelper.build_access_token client, scopes, resources, user
-    if scopes.include?('openid')
+    access_token = TokenHelper.build_access_token client, scopes, resources, user,
+                                                  requested_token_claims['access_token']
+    if scopes.include?('openid') && Config.base_config['openid']
       id_token = TokenHelper.build_id_token client, user,
                                             RequestCache.get[code][:nonce],
-                                            id_token_claims, scopes
+                                            requested_token_claims['id_token'], scopes
     end
     # Delete the authorization code as it is single use
     RequestCache.get.delete(code)
@@ -202,8 +224,8 @@ end
 
 get '/.well-known/openid-configuration' do
   headers['Content-Type'] = 'application/json'
-  p "Host #{host},#{my_path}"
-  JSON.generate OAuthHelper.openid_configuration(host, my_path)
+  p "Host #{Config.base_config['host']},#{my_path}"
+  JSON.generate OAuthHelper.openid_configuration(Config.base_config['host'], my_path)
 end
 
 # Handle authorization request
@@ -322,11 +344,13 @@ end
 
 get '/logout' do
   session['user'] = nil
-  redirect to("#{my_path}/login")
+  redirect_uri = params['post_logout_redirect_uri'] || "#{my_path}/login"
+  redirect to(redirect_uri)
 end
 
 post '/logout' do
-  redirect_uri = session['post_logout_redirect_uri']
+  session['user'] = nil
+  redirect_uri = params['post_logout_redirect_uri'] || "#{my_path}/login"
   redirect to(redirect_uri)
 end
 
@@ -344,8 +368,7 @@ get '/login' do
       providers.push({ url: url.to_s, name: provider['name'], logo: provider['logo'] })
     end
   end
-  no_password_login = Config.base_config['no_password_login']
-  no_password_login = false if no_password_login.nil?
+  no_password_login = Config.base_config['no_password_login'] || false
   return haml :login, locals: {
     no_password_login: no_password_login,
     host: my_path,
@@ -719,7 +742,7 @@ get '/.well-known/webfinger' do
   halt 400 unless res.start_with? 'acct:'
 
   email = res[5..-1]
-  YAML.load_file('config/webfinger.yml').each do |wfhost, _|
+  Config.webfinger_config.each do |wfhost, _|
     next unless email.end_with? "@#{wfhost}"
 
     return JSON.generate(

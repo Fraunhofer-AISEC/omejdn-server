@@ -1,6 +1,15 @@
 ---
 # The Omejdn host
 host: http://localhost:4567
+# A base path
+path_prefix: ''
+# Which address to bind to
+bind_to: 0.0.0.0
+# Allow Origin Header field
+allow_origin: "*"
+
+# Set this to `production` to disable debug output
+app_env: debug
 
 # Enable OpenID funtionality
 openid: true
