@@ -30,15 +30,6 @@ def version
   'unknown'
 end
 
-# account for environment overrides
-base_config = Config.base_config
-base_config['host'] = ENV['HOST'] || base_config['host']
-base_config['path_prefix'] = ENV['OMEJDN_PATH_PREFIX'] || base_config['path_prefix'] || ''
-base_config['bind_to'] = ENV['BIND_TO'] || base_config['bind_to'] || '0.0.0.0'
-base_config['allow_origin'] = ENV['ALLOW_ORIGIN'] || base_config['allow_origin'] || '*'
-base_config['app_env'] = ENV['APP_ENV'] || base_config['app_env'] || 'debug'
-Config.base_config = base_config
-
 def debug
   Config.base_config['app_env'] != 'production'
 end
@@ -46,6 +37,39 @@ end
 def my_path
   Config.base_config['host'] + Config.base_config['path_prefix']
 end
+
+def adjust_config
+  # account for environment overrides
+  base_config = Config.base_config
+  base_config['host'] = ENV['HOST'] || base_config['host']
+  base_config['path_prefix'] = ENV['OMEJDN_PATH_PREFIX'] || base_config['path_prefix'] || ''
+  base_config['bind_to'] = ENV['BIND_TO'] || base_config['bind_to'] || '0.0.0.0'
+  base_config['allow_origin'] = ENV['ALLOW_ORIGIN'] || base_config['allow_origin'] || '*'
+  base_config['app_env'] = ENV['APP_ENV'] || base_config['app_env'] || 'debug'
+  Config.base_config = base_config
+end
+
+def create_admin
+  # Initialize admin user if given in ENV
+  return unless ENV['OMEJDN_ADMIN']
+
+  admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
+  p "Setting admin username `#{admin_name}' and password `#{admin_pw}'" if debug
+  admin = User.find_by_id(admin_name)
+  if admin.nil?
+    admin = User.new
+    admin.username = admin_name
+    admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
+                        { 'key' => 'name', 'value' => 'Admin' }]
+    admin.password = BCrypt::Password.create(admin_pw)
+    User.add_user(admin, base_config['user_backend_default'])
+  else
+    admin.password = BCrypt::Password.create(admin_pw)
+    User.update_user(admin)
+  end
+end
+adjust_config unless ENV['OMEJDN_IGNORE_ENV'] # We need this to not overwrite the config during tests
+create_admin  unless ENV['OMEJDN_IGNORE_ENV']
 
 configure do
   # Easier debugging for local tests
@@ -94,24 +118,6 @@ class RequestCache
   @request_cache = {}
   def self.get
     @request_cache
-  end
-end
-
-# Initialize admin user if given in ENV
-if ENV['OMEJDN_ADMIN']
-  admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
-  p "Setting admin username `#{admin_name}' and password `#{admin_pw}'" if debug
-  admin = User.find_by_id(admin_name)
-  if admin.nil?
-    admin = User.new
-    admin.username = admin_name
-    admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
-                        { 'key' => 'name', 'value' => 'Admin' }]
-    admin.password = BCrypt::Password.create(admin_pw)
-    User.add_user(admin, Config.base_config['user_backend_default'])
-  else
-    admin.password = BCrypt::Password.create(admin_pw)
-    User.update_user(admin)
   end
 end
 

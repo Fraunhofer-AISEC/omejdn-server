@@ -2,9 +2,9 @@
 require 'test/unit'
 require 'rack/test'
 require 'webrick/https'
+require_relative 'config_testsetup'
 require_relative '../omejdn'
 require_relative '../lib/token_helper'
-require_relative 'config_testsetup'
 
 class OAuth2Test < Test::Unit::TestCase
   include Rack::Test::Methods
