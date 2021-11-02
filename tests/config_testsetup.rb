@@ -44,6 +44,7 @@ class TestSetup
     {
       'username' => 'dynamic_claims',
       'attributes' => [
+        { 'key' => 'omejdn', 'value' => 'write' },
         { 'key' => 'dynattribute', 'dynamic' => true }
       ],
       'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC'
