@@ -143,6 +143,8 @@ post '/token' do
   client = nil
   scopes = []
   resources = [params['resource'] || []].flatten
+  requested_token_claims = {}
+
   if params[:grant_type] == 'client_credentials'
     if params[:client_assertion_type] != 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
       halt 400, OAuthHelper.error_response('invalid_request', 'Invalid client_assertion_type')
@@ -154,6 +156,7 @@ post '/token' do
     scopes = client.filter_scopes(params[:scope]&.split) || []
     resources = [Config.base_config['token']['audience']] if resources.empty?
     halt 400, OAuthHelper.error_response('invalid_target', '') unless client.resources_allowed? resources
+    requested_token_claims = JSON.parse params[:claims] if params[:claims]
 
   elsif (params[:grant_type] == 'authorization_code') && Config.base_config['openid']
     code = params[:code]
@@ -179,6 +182,8 @@ post '/token' do
     halt 400, OAuthHelper.error_response('invalid_target', '') unless resources.reject do |r|
                                                                         RequestCache.get[code][:resources].include? r
                                                                       end.empty?
+    requested_token_claims = RequestCache.get[code][:claims] || {}
+    requested_token_claims = JSON.parse params[:claims] if params[:claims]
 
   else
     halt 400, OAuthHelper.error_response('unsupported_grant_type', "Given: #{params[:grant_type]}")
@@ -187,21 +192,21 @@ post '/token' do
   halt 400, OAuthHelper.error_response('access_denied', '') if scopes.empty?
   resources << ("#{Config.base_config['host']}/userinfo") if scopes.include? 'openid'
   resources << ("#{Config.base_config['host']}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
-  id_token_claims = {}
-  if !RequestCache.get[code].nil? &&
-     RequestCache.get[code][:claims].key?('id_token') &&
-     !RequestCache.get[code][:claims].empty?
-    id_token_claims = RequestCache.get[code][:claims]['id_token']
-  end
+
+  requested_token_claims['id_token'] ||= {}
+  requested_token_claims['access_token'] ||= {}
+  requested_token_claims['id_token'].merge!(requested_token_claims['*'] || {})
+  requested_token_claims['access_token'].merge!(requested_token_claims['*'] || {})
   begin
     user = nil
     user = RequestCache.get[code][:user] unless RequestCache.get[code].nil?
     # https://tools.ietf.org/html/draft-bertocci-oauth-access-token-jwt-00#section-2.2
-    access_token = TokenHelper.build_access_token client, scopes, resources, user
+    access_token = TokenHelper.build_access_token client, scopes, resources, user,
+                                                  requested_token_claims['access_token']
     if scopes.include?('openid') && Config.base_config['openid']
       id_token = TokenHelper.build_id_token client, user,
                                             RequestCache.get[code][:nonce],
-                                            id_token_claims, scopes
+                                            requested_token_claims['id_token'], scopes
     end
     # Delete the authorization code as it is single use
     RequestCache.get.delete(code)
