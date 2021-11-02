@@ -3,6 +3,12 @@
 Please read these notes carefully before updating.
 **Bold** notes require manual intervention.
 
+## V 1.2.0
+
+- Added support for dynamically chosen claim values
+- Added several configuration options to `omejdn.yml`, which were previously only configurable via environment variables.
+- Bugfixes and tests
+
 ## V 1.1.1
 
 - **The default user backend for new users can (and must) now be specified using the new `user_backend_default` key in `omejdn.yml`**
