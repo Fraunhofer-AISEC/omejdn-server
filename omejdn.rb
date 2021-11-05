@@ -46,6 +46,8 @@ def adjust_config
   base_config['bind_to'] = ENV['BIND_TO'] || base_config['bind_to'] || '0.0.0.0'
   base_config['allow_origin'] = ENV['ALLOW_ORIGIN'] || base_config['allow_origin'] || '*'
   base_config['app_env'] = ENV['APP_ENV'] || base_config['app_env'] || 'debug'
+  base_config['accept_audience'] =
+    ENV['OMEJDN_JWT_AUD_OVERRIDE'] || base_config['accept_audience'] || base_config['host']
   Config.base_config = base_config
 end
 
