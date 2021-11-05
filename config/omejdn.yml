@@ -14,6 +14,9 @@ app_env: debug
 # Enable OpenID funtionality
 openid: true
 
+# Overwrite the aud claim value to accept in client's bearer tokens (defaults to host)
+#accept_audience:
+
 # Token singing keys and default values
 token:
   expiration: 3600

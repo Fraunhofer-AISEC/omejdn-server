@@ -69,7 +69,7 @@ class Client
 
       puts "Client #{jwt_cid} found"
       # Try verify
-      aud = ENV['OMEJDN_JWT_AUD_OVERRIDE'] || Config.base_config['host']
+      aud = Config.base_config['accept_audience']
       JWT.decode jwt, client.certificate&.public_key, true,
                  { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_alg }
       return client
