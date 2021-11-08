@@ -57,7 +57,10 @@ class TestSetup
       'name' => 'omejdn admin ui',
       'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
-      'attributes' => []
+      'attributes' => [
+        'key' =>'email',
+        'value' => 'test@example.org'
+      ]
     },
      {
        'client_id' => 'testClient2',
@@ -92,6 +95,13 @@ class TestSetup
         'issuer' => 'http://localhost:4567'
       },
       'id_token' => {
+        'expiration' => 3600,
+        'signing_key' => 'omejdn_priv.pem',
+        'algorithm' => 'RS256',
+        'issuer' => 'http://localhost:4567'
+      },
+      'verifiable_credentials' => {
+        'enabled' => true,
         'expiration' => 3600,
         'signing_key' => 'omejdn_priv.pem',
         'algorithm' => 'RS256',

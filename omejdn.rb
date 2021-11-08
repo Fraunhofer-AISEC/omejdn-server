@@ -11,6 +11,7 @@ require_relative './lib/user'
 require_relative './lib/token_helper'
 require_relative './lib/oauth_helper'
 require_relative './lib/user_db'
+require_relative './lib/verifiable_credentials'
 require 'sinatra'
 require 'sinatra/cookies'
 # require 'sinatra/cors'
@@ -761,6 +762,25 @@ get '/.well-known/webfinger' do
     )
   end
   halt 404
+end
+
+########## VERIFIABLE CREDENTIALS ##################
+
+get '/vc' do
+  begin
+    jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
+    halt 401 if jwt.nil? || jwt.empty?
+    token = JWT.decode(jwt, Server.load_key.public_key, true, { algorithm: Config.base_config['token']['algorithm'] })
+    @user = User.find_by_id token[0]['sub']
+    @client = Client.find_by_id token[0]['sub']
+  rescue StandardError => e
+    p e if debug
+    halt 401
+  end
+  claims = params['claims'].transform_values{|v| v['value']}
+
+  halt 200, VerifiableCredentials.get_jwt(@client.client_id, @client.attributes, claims, [ProofType::JWT_SIGNATURE]) if @user.nil?
+  halt 200, VerifiableCredentials.get_jwt(@user.username, @user.attributes, claims, [ProofType::JWT_SIGNATURE])
 end
 
 get '/about' do
