@@ -779,8 +779,13 @@ get '/vc' do
   end
   claims = params['claims'].transform_values{|v| v['value']}
 
-  halt 200, VerifiableCredentials.get_jwt(@client.client_id, @client.attributes, claims, [ProofType::JWT_SIGNATURE]) if @user.nil?
-  halt 200, VerifiableCredentials.get_jwt(@user.username, @user.attributes, claims, [ProofType::JWT_SIGNATURE])
+  proof_types = [ProofType::JWT_SIGNATURE, ProofType::LDP_ED25519]
+  halt 200, VerifiableCredentials.get_jwt(@client.client_id, @client.attributes, claims, proof_types) if @user.nil?
+  halt 200, VerifiableCredentials.get_jwt(@user.username, @user.attributes, claims, proof_types)
+end
+
+get '/vc/context' do
+  halt 200, 'VerifiableCredentials.json_ld_context'
 end
 
 get '/about' do

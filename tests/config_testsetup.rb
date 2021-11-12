@@ -104,6 +104,10 @@ class TestSetup
         'enabled' => true,
         'expiration' => 3600,
         'signing_key' => 'omejdn_priv.pem',
+        'signing_keys' => {
+          'Ed25519Signature2018' => 'tests/test_resources/ed25519.pem'
+        },
+        'key_rsa' => 'omejdn_priv.pem',
         'algorithm' => 'RS256',
         'issuer' => 'http://localhost:4567'
       },
