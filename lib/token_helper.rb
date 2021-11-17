@@ -68,22 +68,22 @@ class TokenHelper
     allowed_scoped_attrs = client.allowed_scoped_attributes(scopes)
     attrs.select { |a| allowed_scoped_attrs.include?(a['key']) }
          .each { |a| add_jwt_claim(new_payload, a['key'], a['value']) }
-    return new_payload if claims.empty?
+    return new_payload.merge(claims['omejdn']) if claims['user'].empty?
 
     # Add attribute if it was specifically requested through OIDC
     # claims parameter.
     attrs.each do |attr|
-      next unless claims.key?(attr['key']) && !claims[attr['key']].nil?
+      next unless claims['user'].key?(attr['key']) && !claims['user'][attr['key']].nil?
 
-      if    attr['dynamic'] && claims[attr['key']]['value']
-        add_jwt_claim(new_payload, attr['key'], claims[attr['key']]['value'])
-      elsif attr['dynamic'] && claims[attr['key']]['values']
-        add_jwt_claim(new_payload, attr['key'], claims[attr['key']]['values'][0])
+      if    attr['dynamic'] && claims['user'][attr['key']]['value']
+        add_jwt_claim(new_payload, attr['key'], claims['user'][attr['key']]['value'])
+      elsif attr['dynamic'] && claims['user'][attr['key']]['values']
+        add_jwt_claim(new_payload, attr['key'], claims['user'][attr['key']]['values'][0])
       elsif attr['value']
         add_jwt_claim(new_payload, attr['key'], attr['value'])
       end
     end
-    new_payload
+    new_payload.merge(claims['omejdn'])
   end
 
   # Builds a JWT ID token for client including user attributes

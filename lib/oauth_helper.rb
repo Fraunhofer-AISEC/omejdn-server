@@ -103,6 +103,19 @@ class OAuthHelper
     metadata['response_modes_supported'] = ['query'] # FIXME: we only do query atm no fragment
     metadata['grant_types_supported'] = ['authorization_code']
     metadata['id_token_signing_alg_values_supported'] = base_config['token']['algorithm']
+
+    # https://mattrglobal.github.io/oidc-client-bound-assertions-spec/
+    # We follow https://bitbucket.org/openid/connect/pull-requests/59
+    # to decide what is necessary here
+    metadata['claims_endpoint'] = "#{path}/claims"
+    metadata['claims_supported'] = [] # TODO: Configure claims for VC
+    metadata['claims_parameter_supported'] = true
+    metadata['request_parameter_supported'] = false
+    metadata['request_uri_parameter_supported'] = false
+    metadata['claimset_formats_supported'] = [ "w3cvc-jsonld", "w3cvc-jwt" ]
+    metadata['claim_types_supported'] = ['normal']
+    metadata['claimset_supported'] = true
+
     metadata
   end
 

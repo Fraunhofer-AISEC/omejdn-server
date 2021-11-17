@@ -39,6 +39,7 @@ end
 
 class VerifiableCredentials
   def self.verify_claim(attributes, key, value)
+    return true if key == 'uid'
     !(attributes.select do |attr|
         attr['key'] == key && attr['value'] == value
     end).empty?
@@ -70,6 +71,15 @@ class VerifiableCredentials
       'verificationMethod' => vc['issuer'],
       'proofPurpose' => 'assertionMethod'
     }
+    # additional options
+    # TODO do we need this?
+    # "Spec" says this is a MUST, but no implementation seems to use it
+    #case proof_type
+    #when ProofType::LDP_BBSPLUS
+    #  # TODO Which statements are always to reveal?
+    #  # Maybe move this further down to where we know the actual indices
+    #  options['requiredRevealStatements'] = []
+    #end
 
     # 1. Create a copy of document, hereafter referred to as output. (vc_clone in our code)
     vc_clone = vc.clone
@@ -79,7 +89,7 @@ class VerifiableCredentials
     # 2. Generate a canonicalized document by canonicalizing document according to a canonicalization algorithm
     # All algorithms used here use URDNA2015 for normalization
     normalizedGraph = normalize_urdna2015 vc_clone
-    normalizedGraph.split("\n").each {|l| p l}
+    #normalizedGraph.split("\n").each {|l| p l}
 
     # 3. Create a value tbs that represents the data to be signed,
     #    and set it to the result of running the Create Verify Hash Algorithm,
@@ -100,6 +110,8 @@ class VerifiableCredentials
       # and not hashing them
       tbs =  normalizedOptions.split("\n")
       tbs += normalizedGraph.split("\n")
+      tbs.map! { |m| OpenSSL::Digest.digest(proof_type['digest'], m) }
+      tbs.each {|l| p l}
     end
 
     # 4. Digitally sign tbs using the privateKey and the the digital proof algorithm
@@ -158,7 +170,7 @@ class VerifiableCredentials
     vc
   end
 
-  def self.get_vc(subject, attributes, claims, proof_types)
+  def self.get_vc(subject, attributes, claims, proof_types = [])
     vc = get_vc_no_proof(subject, attributes, claims)
     proof_types.reject{|t|t['format'].equal? 'JWT'}.each { |proof| add_proof(vc, proof) }
     vc

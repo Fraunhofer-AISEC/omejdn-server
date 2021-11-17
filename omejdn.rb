@@ -200,22 +200,27 @@ post '/token' do
   headers['Content-Type'] = 'application/json'
   halt 400, OAuthHelper.error_response('access_denied', '') if scopes.empty?
   resources << ("#{Config.base_config['host']}/userinfo") if scopes.include? 'openid'
+  resources << ("#{Config.base_config['host']}/claims") if scopes.include? 'openid_claims'
   resources << ("#{Config.base_config['host']}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
 
   requested_token_claims['id_token'] ||= {}
   requested_token_claims['access_token'] ||= {}
   requested_token_claims['id_token'].merge!(requested_token_claims['*'] || {})
   requested_token_claims['access_token'].merge!(requested_token_claims['*'] || {})
+
+  mandated_claims = {}
+  mandated_claims['claimset_format'] = session[:claimset_format] if scopes.include? 'openid_claims'
+
+
   begin
     user = nil
     user = RequestCache.get[code][:user] unless RequestCache.get[code].nil?
     # https://tools.ietf.org/html/draft-bertocci-oauth-access-token-jwt-00#section-2.2
-    access_token = TokenHelper.build_access_token client, scopes, resources, user,
-                                                  requested_token_claims['access_token']
+    access_token = TokenHelper.build_access_token client, scopes, resources, user, {'omejdn'=>mandated_claims, 'user'=>requested_token_claims['access_token']}
     if scopes.include?('openid') && Config.base_config['openid']
       id_token = TokenHelper.build_id_token client, user,
                                             RequestCache.get[code][:nonce],
-                                            requested_token_claims['id_token'], scopes
+                                            {'user'=>requested_token_claims['id_token']}, scopes
     end
     # Delete the authorization code as it is single use
     RequestCache.get.delete(code)
@@ -249,6 +254,13 @@ get '/authorize' do
 
   session[:scopes] = []
   scope_mapping = Config.scope_mapping_config
+
+  if params[:claimset_format]
+    session[:scopes] << ' openid_claims' # NOT standardized
+    session[:claimset_format] = params[:claimset_format]
+    # TODO: Spec draft demands showing a client's policy_url.
+    # Does a client even need this if it was not dynamically registered?
+  end
 
   client.filter_scopes(params[:scope].split).each do |s|
     p "Checking scope #{s}"
@@ -299,6 +311,7 @@ post '/authorize' do
   RequestCache.get[code][:scopes] = session[:scopes]
   RequestCache.get[code][:resources] = session[:resources]
   RequestCache.get[code][:nonce] = session[:url_params][:nonce]
+  RequestCache.get[code][:claimset_format] = session[:claimset_format]
   RequestCache.get[code][:claims] = {}
   RequestCache.get[code][:claims] = JSON.parse session[:url_params]['claims'] if session[:url_params].key?('claims')
   unless session[:url_params][:code_challenge].nil?
@@ -766,25 +779,57 @@ end
 
 ########## VERIFIABLE CREDENTIALS ##################
 
-get '/vc' do
+post '/claims' do
   begin
     jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
     halt 401 if jwt.nil? || jwt.empty?
     token = JWT.decode(jwt, Server.load_key.public_key, true, { algorithm: Config.base_config['token']['algorithm'] })
+    halt 403 unless token['scopes'].include? 'openid_claims'
     @user = User.find_by_id token[0]['sub']
-    @client = Client.find_by_id token[0]['sub']
+    # TODO: Add support for the request body should this stay in the spec
+    #request_param = JSON.parse request.body.read
+    #request_param = JWT.decode(request_param, @client.certificate&.public_key, true)[0]
   rescue StandardError => e
     p e if debug
     halt 401
   end
-  claims = params['claims'].transform_values{|v| v['value']}
 
-  proof_types = [ProofType::JWT_SIGNATURE, ProofType::LDP_ED25519]
-  halt 200, VerifiableCredentials.get_jwt(@client.client_id, @client.attributes, claims, proof_types) if @user.nil?
-  halt 200, VerifiableCredentials.get_jwt(@user.username, @user.attributes, claims, proof_types)
+  halt 400 if params['claims'].nil?
+  claims = {}
+  params['claims']['c_token'].each do |k,v|
+    claims[k] = token[k] || v['value']
+  end
+  # TODO What is the UID for?
+  # I guess it should overwrite the User ID aka. the username in the proof
+  # So I will just include it
+  claims['uid'] = params['uid'] if params['uid']
+  halt 400 if claims['uid'].nil?
+  # TODO: Where to show the aud in the JSON-LD Proof?
+  # Spec mentions a JWT, but the response is plain JSON
+  audience = params['aud']
+
+  proof_types = [ProofType::JWT_SIGNATURE, ProofType::LDP_BBSPLUS]
+
+  vc_format = token['credential_format']
+  vc = case vc_format
+  when 'w3cvc-jsonld'
+    VerifiableCredentials.get_vc(@user.username, @user.attributes, claims, proof_types)
+  when 'w3cvc-jws'
+    VerifiableCredentials.get_jwt(@user.username, @user.attributes, claims, proof_types)
+  when 'oidc-jws'
+    # TODO: implement OIDC4IDA
+    nil
+  else
+    halt 400
+  end
+
+  halt 200, {
+    'format' => token['claimset_format'],
+    'claimset' => vc
+  }.to_json
 end
 
-get '/vc/context' do
+get '/claims/context' do
   halt 200, 'VerifiableCredentials.json_ld_context'
 end
 
