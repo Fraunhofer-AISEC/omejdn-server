@@ -61,6 +61,9 @@ class TokenHelper
   end
 
   def self.map_claims_to_userinfo(attrs, claims, client, scopes)
+    claims ||= {}
+    claims['user'] ||= {}
+    claims['omejdn'] ||= {}
     new_payload = {}
 
     # Add attribute if it was requested indirectly through OIDC

@@ -783,9 +783,11 @@ post '/claims' do
   begin
     jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
     halt 401 if jwt.nil? || jwt.empty?
-    token = JWT.decode(jwt, Server.load_key.public_key, true, { algorithm: Config.base_config['token']['algorithm'] })
-    halt 403 unless token['scopes'].include? 'openid_claims'
-    @user = User.find_by_id token[0]['sub']
+    token = JWT.decode(jwt, Server.load_key.public_key, true, { algorithm: Config.base_config['token']['algorithm'] })[0]
+    @scopes = token['scope'].split
+    halt 403 unless @scopes.include? 'openid_claims'
+    @user = User.find_by_id token['sub']
+    halt 403 if @user.nil?
     # TODO: Add support for the request body should this stay in the spec
     #request_param = JSON.parse request.body.read
     #request_param = JWT.decode(request_param, @client.certificate&.public_key, true)[0]
@@ -794,11 +796,12 @@ post '/claims' do
     halt 401
   end
 
-  halt 400 if params['claims'].nil?
+  # TODO: the values from the token may be outdated
+  requested_claims = params.dig('claims','c_token')
+  halt 400 if requested_claims.nil?
   claims = {}
-  params['claims']['c_token'].each do |k,v|
-    claims[k] = token[k] || v['value']
-  end
+  requested_claims.each { |k,v| claims[k] = token[k] || v['value'] }
+  
   # TODO What is the UID for?
   # I guess it should overwrite the User ID aka. the username in the proof
   # So I will just include it
@@ -808,14 +811,14 @@ post '/claims' do
   # Spec mentions a JWT, but the response is plain JSON
   audience = params['aud']
 
-  proof_types = [ProofType::JWT_SIGNATURE, ProofType::LDP_BBSPLUS]
+  proof_types = [ProofType::JWT_SIGNATURE, ProofType::LDP_ED25519]
 
-  vc_format = token['credential_format']
+  vc_format = token['claimset_format']
   vc = case vc_format
   when 'w3cvc-jsonld'
     VerifiableCredentials.get_vc(@user.username, @user.attributes, claims, proof_types)
   when 'w3cvc-jws'
-    VerifiableCredentials.get_jwt(@user.username, @user.attributes, claims, proof_types)
+    VerifiableCredentials.get_jwt(@user.username, audience, @user.attributes, claims, proof_types)
   when 'oidc-jws'
     # TODO: implement OIDC4IDA
     nil

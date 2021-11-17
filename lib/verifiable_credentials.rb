@@ -111,7 +111,6 @@ class VerifiableCredentials
       tbs =  normalizedOptions.split("\n")
       tbs += normalizedGraph.split("\n")
       tbs.map! { |m| OpenSSL::Digest.digest(proof_type['digest'], m) }
-      tbs.each {|l| p l}
     end
 
     # 4. Digitally sign tbs using the privateKey and the the digital proof algorithm
@@ -128,7 +127,7 @@ class VerifiableCredentials
       #key  = OpenSSL::PKey::EC.new File.read(filename)
       # For now we may use the rbnacl gem
       # TODO check if this loads the OpenSSL PEM key correctly
-      seed = p [File.readlines(filename).map(&:chomp)[1]].pack("H*")
+      seed = [File.readlines(filename).map(&:chomp)[1]].pack("H*")
       key = RbNaCl::SigningKey.new seed
       # The example at https://w3c-ccg.github.io/lds-ed25519-2018/ uses 'EdDSA' instead of 'ED25519'
       # No standard could be found, but Ruby's JWT only supports this
@@ -176,7 +175,7 @@ class VerifiableCredentials
     vc
   end
 
-  def self.get_jwt(subject, attributes, claims, proof_types = [])
+  def self.get_jwt(subject, audience, attributes, claims, proof_types = [])
     proof_types |= []
     vc = get_vc(subject, attributes, claims, proof_types)
 
@@ -186,7 +185,7 @@ class VerifiableCredentials
     payload['iss'] = vc['issuer']
     payload['jti'] = vc['id']
     payload['sub'] = vc['credentialSubject']['id']
-    payload['aud'] = subject
+    payload['aud'] = audience
     payload['vc'] = vc
 
     if proof_types.include? ProofType::JWT_SIGNATURE
