@@ -88,7 +88,7 @@ class TestSetup
         'expiration' => 3600,
         'signing_key' => 'omejdn_priv.pem',
         'certificates' => [
-          'omejdn_priv.cert'
+          'omejdn_priv.pem.cert'
         ],
         'algorithm' => 'RS256',
         'audience' => 'TestServer',
