@@ -17,16 +17,21 @@ openid: true
 # Overwrite the aud claim value to accept in client's bearer tokens (defaults to host)
 #accept_audience:
 
-# Token singing keys and default values
+# Token signing keys, certificates and default values
+# Certificates may include previously used ones for communication in the JWKS
 token:
   expiration: 3600
   signing_key: omejdn_priv.pem
+  certificates:
+  - omejdn_priv.pem.cert
   algorithm: RS256
   audience: TestServer
   issuer: http://localhost:4567
 id_token:
   expiration: 3600
   signing_key: omejdn_priv.pem
+  certificates:
+  - omejdn_priv.pem.cert
   algorithm: RS256
   issuer: http://localhost:4567
 
