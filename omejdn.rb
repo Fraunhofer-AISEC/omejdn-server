@@ -447,7 +447,8 @@ before '/api/v1/*' do
   begin
     jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
     halt 401 if jwt.nil? || jwt.empty?
-    token = JWT.decode(jwt, Server.load_key['sk'].public_key, true, { algorithm: Config.base_config['token']['algorithm'] })
+    token = JWT.decode(jwt, Server.load_key['sk'].public_key, true,
+                       { algorithm: Config.base_config['token']['algorithm'] })
     halt 403 unless [token[0]['aud']].flatten.include?("#{Config.base_config['host']}/api")
     @scopes = token[0]['scope'].split
     @user_is_admin  = (@scopes.include? 'omejdn:admin')
