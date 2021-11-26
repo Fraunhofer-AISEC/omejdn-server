@@ -87,6 +87,9 @@ class TestSetup
       'token' => {
         'expiration' => 3600,
         'signing_key' => 'omejdn_priv.pem',
+        'certificates' => [
+          'omejdn_priv.cert'
+        ],
         'algorithm' => 'RS256',
         'audience' => 'TestServer',
         'issuer' => 'http://localhost:4567'
@@ -94,6 +97,9 @@ class TestSetup
       'id_token' => {
         'expiration' => 3600,
         'signing_key' => 'omejdn_priv.pem',
+        'certificates' => [
+          'omejdn_priv.cert'
+        ],
         'algorithm' => 'RS256',
         'issuer' => 'http://localhost:4567'
       },

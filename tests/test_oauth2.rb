@@ -55,16 +55,24 @@ class OAuth2Test < Test::Unit::TestCase
     assert keylist.reject{|k| hash.keys.include?k}.empty?
   end
 
+  def decode_jwt(jwt)
+    get '/.well-known/jwks.json'
+    assert last_response.ok?
+    server_keys = JSON::JWK::Set.new JSON.parse(last_response.body)
+    JWT.decode(jwt,nil,true, {
+      algorithms: [TestSetup.config['token']['algorithm']],
+      jwks: {'keys'=>server_keys}})
+  end
+
   def extract_access_token(response)
     check_keys response, ["access_token","expires_in","token_type","scope"]
     assert_equal response["expires_in"], TestSetup.config['token']['expiration']
     assert_equal response["token_type"], "bearer"
     assert_equal response["scope"], "omejdn:write"
 
-    jwt = JWT.decode(response['access_token'], Server.load_key.public_key, true, { algorithm: TestSetup.config['token']['algorithm'] })
+    jwt = decode_jwt response['access_token']
     check_keys jwt[1], ['typ','kid','alg']
     assert_equal jwt[1]['typ'], 'at+jwt'
-    assert_equal jwt[1]['kid'], 'default'
     assert_equal jwt[1]['alg'], TestSetup.config['token']['algorithm']
 
     return jwt[0]
@@ -263,4 +271,5 @@ class OAuth2Test < Test::Unit::TestCase
     assert_equal 'write', at['omejdn']
     assert_equal at['dynattribute'], requested_claims['*']['dynattribute']['value']
   end
+
 end

@@ -43,7 +43,9 @@ class TokenHelper
       new_payload = build_access_token_stub(client.attributes, client, scopes, resources, claims)
       new_payload['sub'] = client.client_id if user.nil?
     end
-    JWT.encode new_payload, Server.load_key('token'), 'RS256', { typ: 'at+jwt', kid: 'default' }
+    signing_material = Server.load_key('token')
+    kid = Server.gen_x5t(signing_material['cert'])
+    JWT.encode new_payload, signing_material['sk'], 'RS256', { typ: 'at+jwt', kid: kid }
   end
 
   def self.address_claim?(key)
@@ -99,7 +101,9 @@ class TokenHelper
       'exp' => now + base_config['id_token']['expiration']
     }.merge(map_claims_to_userinfo(uentry.attributes, claims, client, scopes))
     new_payload['nonce'] = nonce unless nonce.nil?
-    JWT.encode new_payload, Server.load_key('id_token'), 'RS256', { typ: 'JWT', kid: 'default' }
+    signing_material = Server.load_key('token')
+    kid = Server.gen_x5t(signing_material['cert'])
+    JWT.encode new_payload, signing_material['sk'], 'RS256', { typ: 'JWT', kid: kid }
   end
 
   # TODO: old, might needs to be changed

@@ -82,11 +82,20 @@ class OAuthHelper
   end
 
   def self.generate_jwks
-    jwk = JSON::JWK.new(
-      Server.load_key.public_key,
-      kid: 'default'
-    )
-    JSON::JWK::Set.new jwk
+    jwks = JSON::JWK::Set.new
+    %w[token id_token].each do |type|
+      certs = Server.load_certs(type)
+      certs.each do |c|
+        x5t = Server.gen_x5t c
+        jwks << JSON::JWK.new(
+          c.public_key,
+          use: 'sig',
+          kid: x5t,
+          x5t: x5t
+        )
+      end
+    end
+    jwks.uniq {|k| k['kid']}
   end
 
   def self.openid_configuration(host, path)
