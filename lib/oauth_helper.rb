@@ -84,15 +84,20 @@ class OAuthHelper
   def self.generate_jwks
     jwks = JSON::JWK::Set.new
     %w[token id_token].each do |type|
-      certs = Server.load_certs(type)
-      certs.each do |c|
-        x5t = Server.gen_x5t c
-        jwks << JSON::JWK.new(
-          c.public_key,
-          use: 'sig',
-          kid: x5t,
-          x5t: x5t
+      # Load the signing key
+      key_material = [Server.load_skey(type)]
+      key_material += Server.load_pkey(type)
+      key_material.each do |k|
+        jwk = JSON::JWK.new(
+          k["pk"],
+          kid: (Server.gen_kid k['pk']),
+          use: 'sig'
         )
+        if k['cert']
+          jwk[:x5c] = Server.gen_x5c(k['cert'])
+          jwk[:x5t] = Server.gen_x5t(k['cert'])
+        end
+        jwks << jwk
       end
     end
     jwks.uniq { |k| k['kid'] }

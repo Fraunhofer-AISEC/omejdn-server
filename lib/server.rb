@@ -5,7 +5,7 @@ require 'openssl'
 
 # Server setup helper functions.
 class Server
-  def self.setup_key(filename)
+  def self.setup_skey(filename)
     rsa_key = OpenSSL::PKey::RSA.new 2048
     file = File.new filename, File::CREAT | File::TRUNC | File::RDWR
     file.write(rsa_key.to_pem)
@@ -13,53 +13,46 @@ class Server
     p "Created new key at #{filename}"
   end
 
-  def self.setup_cert(key, token_type, filename)
-    p "WARNING: Creating a self-signed dummy certificate at #{filename}."
-    p '         Use this only for testing purposes.'
-    p '         To discourage active use, the certificate is only valid for two days.'
-    cert = OpenSSL::X509::Certificate.new
-    cert.version = 2
-    cert.serial = rand(2**512)
-    cert.subject = OpenSSL::X509::Name.parse '/DC=org/DC=example/CN=Omejdn CA'
-    cert.issuer = cert.subject
-    cert.public_key = key.public_key
-    cert.not_before = Time.now
-    cert.not_after = cert.not_before + (3600 * 24 * 2) # Now + 2 days
-    ef = OpenSSL::X509::ExtensionFactory.new
-    ef.subject_certificate = cert
-    ef.issuer_certificate = cert
-    cert.add_extension(ef.create_extension('basicConstraints', 'CA:TRUE', true))
-    cert.add_extension(ef.create_extension('keyUsage', 'keyCertSign, cRLSign, digitalSignature', true))
-    cert.add_extension(ef.create_extension('subjectKeyIdentifier', 'hash', false))
-    cert.add_extension(ef.create_extension('authorityKeyIdentifier', 'keyid:always', false))
-    cert.sign(key, OpenSSL::Digest.new('SHA256'))
-    file = File.new filename, File::CREAT | File::TRUNC | File::RDWR
-    file.write(cert.to_pem)
-    file.close
-    config = Config.base_config
-    config[token_type]['certificates'] ||= []
-    config[token_type]['certificates'] << filename
-    Config.base_config = config
-    cert
+  def self.gen_x5c(cert)
+    # FIXME: The chain is supposed to be represented via an array of certificates
+    [Base64.encode64(cert.to_der).strip]
   end
 
-  def self.load_certs(token_type = 'token')
-    config = Config.base_config
-    cert_files = config.dig(token_type, 'certificates') || []
-    cert_files.filter { |f| File.exist? f }.map { |f| OpenSSL::X509::Certificate.new File.read(f) }
-  end
-
-  # Taken from https://stackoverflow.com/questions/50657463/how-to-obtain-value-of-x5t-using-certificate-credentials-for-application-authe
   def self.gen_x5t(cert)
-    Base64.encode64(OpenSSL::Digest::SHA1.new(cert.to_der).to_s.upcase.scan(/../).map(&:hex).pack('c*')).strip
+    Base64.urlsafe_encode64(OpenSSL::Digest::SHA1.new(cert.to_der).to_s)
   end
 
-  def self.load_key(token_type = 'token')
+  # We derive KIDs from the PK hashes
+  def self.gen_kid(public_key)
+    Base64.urlsafe_encode64(OpenSSL::Digest::SHA1.new(public_key.to_der).to_s)
+  end
+
+  def self.load_pkey(token_type = 'token')
+    config = Config.base_config
+    cert_files = config.dig(token_type, 'jwks_additions') || []
+    cert_files.filter { |f| File.exist? f }.map do |f|
+      file_contents = File.read(f)
+      result = {}
+      # The file could be either a certificate or a key
+      begin
+        # Is it a cert?
+        cert = OpenSSL::X509::Certificate.new file_contents
+        result['cert'] = cert
+        result['pk'] = cert.public_key
+      rescue StandardError => e
+        # Is it a secret/public key?
+        key = OpenSSL::PKey:RSA.new file_contents
+        result['pk'] = key.public_key
+      end
+      result
+    end
+  end
+
+  def self.load_skey(token_type = 'token')
     filename = Config.base_config[token_type]['signing_key']
-    setup_key(filename) unless File.exist? filename
+    setup_skey(filename) unless File.exist? filename
     sk = OpenSSL::PKey::RSA.new File.read(filename)
-    cert = load_certs(token_type).select { |c| c.check_private_key sk }.first
-    cert = setup_cert(sk, token_type, "#{filename}.cert") if cert.nil?
-    { 'sk' => sk, 'cert' => cert }
+    pk = load_pkey(token_type).select { |c| c['cert'] && (c['cert'].check_private_key sk) }.first
+    (pk || {}).merge({ 'sk' => sk, 'pk' => sk.public_key })
   end
 end

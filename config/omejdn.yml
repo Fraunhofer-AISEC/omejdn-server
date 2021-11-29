@@ -18,11 +18,11 @@ openid: true
 #accept_audience:
 
 # Token signing keys, certificates and default values
-# Certificates may include previously used ones for communication in the JWKS
+# jwks_additions may be used to specify additional certificates and keys to be published in the JWKS
 token:
   expiration: 3600
   signing_key: omejdn_priv.pem
-  certificates:
+  jwks_additions:
   - omejdn_priv.pem.cert
   algorithm: RS256
   audience: TestServer
@@ -30,7 +30,7 @@ token:
 id_token:
   expiration: 3600
   signing_key: omejdn_priv.pem
-  certificates:
+  jwks_additions:
   - omejdn_priv.pem.cert
   algorithm: RS256
   issuer: http://localhost:4567
