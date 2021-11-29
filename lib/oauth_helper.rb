@@ -89,7 +89,7 @@ class OAuthHelper
       key_material += Server.load_pkey(type)
       key_material.each do |k|
         jwk = JSON::JWK.new(
-          k["pk"],
+          k['pk'],
           kid: (Server.gen_kid k['pk']),
           use: 'sig'
         )

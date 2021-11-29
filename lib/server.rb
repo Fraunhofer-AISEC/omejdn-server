@@ -39,9 +39,9 @@ class Server
         cert = OpenSSL::X509::Certificate.new file_contents
         result['cert'] = cert
         result['pk'] = cert.public_key
-      rescue StandardError => e
+      rescue StandardError
         # Is it a secret/public key?
-        key = OpenSSL::PKey:RSA.new file_contents
+        key = OpenSSL::PKey :RSA.new file_contents
         result['pk'] = key.public_key
       end
       result
