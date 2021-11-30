@@ -44,7 +44,7 @@ class TokenHelper
       new_payload['sub'] = client.client_id if user.nil?
     end
     signing_material = Server.load_skey('token')
-    kid = Server.gen_kid(signing_material['pk'])
+    kid = JSON::JWK.new(signing_material['pk'])[:kid]
     JWT.encode new_payload, signing_material['sk'], 'RS256', { typ: 'at+jwt', kid: kid }
   end
 
@@ -102,7 +102,7 @@ class TokenHelper
     }.merge(map_claims_to_userinfo(uentry.attributes, claims, client, scopes))
     new_payload['nonce'] = nonce unless nonce.nil?
     signing_material = Server.load_skey('token')
-    kid = Server.gen_kid(signing_material['pk'])
+    kid = JSON::JWK.new(signing_material['pk'])[:kid]
     JWT.encode new_payload, signing_material['sk'], 'RS256', { typ: 'JWT', kid: kid }
   end
 

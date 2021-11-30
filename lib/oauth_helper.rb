@@ -88,11 +88,11 @@ class OAuthHelper
       key_material = [Server.load_skey(type)]
       key_material += Server.load_pkey(type)
       key_material.each do |k|
-        jwk = JSON::JWK.new(
-          k['pk'],
-          kid: (Server.gen_kid k['pk']),
-          use: 'sig'
-        )
+        # Internally, this creates a KID following RFC 7638 using SHA256
+        # Only works with RSA, EC-Keys, and symmetric keys though.
+        # Further key types will require upstream changes
+        jwk = JSON::JWK.new(k['pk'])
+        jwk[:use] = 'sig'
         if k['cert']
           jwk[:x5c] = Server.gen_x5c(k['cert'])
           jwk[:x5t] = Server.gen_x5t(k['cert'])

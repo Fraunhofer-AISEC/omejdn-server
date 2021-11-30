@@ -22,11 +22,6 @@ class Server
     Base64.urlsafe_encode64(OpenSSL::Digest::SHA1.new(cert.to_der).to_s)
   end
 
-  # We derive KIDs from the PK hashes
-  def self.gen_kid(public_key)
-    Base64.urlsafe_encode64(OpenSSL::Digest::SHA1.new(public_key.to_der).to_s)
-  end
-
   def self.load_pkey(token_type = 'token')
     config = Config.base_config
     cert_files = config.dig(token_type, 'jwks_additions') || []
