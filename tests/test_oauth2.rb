@@ -271,5 +271,4 @@ class OAuth2Test < Test::Unit::TestCase
     assert_equal 'write', at['omejdn']
     assert_equal at['dynattribute'], requested_claims['*']['dynattribute']['value']
   end
-
 end

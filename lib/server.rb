@@ -14,7 +14,6 @@ class Server
   end
 
   def self.gen_x5c(certs)
-    # FIXME: The chain is supposed to be represented via an array of certificates
     certs.map { |cert| Base64.encode64(cert.to_der).strip }
   end
 
