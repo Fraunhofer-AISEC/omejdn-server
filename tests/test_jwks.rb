@@ -39,6 +39,12 @@ class JWKSTest < Test::Unit::TestCase
   def test_jwks
     get '/.well-known/jwks.json'
     assert last_response.ok?
-    p last_response.body
+    jwks = JSON.parse last_response.body
+    assert_equal 1, jwks.length
+    jwk = jwks[0]
+    assert_equal "RSA", jwk['kty']
+    assert_equal "sig", jwk['use']
+    assert_equal 2, jwk['x5c'].length
+    assert jwk['x5t']
   end
 end

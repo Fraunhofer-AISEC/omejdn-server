@@ -93,9 +93,9 @@ class OAuthHelper
         # Further key types will require upstream changes
         jwk = JSON::JWK.new(k['pk'])
         jwk[:use] = 'sig'
-        if k['cert']
-          jwk[:x5c] = Server.gen_x5c(k['cert'])
-          jwk[:x5t] = Server.gen_x5t(k['cert'])
+        if k['certs']
+          jwk[:x5c] = Server.gen_x5c(k['certs'])
+          jwk[:x5t] = Server.gen_x5t(k['certs'])
         end
         jwks << jwk
       end
