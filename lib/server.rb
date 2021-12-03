@@ -15,7 +15,7 @@ class Server
 
   def self.gen_x5c(certs)
     # FIXME: The chain is supposed to be represented via an array of certificates
-    certs.map{|cert| Base64.encode64(cert.to_der).strip}
+    certs.map { |cert| Base64.encode64(cert.to_der).strip }
   end
 
   def self.gen_x5t(certs)
@@ -36,11 +36,14 @@ class Server
         # For now, we support PEM chains using this hack
         if file_contents.ascii_only? # PEM with chain support
           chain_split = file_contents.split('-----')
-          chain = chain_split.select.with_index{|_,i| (i-2)%4 == 0 }.map{|c| "-----BEGIN CERTIFICATE-----\n#{c}-----END CERTIFICATE-----\n" }
+          chain = chain_split.select.with_index do |_, i|
+            ((i - 2) % 4).zero?
+          end
+          chain = chain.map { |c| "-----BEGIN CERTIFICATE-----\n#{c}-----END CERTIFICATE-----\n" }
         else # DER
           chain = [file_contents]
         end
-        certs  = chain.map{|c| OpenSSL::X509::Certificate._load c}
+        certs = chain.map { |c| OpenSSL::X509::Certificate._load c }
         result['certs'] = certs
         result['pk'] = certs[0].public_key
       rescue StandardError
@@ -56,7 +59,7 @@ class Server
     filename = Config.base_config[token_type]['signing_key']
     setup_skey(filename) unless File.exist? filename
     sk = OpenSSL::PKey::RSA.new File.read(filename)
-    pk = load_pkey(token_type).select { |c| c.dig('certs',0) && (c['certs'][0].check_private_key sk) }.first
+    pk = load_pkey(token_type).select { |c| c.dig('certs', 0) && (c['certs'][0].check_private_key sk) }.first
     (pk || {}).merge({ 'sk' => sk, 'pk' => sk.public_key })
   end
 end
