@@ -1,4 +1,4 @@
 /keys/*
 !/keys/.gitkeep
 /config/*
-/omejdn_priv.pem
+/omejdn_priv.*

@@ -82,11 +82,25 @@ class OAuthHelper
   end
 
   def self.generate_jwks
-    jwk = JSON::JWK.new(
-      Server.load_key.public_key,
-      kid: 'default'
-    )
-    JSON::JWK::Set.new jwk
+    jwks = JSON::JWK::Set.new
+    %w[token id_token].each do |type|
+      # Load the signing key
+      key_material = [Server.load_skey(type)]
+      key_material += Server.load_pkey(type)
+      key_material.each do |k|
+        # Internally, this creates a KID following RFC 7638 using SHA256
+        # Only works with RSA, EC-Keys, and symmetric keys though.
+        # Further key types will require upstream changes
+        jwk = JSON::JWK.new(k['pk'])
+        jwk[:use] = 'sig'
+        if k['certs']
+          jwk[:x5c] = Server.gen_x5c(k['certs'])
+          jwk[:x5t] = Server.gen_x5t(k['certs'])
+        end
+        jwks << jwk
+      end
+    end
+    jwks.uniq { |k| k['kid'] }
   end
 
   def self.openid_configuration(host, path)
