@@ -335,7 +335,7 @@ before '/userinfo' do
   jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
   halt 401 if jwt.nil? || jwt.empty?
   begin
-    key = Server.load_key
+    key = Server.load_skey['sk']
     @token = JWT.decode jwt, key.public_key, true, { algorithm: Config.base_config['token']['algorithm'] }
     @user = User.find_by_id(@token[0]['sub'])
     halt 403 unless [@token[0]['aud']].flatten.include?("#{Config.base_config['host']}/userinfo")
@@ -456,7 +456,8 @@ before '/api/v1/*' do
   begin
     jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
     halt 401 if jwt.nil? || jwt.empty?
-    token = JWT.decode(jwt, Server.load_key.public_key, true, { algorithm: Config.base_config['token']['algorithm'] })
+    token = JWT.decode(jwt, Server.load_skey['sk'].public_key, true,
+                       { algorithm: Config.base_config['token']['algorithm'] })
     halt 403 unless [token[0]['aud']].flatten.include?("#{Config.base_config['host']}/api")
     @scopes = token[0]['scope'].split
     @user_is_admin  = (@scopes.include? 'omejdn:admin')

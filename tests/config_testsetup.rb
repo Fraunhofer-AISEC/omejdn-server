@@ -86,14 +86,20 @@ class TestSetup
       'openid' => true,
       'token' => {
         'expiration' => 3600,
-        'signing_key' => 'omejdn_priv.pem',
+        'signing_key' => 'tests/test_resources/omejdn_test.pem',
+        'jwks_additions' => [
+          'tests/test_resources/omejdn_test.cert'
+        ],
         'algorithm' => 'RS256',
         'audience' => 'TestServer',
         'issuer' => 'http://localhost:4567'
       },
       'id_token' => {
         'expiration' => 3600,
-        'signing_key' => 'omejdn_priv.pem',
+        'signing_key' => 'tests/test_resources/omejdn_test.pem',
+        'jwks_additions' => [
+          'tests/test_resources/omejdn_test.cert'
+        ],
         'algorithm' => 'RS256',
         'issuer' => 'http://localhost:4567'
       },
