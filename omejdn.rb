@@ -124,6 +124,10 @@ class RequestCache
 end
 
 before do
+  # We define global cache control headers here
+  # They may be overwritten where necessary
+  headers['Pragma'] = 'no-cache'
+  headers['Cache-Control'] = 'no-store'
   headers['Access-Control-Allow-Origin'] = Config.base_config['allow_origin']
   headers['Access-Control-Allow-Headers'] = 'content-type,if-modified-since, authorization'
   if request.env['REQUEST_METHOD'] == 'OPTIONS'
@@ -222,6 +226,11 @@ post '/token' do
   rescue OAuth2Error
     halt 400, OAuthHelper.error_response('invalid_scope', '')
   end
+end
+
+before '/.well-known*' do
+  headers['Cache-Control'] = "max-age=#{60 * 60 * 24}, must-revalidate"
+  headers.delete('Pragma')
 end
 
 get '/.well-known/openid-configuration' do
