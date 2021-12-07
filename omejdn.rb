@@ -161,10 +161,10 @@ post '/token' do
 
   if params[:grant_type] == 'client_credentials'
     if params[:client_assertion_type] != 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
-      halt 400, OAuthHelper.error_response('invalid_request', 'Invalid client_assertion_type')
+      halt 400, OAuthHelper.error_response('unauthorized_grant', 'Invalid client_assertion_type')
     end
     jwt = params[:client_assertion]
-    halt 400, OAuthHelper.error_response('invalid_client', 'Assertion missing') if jwt.nil?
+    halt 400, OAuthHelper.error_response('invalid_grant', 'Assertion missing') if jwt.nil?
     client = Client.find_by_jwt jwt
     halt 400, OAuthHelper.error_response('invalid_client', 'Client unknown') if client.nil?
     scopes = client.filter_scopes(params[:scope]&.split) || []
