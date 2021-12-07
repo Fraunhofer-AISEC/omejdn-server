@@ -3,7 +3,7 @@
 # OAuth client helper class
 class Client
   attr_accessor :client_id, :redirect_uri, :name,
-                :allowed_scopes, :attributes
+                :allowed_scopes, :attributes, :allowed_resources
 
   def self.find_by_id(client_id)
     load_clients.each do |client|
@@ -12,31 +12,37 @@ class Client
     nil
   end
 
-  def self.build_client_from_config(conf_string)
-    client = Client.new
-    client.client_id = conf_string['client_id']
-    client.redirect_uri = conf_string['redirect_uri']
-    client.name = conf_string['name']
-    client.attributes = conf_string['attributes']
-    client.allowed_scopes = conf_string['allowed_scopes']
-    client
+  def apply_values(ccnf)
+    @client_id = ccnf['client_id']
+    @redirect_uri = ccnf['redirect_uri']
+    @name = ccnf['name']
+    @attributes = ccnf['attributes']
+    @allowed_scopes = ccnf['allowed_scopes']
+    @allowed_resources = ccnf['allowed_resources']
   end
 
   def self.load_clients
-    clients = []
-    Config.client_config.each do |ccnf|
-      clients << build_client_from_config(ccnf)
+    needs_save = false
+    clients = Config.client_config.map do |ccnf|
+      client = Client.new
+      client.apply_values(ccnf)
+      if ccnf['import_certfile']
+        begin
+          client.certificate = OpenSSL::X509::Certificate.new File.read ccnf['import_certfile']
+          needs_save = true
+        rescue StandardError => e
+          p "Unable to load key ``#{ccnf['import_certfile']}'': #{e}"
+        end
+      end
+      client
     end
+    Config.client_config = clients if needs_save
     clients
   end
 
   def self.from_json(json)
     client = Client.new
-    client.client_id = json['client_id']
-    client.name = json['name']
-    client.attributes = json['attributes']
-    client.allowed_scopes = json['allowed_scopes']
-    client.redirect_uri = json['redirect_uri']
+    client.apply_values(json)
     client
   end
 
@@ -54,7 +60,7 @@ class Client
 
   def self.find_by_jwt(jwt)
     clients = load_clients
-    puts "looking for client of #{jwt}" if ENV['APP_ENV'] != 'production'
+    puts "looking for client of #{jwt}" if Config.base_config['app_env'] != 'production'
     jwt_alg, jwt_cid = extract_jwt_cid jwt
     return nil if jwt_cid.nil?
 
@@ -63,12 +69,12 @@ class Client
 
       puts "Client #{jwt_cid} found"
       # Try verify
-      aud = ENV['OMEJDN_JWT_AUD_OVERRIDE'] || ENV['HOST'] || Config.base_config['host']
+      aud = Config.base_config['accept_audience']
       JWT.decode jwt, client.certificate&.public_key, true,
                  { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_alg }
       return client
     rescue StandardError => e
-      puts "Tried #{client.name}: #{e}" if ENV['APP_ENV'] != 'production'
+      puts "Tried #{client.name}: #{e}" if Config.base_config['app_env'] != 'production'
       return nil
     end
     puts "ERROR: Client #{jwt_cid} does not exist"
@@ -76,23 +82,29 @@ class Client
   end
 
   def to_dict
-    {
+    result = {
       'client_id' => @client_id,
       'name' => @name,
       'redirect_uri' => @redirect_uri,
       'allowed_scopes' => @allowed_scopes,
       'attributes' => @attributes
     }
+    result['allowed_resources'] = @allowed_resources unless @allowed_resources.nil?
+    result
+  end
+
+  def filter_scopes(scopes)
+    (scopes || []).select { |s| allowed_scopes.include? s }
   end
 
   def allowed_scoped_attributes(scopes)
-    attrs = []
-    Config.scope_mapping_config.each do |scope|
-      next unless scopes.include?(scope[0]) && allowed_scopes.include?(scope[0])
+    filter_scopes(scopes).map { |s| Config.scope_mapping_config[s] }.compact.flatten.uniq
+  end
 
-      attrs += scope[1]
-    end
-    attrs
+  def resources_allowed?(resources)
+    return true if @allowed_resources.nil?
+
+    resources.reject { |r| @allowed_resources.include? r }.empty?
   end
 
   def certificate_file

@@ -1,26 +1,45 @@
 ---
 # The Omejdn host
 host: http://localhost:4567
+# A base path
+path_prefix: ''
+# Which address to bind to
+bind_to: 0.0.0.0
+# Allow Origin Header field
+allow_origin: "*"
+
+# Set this to `production` to disable debug output
+app_env: debug
 
 # Enable OpenID funtionality
 openid: true
 
-# Token singing keys and default values
+# Overwrite the aud claim value to accept in client's bearer tokens (defaults to host)
+#accept_audience:
+
+# Token signing keys, certificates and default values
+# jwks_additions may be used to specify additional certificates and keys to be published in the JWKS
 token:
   expiration: 3600
   signing_key: omejdn_priv.pem
+  jwks_additions:
+  - omejdn_priv.pem.cert
   algorithm: RS256
   audience: TestServer
   issuer: http://localhost:4567
 id_token:
   expiration: 3600
   signing_key: omejdn_priv.pem
+  jwks_additions:
+  - omejdn_priv.pem.cert
   algorithm: RS256
   issuer: http://localhost:4567
 
 # Enabled user backends (can be configured in user_backend.yml)
 user_backend:
 - yaml
+# Default user backend
+user_backend_default: yaml
 
 # User Selfservice API
 user_selfservice:

@@ -29,6 +29,8 @@ jobs:
         bundle exec ruby tests/test_admin_api.rb
         bundle exec ruby tests/test_selfservice_api.rb
         bundle exec ruby tests/test_oauth_helper.rb
+        bundle exec ruby tests/test_oauth2.rb
+        bundle exec ruby tests/test_jwks.rb
     - name: SBOM generation
       run: |
         gem install --no-document cyclonedx-ruby
@@ -40,7 +42,7 @@ jobs:
   docker-build:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads')
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
     steps:
     - uses: actions/checkout@master
     - uses: actions/download-artifact@v2

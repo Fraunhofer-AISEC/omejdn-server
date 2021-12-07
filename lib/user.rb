@@ -104,7 +104,7 @@ class User
     user.extern = provider['name'] || false
     user.attributes = []
     user.attributes |= ClaimMapper.map_claims(json, provider) unless provider['claim_mapper'].nil?
-    User.add_user(user, 'yaml')
+    User.add_user(user, Config.base_config['user_backend_default'])
     user
   end
 
