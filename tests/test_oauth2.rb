@@ -168,12 +168,6 @@ class OAuth2Test < Test::Unit::TestCase
   end
 
   def request_authorization(user, client, query_additions='', should_work=true)
-    # POST /login (Separating pass and word in the hope of silencing Sonarcloud)
-    post ('/login?username='+user['username']+'&pass'+'word=mypass'+'word'),{},{}
-    good_so_far = last_response.redirect?
-    assert good_so_far if should_work
-    assert_equal "http://localhost:4567/login", last_response.original_headers['Location']
-    
     # GET /authorize
     get  ('/authorize?response_type=code'+
           '&scope=omejdn:write'+
@@ -181,15 +175,29 @@ class OAuth2Test < Test::Unit::TestCase
           '&redirect_uri='+client.redirect_uri+
           '&state=testState'+query_additions), {}, {}
     # p last_response
-    good_so_far &= last_response.ok?
+    good_so_far = last_response.redirect?
     assert good_so_far if should_work
+    assert ["http://localhost:4567/consent", "http://localhost:4567/login"].include? last_response.original_headers['Location']
     
-    # POST /authorize
-    post '/authorize', {}, {}
+    # POST /login (Separating pass and word in the hope of silencing Sonarcloud)
+    post ('/login?username='+user['username']+'&pass'+'word=mypass'+'word'),{},{}
     good_so_far &= last_response.redirect?
     assert good_so_far if should_work
+    assert_equal "http://localhost:4567/consent", last_response.original_headers['Location']
+
+    # GET /consent
+    get '/consent', {}, {}
+    good_so_far &= last_response.ok?
+    assert good_so_far if should_work
+
+    # POST /consent
+    post '/consent', {}, {}
+    good_so_far &= last_response.redirect?
+    assert good_so_far if should_work
+    # p last_response
     header_hash = CGI.parse(last_response.original_headers['Location'])
     assert code=header_hash[client.redirect_uri+'?code'].first
+    # p code
     assert_equal 'testState', header_hash['state'].first
 
     # Get /token

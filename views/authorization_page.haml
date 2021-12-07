@@ -7,7 +7,7 @@
   %span Currently logged in as 
   %b #{locals[:user].username}
   %a{:href => "#{locals[:host]}/logout", :class => "button"} Change...
-%form{:action => "#{locals[:host]}/authorize", :method => "post"}
+%form{:action => "#{locals[:host]}/consent", :method => "post"}
   %fieldset
     %br
     %h3 Requested scopes:

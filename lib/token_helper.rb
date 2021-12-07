@@ -89,17 +89,17 @@ class TokenHelper
   end
 
   # Builds a JWT ID token for client including user attributes
-  def self.build_id_token(client, uentry, nonce, claims, scopes)
+  def self.build_id_token(client, user, nonce, claims, scopes)
     base_config = Config.base_config
     now = Time.new.to_i
     new_payload = {
       'aud' => client.client_id,
       'iss' => base_config['token']['issuer'],
-      'sub' => uentry.username,
+      'sub' => user.username,
       'nbf' => now,
       'iat' => now,
       'exp' => now + base_config['id_token']['expiration']
-    }.merge(map_claims_to_userinfo(uentry.attributes, claims, client, scopes))
+    }.merge(map_claims_to_userinfo(user.attributes, claims, client, scopes))
     new_payload['nonce'] = nonce unless nonce.nil?
     signing_material = Server.load_skey('token')
     kid = JSON::JWK.new(signing_material['pk'])[:kid]

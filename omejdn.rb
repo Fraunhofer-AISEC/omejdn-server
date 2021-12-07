@@ -150,6 +150,8 @@ before do
   end
 end
 
+########## TOKEN ISSUANCE ##################
+
 # Handle token request
 post '/token' do
   client = nil
@@ -228,37 +230,75 @@ post '/token' do
   end
 end
 
-before '/.well-known*' do
-  headers['Cache-Control'] = "max-age=#{60 * 60 * 24}, must-revalidate"
-  headers.delete('Pragma')
+########## AUTHORIZATION FLOW ##################
+
+# Defines tasks for the user before a code is issued
+module AuthorizationTask
+  LOGIN = 1
+  CONSENT = 2
+  ISSUE = 3
 end
 
-get '/.well-known/openid-configuration' do
-  headers['Content-Type'] = 'application/json'
-  p "Host #{Config.base_config['host']},#{my_path}"
-  JSON.generate OAuthHelper.openid_configuration(Config.base_config['host'], my_path)
+# Redirect to the current task.
+# completed_task will be removed from the list
+def next_task(completed_task = nil)
+  session[:tasks] ||= []
+  session[:tasks].delete(completed_task) unless completed_task.nil?
+  task = session[:tasks].first
+  case task
+  when AuthorizationTask::LOGIN
+    redirect to("#{my_path}/login")
+  when AuthorizationTask::CONSENT
+    redirect to("#{my_path}/consent")
+  when AuthorizationTask::ISSUE
+    # Only issue code once
+    session[:tasks].delete(task)
+    issue_code
+  else
+    # The user has jumped into some stage without an initial /authorize call
+    # For now, redirect to /login
+    p "Undefined task: #{task}. Redirecting to /login"
+    redirect to("#{my_path}/login")
+  end
 end
 
 # Handle authorization request
 get '/authorize' do
   halt 404 unless Config.base_config['openid']
-  session[:url_params] = params
-  redirect to("#{my_path}/login") if session['user'].nil?
-  user = nil
   unless params[:response_type] == 'code'
     halt 400, OAuthHelper.error_response('unsupported_response_type', "Given: #{params[:response_type]}")
   end
 
-  user = UserSession.get[session['user']]
+  # Save parameters
+  session[:url_params] = params
+
+  # Tasks the user has to perform
+  session[:tasks] = []
+  # We could add LOGIN here to save a redirect
+  session[:tasks] << AuthorizationTask::CONSENT
+  session[:tasks] << AuthorizationTask::ISSUE
+
+  # Redirect the user to start the authentication flow
+  session[:tasks].sort!.uniq!
+  next_task
+end
+
+get '/consent' do
+  if session[:user].nil?
+    session[:tasks].unshift AuthorizationTask::LOGIN
+    next_task
+  end
+
+  user = UserSession.get[session[:user]]
   halt 400, OAuthHelper.error_response('invalid_user', '') if user.nil?
 
-  client = Client.find_by_id params['client_id']
+  client = Client.find_by_id session[:url_params]['client_id']
   halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
 
   session[:scopes] = []
   scope_mapping = Config.scope_mapping_config
 
-  client.filter_scopes(params[:scope].split).each do |s|
+  client.filter_scopes(session[:url_params][:scope].split).each do |s|
     p "Checking scope #{s}"
 
     session[:scopes].push(s) if s == 'openid'
@@ -281,13 +321,13 @@ get '/authorize' do
   p "Granted scopes: #{session[:scopes]}"
   p "The user seems to be #{user.username}" if debug
 
-  escaped_redir = CGI.unescape(params[:redirect_uri].gsub('%20', '+'))
+  escaped_redir = CGI.unescape(session[:url_params][:redirect_uri].gsub('%20', '+'))
   halt 400, OAuthHelper.error_response('invalid_redirect_uri', '') unless [client.redirect_uri,
                                                                            'localhost'].any? do |uri|
                                                                             escaped_redir.include? uri
                                                                           end
 
-  session[:resources] = [params['resource'] || Config.base_config['token']['audience']].flatten
+  session[:resources] = [session[:url_params]['resource'] || Config.base_config['token']['audience']].flatten
   halt 400, OAuthHelper.error_response('invalid_target') unless client.resources_allowed? session[:resources]
 
   # Seems to be in order
@@ -300,33 +340,34 @@ get '/authorize' do
   }
 end
 
-post '/authorize' do
-  code = OAuthHelper.new_authz_code
-  RequestCache.get[code] = {}
-  RequestCache.get[code][:user] = UserSession.get[session['user']]
-  RequestCache.get[code][:scopes] = session[:scopes]
-  RequestCache.get[code][:resources] = session[:resources]
-  RequestCache.get[code][:nonce] = session[:url_params][:nonce]
-  RequestCache.get[code][:claims] = {}
-  RequestCache.get[code][:claims] = JSON.parse session[:url_params]['claims'] if session[:url_params].key?('claims')
+post '/consent' do
+  next_task AuthorizationTask::CONSENT
+end
+
+def issue_code
+  cache = {}
+  cache[:user] = UserSession.get[session[:user]]
+  cache[:scopes] = session[:scopes]
+  cache[:resources] = session[:resources]
+  cache[:nonce] = session[:url_params][:nonce]
+  cache[:claims] = JSON.parse session.dig(:url_params, 'claims') || '{}'
   unless session[:url_params][:code_challenge].nil?
     unless session[:url_params][:code_challenge_method] == 'S256'
       halt 400, OAuthHelper.error_response('invalid_request',
                                            'Transform algorithm not supported')
     end
 
-    RequestCache.get[code][:pkce] = session[:url_params][:code_challenge]
-    RequestCache.get[code][:pkce_method] = session[:url_params][:code_challenge_method]
+    cache[:pkce] = session[:url_params][:code_challenge]
+    cache[:pkce_method] = session[:url_params][:code_challenge_method]
   end
+  code = OAuthHelper.new_authz_code
+  RequestCache.get[code] = cache
   redirect_uri = session[:url_params][:redirect_uri]
   resp = "?code=#{code}&state=#{session[:url_params][:state]}"
   redirect to(redirect_uri + resp)
 end
 
-get '/.well-known/jwks.json' do
-  headers['Content-Type'] = 'application/json'
-  OAuthHelper.generate_jwks.to_json
-end
+########## USERINFO ##################
 
 before '/userinfo' do
   @user = nil
@@ -354,13 +395,13 @@ end
 ########## LOGIN/LOGOUT ##################
 
 get '/logout' do
-  session['user'] = nil
+  session[:user] = nil
   redirect_uri = params['post_logout_redirect_uri'] || "#{my_path}/login"
   redirect to(redirect_uri)
 end
 
 post '/logout' do
-  session['user'] = nil
+  session[:user] = nil
   redirect_uri = params['post_logout_redirect_uri'] || "#{my_path}/login"
   redirect to(redirect_uri)
 end
@@ -394,12 +435,9 @@ post '/login' do
                                                                                                 params[:password])
   nonce = rand(2**512)
   UserSession.get[nonce] = user
-  session['user'] = nonce
-  if session[:url_params].nil?
-    redirect to("#{my_path}/login")
-  else
-    redirect to("#{my_path}/authorize?#{URI.encode_www_form(session[:url_params]).gsub('+', '%20')}")
-  end
+  session[:user] = nonce
+  session[:auth_time] = Time.new.to_i
+  next_task AuthorizationTask::LOGIN
 end
 
 # FIXME
@@ -428,7 +466,6 @@ get '/oauth_cb' do
   return 'Unauthorized' if at.nil?
 
   user = nil
-  nonce = rand(2**512)
   uri = URI(oauth_providers[provider_index]['userinfo_endpoint'])
   Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
     req = Net::HTTP::Get.new(uri)
@@ -438,10 +475,11 @@ get '/oauth_cb' do
   end
   return 'Internal Error' if user.username.nil?
 
+  nonce = rand(2**512)
   UserSession.get[nonce] = user
-  session['user'] = nonce
-  redirect to(my_path) if session[:url_params].nil? # This is actually an error
-  redirect to("#{my_path}/authorize?#{URI.encode_www_form(session[:url_params])}")
+  session[:user] = nonce
+  session[:auth_time] = Time.new.to_i
+  next_task AuthorizationTask::LOGIN
 end
 
 ########## User Selfservice ##########
@@ -745,6 +783,24 @@ delete '/api/v1/config/oauth_providers/:provider' do
     halt 200
   end
   halt 404
+end
+
+########## WELL-KNOWN ENDPOINTS ##################
+
+before '/.well-known*' do
+  headers['Cache-Control'] = "max-age=#{60 * 60 * 24}, must-revalidate"
+  headers.delete('Pragma')
+end
+
+get '/.well-known/jwks.json' do
+  headers['Content-Type'] = 'application/json'
+  OAuthHelper.generate_jwks.to_json
+end
+
+get '/.well-known/openid-configuration' do
+  headers['Content-Type'] = 'application/json'
+  p "Host #{Config.base_config['host']},#{my_path}"
+  JSON.generate OAuthHelper.openid_configuration(Config.base_config['host'], my_path)
 end
 
 get '/.well-known/webfinger' do
