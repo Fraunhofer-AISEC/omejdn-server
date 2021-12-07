@@ -38,10 +38,8 @@ class Config
 
   def self.base_config=(config)
     # Make sure those are integers
-    config['token']['expiration'] = config['token']['expiration'].to_i
-    if config['id_token'] && config['id_token']['expiration']
-      config['id_token']['expiration'] =
-        config['id_token']['expiration'].to_i
+    %w[token id_token].map { |t| config[t] }.compact.each do |c|
+      c['expiration'] = c['expiration'].to_i
     end
     write_config OMEJDN_BASE_CONFIG_FILE, config.to_yaml
   end

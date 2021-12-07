@@ -55,10 +55,10 @@ class Server
   end
 
   def self.load_skey(token_type = 'token')
-    filename = Config.base_config[token_type]['signing_key']
+    filename = Config.base_config.dig(token_type, 'signing_key')
     setup_skey(filename) unless File.exist? filename
     sk = OpenSSL::PKey::RSA.new File.read(filename)
-    pk = load_pkey(token_type).select { |c| c.dig('certs', 0) && (c['certs'][0].check_private_key sk) }.first
+    pk = load_pkey(token_type).select { |c| c.dig('certs', 0) && (c.dig('certs', 0).check_private_key sk) }.first
     (pk || {}).merge({ 'sk' => sk, 'pk' => sk.public_key })
   end
 end

@@ -39,7 +39,7 @@ class OAuth2Test < Test::Unit::TestCase
   def request_client_credentials(client, alg, key, certificate, query_additions='', should_work=true)
     iss = client.client_id
     now = Time.new.to_i
-    payload = { aud: Config.base_config['token']['issuer'], sub: iss, iss: iss, iat: now, nbf: now, exp: now + 3600 }
+    payload = { aud: Config.base_config.dig('token','issuer'), sub: iss, iss: iss, iat: now, nbf: now, exp: now + 3600 }
     client.certificate = certificate
     query = 'grant_type=client_credentials'+
             '&client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer'+
@@ -60,20 +60,20 @@ class OAuth2Test < Test::Unit::TestCase
     assert last_response.ok?
     server_keys = JSON::JWK::Set.new JSON.parse(last_response.body)
     JWT.decode(jwt,nil,true, {
-      algorithms: [TestSetup.config['token']['algorithm']],
+      algorithms: [TestSetup.config.dig('token','algorithm')],
       jwks: {'keys'=>server_keys}})
   end
 
   def extract_access_token(response)
     check_keys response, ["access_token","expires_in","token_type","scope"]
-    assert_equal response["expires_in"], TestSetup.config['token']['expiration']
+    assert_equal response["expires_in"], TestSetup.config.dig('token','expiration')
     assert_equal response["token_type"], "bearer"
     assert_equal response["scope"], "omejdn:write"
 
     jwt = decode_jwt response['access_token']
     check_keys jwt[1], ['typ','kid','alg']
-    assert_equal jwt[1]['typ'], 'at+jwt'
-    assert_equal jwt[1]['alg'], TestSetup.config['token']['algorithm']
+    assert_equal jwt.dig(1,'typ'), 'at+jwt'
+    assert_equal jwt.dig(1,'alg'), TestSetup.config.dig('token','algorithm')
 
     return jwt[0]
   end
@@ -84,8 +84,8 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], [TestSetup.config['token']['audience'], TestSetup.config['host']+'/api']
-    assert_equal at['iss'], TestSetup.config['token']['issuer']
+    assert_equal at['aud'], [TestSetup.config.dig('token','audience'), TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config.dig('token','issuer')
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
     assert_equal at['exp'], at['nbf']+response["expires_in"]
@@ -104,7 +104,7 @@ class OAuth2Test < Test::Unit::TestCase
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
     assert_equal at['scope'], 'omejdn:write'
     assert_equal at['aud'], ['http://example.org', TestSetup.config['host']+'/api']
-    assert_equal at['iss'], TestSetup.config['token']['issuer']
+    assert_equal at['iss'], TestSetup.config.dig('token','issuer')
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
     assert_equal at['exp'], at['nbf']+response["expires_in"]
@@ -120,8 +120,8 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], [TestSetup.config['token']['audience'], TestSetup.config['host']+'/api']
-    assert_equal at['iss'], TestSetup.config['token']['issuer']
+    assert_equal at['aud'], [TestSetup.config.dig('token','audience'), TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config.dig('token','issuer')
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
     assert_equal at['exp'], at['nbf']+response["expires_in"]
@@ -147,15 +147,15 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'dynattribute']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], [TestSetup.config['token']['audience'], TestSetup.config['host']+'/api']
-    assert_equal at['iss'], TestSetup.config['token']['issuer']
+    assert_equal at['aud'], [TestSetup.config.dig('token','audience'), TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config.dig('token','issuer')
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
     assert_equal at['exp'], at['nbf']+response["expires_in"]
     assert       at['jti']
     assert_equal at['client_id'], @client_dyn_claims.client_id
     assert_equal at['sub'], at['client_id']
-    assert_equal at['dynattribute'], requested_claims['*']['dynattribute']['value']
+    assert_equal at['dynattribute'], requested_claims.dig('*','dynattribute','value')
   end
 
   def test_algorithms
@@ -217,14 +217,14 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], [TestSetup.config['token']['audience'], TestSetup.config['host']+'/api']
-    assert_equal at['iss'], TestSetup.config['token']['issuer']
+    assert_equal at['aud'], [TestSetup.config.dig('token','audience'), TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config.dig('token','issuer')
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
     assert_equal at['exp'], at['nbf']+response["expires_in"]
     assert       at['jti']
     assert_equal at['client_id'], @client.client_id
-    assert_equal at['sub'], TestSetup.users[0]['username']
+    assert_equal at['sub'], TestSetup.users.dig(0,'username')
     assert_equal 'write', at['omejdn']
   end
 
@@ -241,13 +241,13 @@ class OAuth2Test < Test::Unit::TestCase
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn']
     assert_equal at['scope'], 'omejdn:write'
     assert_equal at['aud'], ['http://example.org', TestSetup.config['host']+'/api']
-    assert_equal at['iss'], TestSetup.config['token']['issuer']
+    assert_equal at['iss'], TestSetup.config.dig('token','issuer')
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
     assert_equal at['exp'], at['nbf']+response["expires_in"]
     assert       at['jti']
     assert_equal at['client_id'], @client2.client_id
-    assert_equal at['sub'], TestSetup.users[0]['username']
+    assert_equal at['sub'], TestSetup.users.dig(0,'username')
     assert_equal 'write', at['omejdn']
   end
 
@@ -268,15 +268,15 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn', 'dynattribute']
     assert_equal at['scope'], 'omejdn:write'
-    assert_equal at['aud'], [TestSetup.config['token']['audience'], TestSetup.config['host']+'/api']
-    assert_equal at['iss'], TestSetup.config['token']['issuer']
+    assert_equal at['aud'], [TestSetup.config.dig('token','audience'), TestSetup.config['host']+'/api']
+    assert_equal at['iss'], TestSetup.config.dig('token','issuer')
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['iat'], at['nbf']
     assert_equal at['exp'], at['nbf']+response["expires_in"]
     assert       at['jti']
     assert_equal at['client_id'], @client.client_id
-    assert_equal at['sub'], TestSetup.users[2]['username']
+    assert_equal at['sub'], TestSetup.users.dig(2,'username')
     assert_equal 'write', at['omejdn']
-    assert_equal at['dynattribute'], requested_claims['*']['dynattribute']['value']
+    assert_equal at['dynattribute'], requested_claims.dig('*','dynattribute','value')
   end
 end

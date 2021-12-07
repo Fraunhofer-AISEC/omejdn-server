@@ -68,7 +68,7 @@ class LdapUserDb < UserDb
   def ldap_entry_to_user(entry)
     user_backend_config = Config.user_backend_config
     user = User.new
-    user.username = entry[user_backend_config['ldap']['uidKey']][0]
+    user.username = entry.dig(user_backend_config.dig('ldap', 'uidKey'), 0)
     user.extern = true
     user.password = nil
     user.backend = 'ldap'
@@ -83,9 +83,9 @@ class LdapUserDb < UserDb
   def load_users
     user_backend_config = Config.user_backend_config
     ldap = Net::LDAP.new
-    ldap.host = user_backend_config['ldap']['host']
-    ldap.port = user_backend_config['ldap']['port']
-    base_dn = user_backend_config['ldap']['baseDN']
+    ldap.host = user_backend_config.dig('ldap', 'host')
+    ldap.port = user_backend_config.dig('ldap', 'port')
+    base_dn = user_backend_config.dig('ldap', 'baseDN')
     t_users = []
     ldap.search(base: base_dn) do |entry|
       puts "DN: #{entry.dn}"
@@ -110,12 +110,12 @@ class LdapUserDb < UserDb
 
   def bind(config, bdn, password)
     ldap = Net::LDAP.new
-    ldap.host = config['ldap']['host']
-    ldap.port = config['ldap']['port']
+    ldap.host = config.dig('ldap', 'host')
+    ldap.port = config.dig('ldap', 'port')
     puts "Trying bind for #{bdn}"
     ldap = Net::LDAP.new({
-                           host: config['ldap']['host'],
-                           port: config['ldap']['port'],
+                           host: config.dig('ldap', 'host'),
+                           port: config.dig('ldap', 'port'),
                            auth: {
                              method: :simple,
                              username: bdn,
@@ -133,9 +133,9 @@ class LdapUserDb < UserDb
 
   def nobind(config)
     Net::LDAP.new({
-                    host: config['ldap']['host'],
-                    port: config['ldap']['port'],
-                    base: config['ldap']['base_dn'],
+                    host: config.dig('ldap', 'host'),
+                    port: config.dig('ldap', 'port'),
+                    base: config.dig('ldap', 'baseDN'),
                     verbose: true,
                     encryption: {
                       method: :simple_tls,
@@ -147,8 +147,8 @@ class LdapUserDb < UserDb
   def lookup_user(user, config)
     return @dn_cache[user.username] unless @dnCache[user.username].nil?
 
-    connect(config).search(base: config['ldap']['baseDN'],
-                           filter: Net::LDAP::Filter.eq(config['ldap']['uidKey'],
+    connect(config).search(base: config.dig('ldap', 'baseDN'),
+                           filter: Net::LDAP::Filter.eq(config.dig('ldap', 'uidKey'),
                                                         user.username)) do |entry|
       return entry.dn
     end
@@ -164,8 +164,8 @@ class LdapUserDb < UserDb
 
     puts "Trying bind for #{user_dn}"
     Net::LDAP.new({
-                    host: user_backend_config['ldap']['host'],
-                    port: user_backend_config['ldap']['port'],
+                    host: user_backend_config.dig('ldap', 'host'),
+                    port: user_backend_config.dig('ldap', 'port'),
                     auth: {
                       method: :simple,
                       username: user_dn,
@@ -190,8 +190,8 @@ class LdapUserDb < UserDb
     user_backend_config = Config.user_backend_config
     ldap = connect(user_backend_config)
     p ldap
-    base_dn = user_backend_config['ldap']['baseDN']
-    uid_key = user_backend_config['ldap']['uidKey']
+    base_dn = user_backend_config.dig('ldap', 'baseDN')
+    uid_key = user_backend_config.dig('ldap', 'uidKey')
     puts "Looking for #{uid_key}=#{username}"
     filter = Net::LDAP::Filter.eq(uid_key, username)
     ldap.search(verbose: true, base: base_dn, filter: filter) do |entry|

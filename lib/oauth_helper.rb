@@ -24,7 +24,7 @@ class OAuthHelper
     response = {}
     response['access_token'] = access_token
     response['id_token'] = id_token unless id_token.nil?
-    response['expires_in'] = Config.base_config['token']['expiration']
+    response['expires_in'] = Config.base_config.dig('token', 'expiration')
     response['token_type'] = 'bearer'
     response['scope'] = scopes.join ' '
     JSON.generate response
@@ -106,7 +106,7 @@ class OAuthHelper
   def self.openid_configuration(host, path)
     base_config = Config.base_config
     metadata = {}
-    metadata['issuer'] = base_config['token']['issuer']
+    metadata['issuer'] = base_config.dig('token', 'issuer')
     metadata['authorization_endpoint'] = "#{path}/authorize"
     metadata['token_endpoint'] = "#{path}/token"
     metadata['userinfo_endpoint'] = "#{path}/userinfo"
@@ -116,7 +116,7 @@ class OAuthHelper
     metadata['response_types_supported'] = ['code']
     metadata['response_modes_supported'] = ['query'] # FIXME: we only do query atm no fragment
     metadata['grant_types_supported'] = ['authorization_code']
-    metadata['id_token_signing_alg_values_supported'] = base_config['token']['algorithm']
+    metadata['id_token_signing_alg_values_supported'] = base_config.dig('token', 'algorithm')
     metadata
   end
 

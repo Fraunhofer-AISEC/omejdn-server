@@ -6,7 +6,7 @@ require 'sqlite3'
 class SqliteUserDb < UserDb
   def create_user(user)
     user_backend_config = Config.user_backend_config
-    db = SQLite3::Database.open user_backend_config['sqlite']['location']
+    db = SQLite3::Database.open user_backend_config.dig('sqlite', 'location')
     db.execute 'CREATE TABLE IF NOT EXISTS password(username TEXT PRIMARY KEY, password TEXT)'
     db.execute 'CREATE TABLE IF NOT EXISTS attributes(username TEXT, key TEXT, value TEXT, PRIMARY KEY (username, key))'
     db.execute 'INSERT INTO password(username, password) VALUES(?, ?)', user.username, user.password
@@ -19,8 +19,8 @@ class SqliteUserDb < UserDb
 
   def delete_user(username)
     user_backend_config = Config.user_backend_config
-    db = SQLite3::Database.open user_backend_config['sqlite']['location']
-    user_in_sqlite = (db.execute 'SELECT EXISTS(SELECT 1 FROM password WHERE username=?)', username)[0][0]
+    db = SQLite3::Database.open user_backend_config.dig('sqlite', 'location')
+    user_in_sqlite = (db.execute 'SELECT EXISTS(SELECT 1 FROM password WHERE username=?)', username).dig(0, 0)
     return false unless user_in_sqlite == 1
 
     db.execute 'DELETE FROM password WHERE username=?', username
@@ -43,8 +43,8 @@ class SqliteUserDb < UserDb
 
   def update_user(user)
     user_backend_config = Config.user_backend_config
-    db = SQLite3::Database.open user_backend_config['sqlite']['location']
-    user_in_sqlite = (db.execute 'SELECT EXISTS(SELECT 1 FROM password WHERE username=?)', user.username)[0][0]
+    db = SQLite3::Database.open user_backend_config.dig('sqlite', 'location')
+    user_in_sqlite = (db.execute 'SELECT EXISTS(SELECT 1 FROM password WHERE username=?)', user.username).dig(0, 0)
     return false unless user_in_sqlite == 1
 
     db.results_as_hash = true
@@ -63,7 +63,7 @@ class SqliteUserDb < UserDb
 
   def load_users
     user_backend_config = Config.user_backend_config
-    db = SQLite3::Database.open user_backend_config['sqlite']['location']
+    db = SQLite3::Database.open user_backend_config.dig('sqlite', 'location')
     db.results_as_hash = true
     begin
       t_users = db.execute 'SELECT * FROM password'
@@ -94,8 +94,8 @@ class SqliteUserDb < UserDb
 
   def change_password(user, password)
     user_backend_config = Config.user_backend_config
-    db = SQLite3::Database.open user_backend_config['sqlite']['location']
-    user_in_sqlite = (db.execute 'SELECT EXISTS(SELECT 1 FROM password WHERE username=?)', user.username)[0][0]
+    db = SQLite3::Database.open user_backend_config.dig('sqlite', 'location')
+    user_in_sqlite = (db.execute 'SELECT EXISTS(SELECT 1 FROM password WHERE username=?)', user.username).dig(0, 0)
     return false unless user_in_sqlite == 1
 
     db.execute 'UPDATE password SET password=? WHERE username=?', password, user.username
