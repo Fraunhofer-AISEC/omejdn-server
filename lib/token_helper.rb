@@ -98,7 +98,8 @@ class TokenHelper
       'sub' => user.username,
       'nbf' => now,
       'iat' => now,
-      'exp' => now + base_config.dig('id_token', 'expiration')
+      'exp' => now + base_config.dig('id_token', 'expiration'),
+      'auth_time' => user.auth_time
     }.merge(map_claims_to_userinfo(user.attributes, claims, client, scopes))
     new_payload['nonce'] = nonce unless nonce.nil?
     signing_material = Server.load_skey('id_token')

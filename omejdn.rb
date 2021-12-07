@@ -306,7 +306,8 @@ get '/authorize' do
       session[:tasks] << AuthorizationTask::ACCOUNT_SELECT
     end
   end
-  if params[:max_age] && (Time.new.to_i - session[:auth_time]) > params[:max_age]
+  if params[:max_age] && session[:user] &&
+     (Time.new.to_i - UserSession.get[session[:user]].auth_time) > params[:max_age]
     session[:tasks] << AuthorizationTask::LOGIN
   end
 
@@ -470,9 +471,9 @@ post '/login' do
   redirect to("#{my_path}/login?error=\"Credentials incorrect\"") unless User.verify_credential(user,
                                                                                                 params[:password])
   nonce = rand(2**512)
+  user.auth_time = Time.new.to_i
   UserSession.get[nonce] = user
   session[:user] = nonce
-  session[:auth_time] = Time.new.to_i
   next_task AuthorizationTask::LOGIN
 end
 
@@ -508,9 +509,9 @@ get '/oauth_cb' do
   return 'Internal Error' if user.username.nil?
 
   nonce = rand(2**512)
+  user.auth_time = Time.new.to_i
   UserSession.get[nonce] = user
   session[:user] = nonce
-  session[:auth_time] = Time.new.to_i
   next_task AuthorizationTask::LOGIN
 end
 

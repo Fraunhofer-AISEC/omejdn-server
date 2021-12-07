@@ -9,7 +9,7 @@ require_relative './user_db'
 class User
   include BCrypt
 
-  attr_accessor :username, :password, :attributes, :extern, :backend
+  attr_accessor :username, :password, :attributes, :extern, :backend, :auth_time
 
   def self.verify_credential(user, pass)
     dbs = UserDbLoader.load_db
