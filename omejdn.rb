@@ -229,9 +229,10 @@ end
 
 # Defines tasks for the user before a code is issued
 module AuthorizationTask
-  LOGIN = 1
-  CONSENT = 2
-  ISSUE = 3
+  ACCOUNT_SELECT = 1
+  LOGIN = 2
+  CONSENT = 3
+  ISSUE = 4
 end
 
 # Redirect to the current task.
@@ -241,6 +242,11 @@ def next_task(completed_task = nil)
   session[:tasks].delete(completed_task) unless completed_task.nil?
   task = session[:tasks].first
   case task
+  when AuthorizationTask::ACCOUNT_SELECT
+    # FIXME: Provide a way to choose the current account without requiring another login
+    session[:tasks][0] = AuthorizationTask::LOGIN
+    session[:tasks].uniq!
+    next_task
   when AuthorizationTask::LOGIN
     redirect to("#{my_path}/login")
   when AuthorizationTask::CONSENT
@@ -249,12 +255,11 @@ def next_task(completed_task = nil)
     # Only issue code once
     session[:tasks].delete(task)
     issue_code
-  else
-    # The user has jumped into some stage without an initial /authorize call
-    # For now, redirect to /login
-    p "Undefined task: #{task}. Redirecting to /login"
-    redirect to("#{my_path}/login")
   end
+  # The user has jumped into some stage without an initial /authorize call
+  # For now, redirect to /login
+  p "Undefined task: #{task}. Redirecting to /login"
+  redirect to("#{my_path}/login")
 end
 
 # Handle authorization request
@@ -263,17 +268,50 @@ get '/authorize' do
   unless params[:response_type] == 'code'
     halt 400, OAuthHelper.error_response('unsupported_response_type', "Given: #{params[:response_type]}")
   end
+  client = Client.find_by_id params[:client_id]
+  halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
 
   # Save parameters
   session[:url_params] = params
 
   # Tasks the user has to perform
   session[:tasks] = []
-  # We could add LOGIN here to save a redirect
-  session[:tasks] << AuthorizationTask::CONSENT
-  session[:tasks] << AuthorizationTask::ISSUE
+
+  # We first define a minimum set of acceptable tasks
+  # Require Login
+  session[:tasks] << AuthorizationTask::LOGIN if session[:user].nil?
+  # If consent is not yet given to the client, demand it
+  unless (params[:scope].split - (session.dig(:consent, client.client_id) || [])).empty?
+    session[:tasks] << AuthorizationTask::CONSENT
+  end
+
+  # The client may request some tasks on his own
+  params[:prompt]&.split&.each do |task|
+    case task
+    when 'none'
+      if session[:tasks].include AuthorizationTask::ACCOUNT_SELECT
+        halt 400, OAuthHelper.error_response('account_selection_required')
+      elsif session[:tasks].include AuthorizationTask::LOGIN
+        halt 400, OAuthHelper.error_response('login_required')
+      elsif session[:tasks].include AuthorizationTask::CONSENT
+        halt 400, OAuthHelper.error_response('consent_required')
+      elsif params[:prompt] != 'none'
+        halt 400, OAuthHelper.error_response('invalid_request', "Invalid 'prompt' values: #{params[:prompt]}")
+      end
+    when 'login'
+      session[:tasks] << AuthorizationTask::LOGIN
+    when 'consent'
+      session[:tasks] << AuthorizationTask::CONSENT
+    when 'select_account'
+      session[:tasks] << AuthorizationTask::ACCOUNT_SELECT
+    end
+  end
+  if params[:max_age] && (Time.new.to_i - session[:auth_time]) > params[:max_age]
+    session[:tasks] << AuthorizationTask::LOGIN
+  end
 
   # Redirect the user to start the authentication flow
+  session[:tasks] << AuthorizationTask::ISSUE
   session[:tasks].sort!.uniq!
   next_task
 end
@@ -336,6 +374,8 @@ get '/consent' do
 end
 
 post '/consent' do
+  session[:consent] ||= {}
+  session[:consent][session.dig(:url_params, :client_id)] = session[:scopes]
   next_task AuthorizationTask::CONSENT
 end
 
