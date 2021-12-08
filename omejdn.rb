@@ -64,7 +64,7 @@ def create_admin
     admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
                         { 'key' => 'name', 'value' => 'Admin' }]
     admin.password = BCrypt::Password.create(admin_pw)
-    User.add_user(admin, base_config['user_backend_default'])
+    User.add_user(admin, Config.base_config['user_backend_default'])
   else
     admin.password = BCrypt::Password.create(admin_pw)
     User.update_user(admin)
