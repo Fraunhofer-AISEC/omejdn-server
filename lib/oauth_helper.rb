@@ -120,6 +120,22 @@ class OAuthHelper
     metadata
   end
 
+  def self.adapt_requested_claims(req_claims)
+    # https://tools.ietf.org/id/draft-spencer-oauth-claims-00.html#rfc.section.3
+    known_sinks = %w[access_token id_token userinfo]
+    default_sinks = ['access_token']
+    known_sinks.each do |sink|
+      req_claims[sink] ||= {}
+      req_claims[sink].merge!(req_claims['*'] || {})
+    end
+    default_sinks.each do |sink|
+      req_claims[sink].merge!(req_claims['?'] || {})
+    end
+    req_claims.delete('*')
+    req_claims.delete('?')
+    req_claims
+  end
+
   def self.verify_authorization_request(params)
     client = Client.find_by_id params['client_id']
     unless params[:response_type] == 'code'

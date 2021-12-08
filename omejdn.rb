@@ -175,7 +175,7 @@ post '/token' do
     scopes = client.filter_scopes(params[:scope]&.split) || []
     resources = [Config.base_config.dig('token', 'audience')] if resources.empty?
     halt 400, OAuthHelper.error_response('invalid_target', '') unless client.resources_allowed? resources
-    req_claims = JSON.parse params[:claims] if params[:claims]
+    req_claims = JSON.parse (params[:claims] || '{}')
 
   when 'authorization_code'
     code = params[:code]
@@ -210,10 +210,8 @@ post '/token' do
   resources << ("#{Config.base_config['host']}/userinfo") if openid?(scopes)
   resources << ("#{Config.base_config['host']}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
 
-  req_claims['id_token'] ||= {}
-  req_claims['access_token'] ||= {}
-  req_claims['id_token'].merge!(req_claims['*'] || {})
-  req_claims['access_token'].merge!(req_claims['*'] || {})
+  OAuthHelper.adapt_requested_claims req_claims
+
   begin
     user = cache&.dig(:user)
     nonce = cache&.dig(:nonce)
