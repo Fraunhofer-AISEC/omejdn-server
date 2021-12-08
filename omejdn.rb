@@ -212,7 +212,7 @@ post '/token' do
   begin
     user = nil
     user = RequestCache.get[code][:user] unless RequestCache.get[code].nil?
-    # https://tools.ietf.org/html/draft-bertocci-oauth-access-token-jwt-00#section-2.2
+    # RFC 9068
     access_token = TokenHelper.build_access_token client, scopes, resources, user,
                                                   requested_token_claims['access_token']
     if scopes.include?('openid') && Config.base_config['openid']
