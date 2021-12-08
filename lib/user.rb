@@ -122,17 +122,4 @@ class User
     end
     false
   end
-
-  def remove_claim(claim)
-    attributes.each do |a|
-      attributes.delete a if a['key'] == claim
-    end
-  end
-
-  def add_scopeclaim(claim)
-    attributes.push({
-                      'key' => claim,
-                      'value' => true
-                    })
-  end
 end

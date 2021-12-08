@@ -30,18 +30,6 @@ class OAuthHelper
     JSON.generate response
   end
 
-  def self.supported_scopes
-    scopes = Set[]
-    Config.client_config.each do |_client_id, arr|
-      next if arr['scopes'].nil?
-
-      arr['scopes'].each do |scope|
-        scopes.add(scope)
-      end
-    end
-    scopes.to_a
-  end
-
   def self.userinfo(user, token)
     userinfo = {}
     userinfo['sub'] = user.username
@@ -55,12 +43,8 @@ class OAuthHelper
     userinfo
   end
 
-  def self.default_scopes
-    scopes = []
-    Config.scope_mapping_config.each do |mapping|
-      scopes << mapping[0]
-    end
-    scopes
+  def self.supported_scopes
+    Config.scope_mapping_config.map { |m| m[0] }
   end
 
   def self.error_response(error, desc = '')
@@ -112,7 +96,7 @@ class OAuthHelper
     metadata['userinfo_endpoint'] = "#{path}/userinfo"
     metadata['jwks_uri'] = "#{host}/.well-known/jwks.json"
     # metadata["registration_endpoint"] = "#{host}/FIXME"
-    metadata['scopes_supported'] = OAuthHelper.default_scopes
+    metadata['scopes_supported'] = OAuthHelper.supported_scopes
     metadata['response_types_supported'] = ['code']
     metadata['response_modes_supported'] = ['query'] # FIXME: we only do query atm no fragment
     metadata['grant_types_supported'] = ['authorization_code']
@@ -134,28 +118,5 @@ class OAuthHelper
     req_claims.delete('*')
     req_claims.delete('?')
     req_claims
-  end
-
-  def self.verify_authorization_request(params)
-    client = Client.find_by_id params['client_id']
-    unless params[:response_type] == 'code'
-      raise OAuthHelper.error_response 'unsupported_response_type',
-                                       "Given: #{params[:response_type]}"
-    end
-    raise OAuthHelper.error_response 'invalid_client', '' if client.nil?
-    unless client.redirect_uri ==
-           CGI.unescape(params[:redirect_uri].gsub('%20', '+'))
-      raise OAuthHelper.error_response 'invalid_redirect_uri', ''
-    end
-  end
-
-  def self.handle_authorization_request(params)
-    verify_authorization_request(params)
-
-    # Seems to be in order
-    haml :authorization_page, locals: {
-      client: client,
-      scopes: params[:scope]
-    }
   end
 end

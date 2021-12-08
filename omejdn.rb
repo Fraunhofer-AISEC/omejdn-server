@@ -175,7 +175,7 @@ post '/token' do
     scopes = client.filter_scopes(params[:scope]&.split) || []
     resources = [Config.base_config.dig('token', 'audience')] if resources.empty?
     halt 400, OAuthHelper.error_response('invalid_target', '') unless client.resources_allowed? resources
-    req_claims = JSON.parse (params[:claims] || '{}')
+    req_claims = JSON.parse(params[:claims] || '{}')
 
   when 'authorization_code'
     code = params[:code]

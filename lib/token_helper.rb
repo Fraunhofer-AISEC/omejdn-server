@@ -15,7 +15,6 @@ end
 
 # A helper for building JWT access tokens and ID tokens
 class TokenHelper
-  def server_key; end
 
   def self.build_access_token_stub(attrs, client, scopes, resources, claims)
     base_config = Config.base_config
@@ -106,14 +105,4 @@ class TokenHelper
     kid = JSON::JWK.new(signing_material['pk'])[:kid]
     JWT.encode new_payload, signing_material['sk'], 'RS256', { typ: 'JWT', kid: kid }
   end
-
-  # TODO: old, might needs to be changed
-  def self.subject_from_cert(cert)
-    Encoding.default_external = Encoding::UTF_8
-
-    subject = cert.subject.to_s(OpenSSL::X509::Name::ONELINE & ~ASN1_STRFLGS_ESC_MSB).delete(' ')
-    subject.force_encoding(Encoding::UTF_8)
-  end
-
-  private :server_key
 end
