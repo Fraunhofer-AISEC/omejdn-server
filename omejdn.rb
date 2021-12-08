@@ -38,6 +38,10 @@ def my_path
   Config.base_config['host'] + Config.base_config['path_prefix']
 end
 
+def openid?(scopes)
+  Config.base_config['openid'] && (scopes.include? 'openid')
+end
+
 def adjust_config
   # account for environment overrides
   base_config = Config.base_config
@@ -157,9 +161,10 @@ post '/token' do
   client = nil
   scopes = []
   resources = [params['resource'] || []].flatten
-  requested_token_claims = {}
+  req_claims = {}
 
-  if params[:grant_type] == 'client_credentials'
+  case params[:grant_type]
+  when 'client_credentials'
     if params[:client_assertion_type] != 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
       halt 400, OAuthHelper.error_response('unauthorized_grant', 'Invalid client_assertion_type')
     end
@@ -170,9 +175,9 @@ post '/token' do
     scopes = client.filter_scopes(params[:scope]&.split) || []
     resources = [Config.base_config.dig('token', 'audience')] if resources.empty?
     halt 400, OAuthHelper.error_response('invalid_target', '') unless client.resources_allowed? resources
-    requested_token_claims = JSON.parse params[:claims] if params[:claims]
+    req_claims = JSON.parse params[:claims] if params[:claims]
 
-  elsif (params[:grant_type] == 'authorization_code') && Config.base_config['openid']
+  when 'authorization_code'
     code = params[:code]
     halt 400, OAuthHelper.error_response('invalid_code', '') if code.nil?
     cache = RequestCache.get[code]
@@ -186,37 +191,35 @@ post '/token' do
     end
     client = Client.find_by_id params[:client_id]
     halt 400, OAuthHelper.error_response('invalid_client', 'No client_id given') if client.nil?
+    if cache[:redirect_uri] && cache[:redirect_uri] == params[:redirect_uri]
+      halt 400, OAuthHelper.error_response('invalid_request')
+    end
     scopes = client.filter_scopes(params[:scope]&.split)
     scopes = cache[:scopes] || [] if scopes.empty?
     halt 400, OAuthHelper.error_response('invalid_scope', '') unless (scopes - cache[:scopes]).empty?
     resources = cache[:resources] if resources.empty?
     halt 400, OAuthHelper.error_response('invalid_target', '') unless (resources - cache[:resources]).empty?
-    requested_token_claims = cache[:claims] || {}
-    requested_token_claims = JSON.parse params[:claims] if params[:claims]
+    req_claims = cache[:claims] || {}
+    req_claims = JSON.parse params[:claims] if params[:claims]
 
   else
     halt 400, OAuthHelper.error_response('unsupported_grant_type', "Given: #{params[:grant_type]}")
   end
   headers['Content-Type'] = 'application/json'
   halt 400, OAuthHelper.error_response('access_denied', '') if scopes.empty?
-  resources << ("#{Config.base_config['host']}/userinfo") if scopes.include? 'openid'
+  resources << ("#{Config.base_config['host']}/userinfo") if openid?(scopes)
   resources << ("#{Config.base_config['host']}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
 
-  requested_token_claims['id_token'] ||= {}
-  requested_token_claims['access_token'] ||= {}
-  requested_token_claims['id_token'].merge!(requested_token_claims['*'] || {})
-  requested_token_claims['access_token'].merge!(requested_token_claims['*'] || {})
+  req_claims['id_token'] ||= {}
+  req_claims['access_token'] ||= {}
+  req_claims['id_token'].merge!(req_claims['*'] || {})
+  req_claims['access_token'].merge!(req_claims['*'] || {})
   begin
-    user = nil
-    user = cache[:user] unless cache.nil?
+    user = cache&.dig(:user)
+    nonce = cache&.dig(:nonce)
+    id_token = TokenHelper.build_id_token client, user, nonce, req_claims['id_token'], scopes if openid?(scopes)
     # https://tools.ietf.org/html/draft-bertocci-oauth-access-token-jwt-00#section-2.2
-    access_token = TokenHelper.build_access_token client, scopes, resources, user,
-                                                  requested_token_claims['access_token']
-    if scopes.include?('openid') && Config.base_config['openid']
-      id_token = TokenHelper.build_id_token client, user,
-                                            cache[:nonce],
-                                            requested_token_claims['id_token'], scopes
-    end
+    access_token = TokenHelper.build_access_token client, scopes, resources, user, req_claims['access_token']
     # Delete the authorization code as it is single use
     RequestCache.get.delete(code)
     OAuthHelper.token_response access_token, scopes, id_token
@@ -264,12 +267,20 @@ end
 
 # Handle authorization request
 get '/authorize' do
-  halt 404 unless Config.base_config['openid']
+  # Required OAuth parameters
   unless params[:response_type] == 'code'
     halt 400, OAuthHelper.error_response('unsupported_response_type', "Given: #{params[:response_type]}")
   end
   client = Client.find_by_id params[:client_id]
   halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
+  # We require specifying the scope
+  halt 400, OAuthHelper.error_response('invalid_scope') unless params[:scope]
+  if openid?(params[:scope].split) || [client.redirect_uri].flatten.length != 1
+    escaped_redir = CGI.unescape(params[:redirect_uri] || '')&.gsub('%20', '+')
+    unless ([client.redirect_uri].flatten + ['localhost']).any? { |uri| escaped_redir == uri }
+      halt 400, OAuthHelper.error_response('invalid_request')
+    end
+  end
 
   # Save parameters
   session[:url_params] = params
@@ -286,6 +297,8 @@ get '/authorize' do
   end
 
   # The client may request some tasks on his own
+  # Strictly speaking, this is OIDC only, but there is no harm in supporting it for plain OAuth,
+  # since a client can at most require additional actions
   params[:prompt]&.split&.each do |task|
     case task
     when 'none'
@@ -329,37 +342,21 @@ get '/consent' do
   client = Client.find_by_id session.dig(:url_params, 'client_id')
   halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
 
-  session[:scopes] = []
   scope_mapping = Config.scope_mapping_config
-
-  client.filter_scopes(session.dig(:url_params, :scope).split).each do |s|
-    p "Checking scope #{s}"
-
-    session[:scopes].push(s) if s == 'openid'
-
-    # "key:value" scopes
-    if (s.include? ':') && user.claim?(s)
-      session[:scopes].push(s)
-      next
-    end
-
-    next if scope_mapping[s].nil? || (s.include? ':')
-
-    scope_mapping[s].each do |claim|
-      next unless user.claim?(claim)
-
-      session[:scopes].push(s)
-      break
-    end
-  end
+  session[:scopes] = (client.filter_scopes(session.dig(:url_params, :scope).split).select do |s|
+                        p "Checking scope #{s}"
+                        grant = true if s == 'openid'
+                        grant |= if s.include? ':'
+                                   user.claim?(s)
+                                 else
+                                   (scope_mapping[s] || []).any? do |claim|
+                                     user.claim?(claim)
+                                   end
+                                 end
+                        grant
+                      end)
   p "Granted scopes: #{session[:scopes]}"
   p "The user seems to be #{user.username}" if debug
-
-  escaped_redir = CGI.unescape(session.dig(:url_params, :redirect_uri).gsub('%20', '+'))
-  halt 400, OAuthHelper.error_response('invalid_redirect_uri', '') unless [client.redirect_uri,
-                                                                           'localhost'].any? do |uri|
-                                                                            escaped_redir.include? uri
-                                                                          end
 
   session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config.dig('token', 'audience')].flatten
   halt 400, OAuthHelper.error_response('invalid_target') unless client.resources_allowed? session[:resources]
@@ -387,6 +384,7 @@ def issue_code
   cache[:scopes] = session[:scopes]
   cache[:resources] = session[:resources]
   cache[:nonce] = url_params[:nonce]
+  cache[:redirect_uri] = url_params[:redirect_uri]
   cache[:claims] = JSON.parse session.dig(:url_params, 'claims') || '{}'
   unless url_params[:code_challenge].nil?
     unless url_params[:code_challenge_method] == 'S256'
