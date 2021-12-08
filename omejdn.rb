@@ -215,9 +215,9 @@ post '/token' do
   begin
     user = cache&.dig(:user)
     nonce = cache&.dig(:nonce)
-    id_token = TokenHelper.build_id_token client, user, nonce, req_claims['id_token'], scopes if openid?(scopes)
+    id_token = TokenHelper.build_id_token client, user, scopes, req_claims, nonce if openid?(scopes)
     # https://tools.ietf.org/html/draft-bertocci-oauth-access-token-jwt-00#section-2.2
-    access_token = TokenHelper.build_access_token client, scopes, resources, user, req_claims['access_token']
+    access_token = TokenHelper.build_access_token client, user, scopes, req_claims, resources
     # Delete the authorization code as it is single use
     RequestCache.get.delete(code)
     OAuthHelper.token_response access_token, scopes, id_token
@@ -422,7 +422,7 @@ end
 
 get '/userinfo' do
   headers['Content-Type'] = 'application/json'
-  JSON.generate OAuthHelper.userinfo(@user, @token)
+  JSON.generate OAuthHelper.userinfo(@user, @token[0])
 end
 
 ########## LOGIN/LOGOUT ##################

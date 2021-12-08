@@ -82,7 +82,7 @@ class OAuth2Test < Test::Unit::TestCase
     response = request_client_credentials @client, "ES256", @priv_key_ec256, @certificate_ec256
     at = extract_access_token response
 
-    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub','omejdn_reserved']
     assert_equal at['scope'], 'omejdn:write'
     assert_equal at['aud'], [TestSetup.config.dig('token','audience'), TestSetup.config['host']+'/api']
     assert_equal at['iss'], TestSetup.config.dig('token','issuer')
@@ -101,7 +101,7 @@ class OAuth2Test < Test::Unit::TestCase
     response = request_client_credentials @client2, "ES256", @priv_key_ec256, @certificate_ec256, resources
     at = extract_access_token response
 
-    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub','omejdn_reserved']
     assert_equal at['scope'], 'omejdn:write'
     assert_equal at['aud'], ['http://example.org', TestSetup.config['host']+'/api']
     assert_equal at['iss'], TestSetup.config.dig('token','issuer')
@@ -118,7 +118,7 @@ class OAuth2Test < Test::Unit::TestCase
     response = request_client_credentials @client, "ES256", @priv_key_ec256, @certificate_ec256, additional_scopes
     at = extract_access_token response
 
-    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub']
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub','omejdn_reserved']
     assert_equal at['scope'], 'omejdn:write'
     assert_equal at['aud'], [TestSetup.config.dig('token','audience'), TestSetup.config['host']+'/api']
     assert_equal at['iss'], TestSetup.config.dig('token','issuer')
@@ -145,7 +145,7 @@ class OAuth2Test < Test::Unit::TestCase
     response = request_client_credentials @client_dyn_claims, "ES256", @priv_key_ec256, @certificate_ec256, query_additions
     at = extract_access_token response
 
-    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'dynattribute']
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'dynattribute','omejdn_reserved']
     assert_equal at['scope'], 'omejdn:write'
     assert_equal at['aud'], [TestSetup.config.dig('token','audience'), TestSetup.config['host']+'/api']
     assert_equal at['iss'], TestSetup.config.dig('token','issuer')
@@ -215,7 +215,7 @@ class OAuth2Test < Test::Unit::TestCase
     response = request_authorization TestSetup.users[0], @client
     at = extract_access_token response
 
-    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn']
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn','omejdn_reserved']
     assert_equal at['scope'], 'omejdn:write'
     assert_equal at['aud'], [TestSetup.config.dig('token','audience'), TestSetup.config['host']+'/api']
     assert_equal at['iss'], TestSetup.config.dig('token','issuer')
@@ -238,7 +238,7 @@ class OAuth2Test < Test::Unit::TestCase
     response = request_authorization TestSetup.users[0], @client2, resources
     at = extract_access_token response
 
-    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn']
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn','omejdn_reserved']
     assert_equal at['scope'], 'omejdn:write'
     assert_equal at['aud'], ['http://example.org', TestSetup.config['host']+'/api']
     assert_equal at['iss'], TestSetup.config.dig('token','issuer')
@@ -266,7 +266,8 @@ class OAuth2Test < Test::Unit::TestCase
     response = request_authorization TestSetup.users[2], @client, query_additions
     at = extract_access_token response
 
-    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn', 'dynattribute']
+    p at
+    check_keys at, ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn', 'dynattribute','omejdn_reserved']
     assert_equal at['scope'], 'omejdn:write'
     assert_equal at['aud'], [TestSetup.config.dig('token','audience'), TestSetup.config['host']+'/api']
     assert_equal at['iss'], TestSetup.config.dig('token','issuer')

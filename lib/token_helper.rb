@@ -26,12 +26,15 @@ class TokenHelper
       'iat' => now,
       'jti' => Base64.urlsafe_encode64(rand(2**64).to_s),
       'exp' => now + base_config.dig('token', 'expiration'),
-      'client_id' => client.client_id
-    }.merge(map_claims_to_userinfo(attrs, claims, client, scopes))
+      'client_id' => client.client_id,
+      'omejdn_reserved' => {
+        'userinfo_req_claims' => claims['userinfo']
+      }
+    }.merge(map_claims_to_userinfo(attrs, claims['access_token'], client, scopes))
   end
 
   # Builds a JWT access token for client including scopes and attributes
-  def self.build_access_token(client, scopes, resources, user, claims)
+  def self.build_access_token(client, user, scopes, claims, resources)
     # Use user attributes if we have a user context, else use client
     # attributes.
     if user
@@ -62,6 +65,7 @@ class TokenHelper
 
   def self.map_claims_to_userinfo(attrs, claims, client, scopes)
     new_payload = {}
+    claims ||= {}
 
     # Add attribute if it was requested indirectly through OIDC
     # scope and scope is allowed for client.
@@ -87,7 +91,7 @@ class TokenHelper
   end
 
   # Builds a JWT ID token for client including user attributes
-  def self.build_id_token(client, user, nonce, claims, scopes)
+  def self.build_id_token(client, user, scopes, claims, nonce)
     base_config = Config.base_config
     now = Time.new.to_i
     new_payload = {
@@ -98,7 +102,7 @@ class TokenHelper
       'iat' => now,
       'exp' => now + base_config.dig('id_token', 'expiration'),
       'auth_time' => user.auth_time
-    }.merge(map_claims_to_userinfo(user.attributes, claims, client, scopes))
+    }.merge(map_claims_to_userinfo(user.attributes, claims['id_token'], client, scopes))
     new_payload['nonce'] = nonce unless nonce.nil?
     signing_material = Server.load_skey('id_token')
     kid = JSON::JWK.new(signing_material['pk'])[:kid]

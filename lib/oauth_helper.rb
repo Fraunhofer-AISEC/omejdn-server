@@ -30,16 +30,10 @@ class OAuthHelper
     JSON.generate response
   end
 
-  def self.userinfo(user, token)
-    userinfo = {}
+  def self.userinfo(client, user, token)
+    req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
+    userinfo = TokenHelper.map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
     userinfo['sub'] = user.username
-    user.attributes.each do |attribute|
-      token[0].each do |key, _|
-        next unless attribute['key'] == key
-
-        TokenHelper.add_jwt_claim(userinfo, key, attribute['value'])
-      end
-    end
     userinfo
   end
 
