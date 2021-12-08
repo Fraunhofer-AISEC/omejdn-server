@@ -204,7 +204,8 @@ class OAuth2Test < Test::Unit::TestCase
     query = 'grant_type=authorization_code'+
     '&code='+code+
     '&client_id='+client.client_id+
-    '&scope=omejdn:write'+query_additions
+    '&scope=omejdn:write'+query_additions+
+    '&redirect_uri='+client.redirect_uri
     post ('/token?'+query), {}, {}
     good_so_far &= last_response.ok?
     assert good_so_far == should_work
