@@ -43,6 +43,7 @@ class OAuthHelper
 
   def self.error_response(error, desc = '')
     response = { 'error' => error, 'error_description' => desc }
+    p response
     JSON.generate response
   end
 

@@ -191,7 +191,7 @@ post '/token' do
     end
     client = Client.find_by_id params[:client_id]
     halt 400, OAuthHelper.error_response('invalid_client', 'No client_id given') if client.nil?
-    if cache[:redirect_uri] && cache[:redirect_uri] == params[:redirect_uri]
+    if cache[:redirect_uri] && cache[:redirect_uri] != params[:redirect_uri]
       halt 400, OAuthHelper.error_response('invalid_request')
     end
     scopes = client.filter_scopes(params[:scope]&.split)
