@@ -341,18 +341,18 @@ get '/consent' do
   halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
 
   scope_mapping = Config.scope_mapping_config
-  session[:scopes] = (client.filter_scopes(session.dig(:url_params, :scope).split).select do |s|
-                        p "Checking scope #{s}"
-                        grant = true if s == 'openid'
-                        grant |= if s.include? ':'
-                                   user.claim?(s)
-                                 else
-                                   (scope_mapping[s] || []).any? do |claim|
-                                     user.claim?(claim)
-                                   end
-                                 end
-                        grant
-                      end)
+  session[:scopes] = client.filter_scopes(session.dig(:url_params, :scope).split)
+  session[:scopes].select! do |s|
+    p "Checking scope #{s}"
+    if s.start_with? 'openid'
+      true
+    elsif s.include? ':'
+      key, value = s.split(':', 2)
+      user.claim?(key, value)
+    else
+      (scope_mapping[s] || []).any? { |claim| user.claim?(claim) }
+    end
+  end
   p "Granted scopes: #{session[:scopes]}"
   p "The user seems to be #{user.username}" if debug
 

@@ -108,18 +108,14 @@ class User
     user
   end
 
-  def claim?(claim)
-    parts = claim.split(':', 2)
-    searchkey = parts[0]
-    searchvalue = parts.length > 1 ? parts[1] : nil
-    attributes.each do |a|
-      key = a['key']
-      next unless key == searchkey
-
-      return a['value'] == searchvalue unless searchvalue.nil?
-
-      return true
+  def claim?(searchkey, searchvalue = nil)
+    attribute = attributes.select { |a| a['key'] == searchkey }.first
+    if attribute.nil?
+      false
+    elsif searchvalue.nil?
+      true
+    else
+      attribute['value'] == searchvalue
     end
-    false
   end
 end

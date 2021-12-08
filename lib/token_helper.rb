@@ -15,7 +15,6 @@ end
 
 # A helper for building JWT access tokens and ID tokens
 class TokenHelper
-
   def self.build_access_token_stub(attrs, client, scopes, resources, claims)
     base_config = Config.base_config
     now = Time.new.to_i
