@@ -18,7 +18,7 @@ class TokenHelper
   def self.build_access_token_stub(attrs, client, scopes, resources, claims)
     base_config = Config.base_config
     now = Time.new.to_i
-    {
+    token = {
       'scope' => (scopes.join ' '),
       'aud' => resources,
       'iss' => base_config.dig('token', 'issuer'),
@@ -26,11 +26,12 @@ class TokenHelper
       'iat' => now,
       'jti' => Base64.urlsafe_encode64(rand(2**64).to_s),
       'exp' => now + base_config.dig('token', 'expiration'),
-      'client_id' => client.client_id,
-      'omejdn_reserved' => {
-        'userinfo_req_claims' => claims['userinfo']
-      }
-    }.merge(map_claims_to_userinfo(attrs, claims['access_token'], client, scopes))
+      'client_id' => client.client_id
+    }
+    reserved = {}
+    reserved['userinfo_req_claims'] = claims['userinfo'] unless (claims['userinfo'] || {}).empty?
+    token['omejdn_reserved'] = reserved unless reserved.empty?
+    token.merge(map_claims_to_userinfo(attrs, claims['access_token'], client, scopes))
   end
 
   # Builds a JWT access token for client including scopes and attributes
