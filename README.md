@@ -306,4 +306,4 @@ services:
 
 ## API
 
-See [./API.md] for API usage
+See [the dedicated documentation](API.md) for API usage
