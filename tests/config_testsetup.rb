@@ -55,7 +55,7 @@ class TestSetup
     [{
       'client_id' => 'testClient',
       'name' => 'omejdn admin ui',
-      'allowed_scopes' => ['omejdn:write'],
+      'allowed_scopes' => ['omejdn:write', 'openid', 'email'],
       'redirect_uri' => 'http://localhost:4200',
       'attributes' => []
     },

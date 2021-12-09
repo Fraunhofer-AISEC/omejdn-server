@@ -165,10 +165,10 @@ class OAuth2Test < Test::Unit::TestCase
     request_client_credentials @client, "PS256", @priv_key_rsa,   @certificate_rsa, '', false
   end
 
-  def request_authorization(user, client, query_additions='', should_work=true)
+  def request_authorization(user, client, query_additions='', should_work=true, scopes = ['omejdn:write'])
     # GET /authorize
     get  ('/authorize?response_type=code'+
-          '&scope=omejdn:write'+
+          '&scope='+scopes.join(' ')+
           '&client_id='+client.client_id+
           '&redirect_uri='+client.redirect_uri+
           '&state=testState'+query_additions), {}, {}
@@ -202,7 +202,7 @@ class OAuth2Test < Test::Unit::TestCase
     query = 'grant_type=authorization_code'+
     '&code='+code+
     '&client_id='+client.client_id+
-    '&scope=omejdn:write'+query_additions+
+    '&scope='+scopes.join(' ')+query_additions+
     '&redirect_uri='+client.redirect_uri
     post ('/token?'+query), {}, {}
     good_so_far &= last_response.ok?
@@ -265,7 +265,6 @@ class OAuth2Test < Test::Unit::TestCase
     response = request_authorization TestSetup.users[2], @client, query_additions
     at = extract_access_token response
 
-    p at
     check_keys ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'omejdn', 'dynattribute', 'omejdn_reserved'], at
     assert_equal 'omejdn:write', at['scope']
     assert_equal [TestSetup.config.dig('token','audience'), TestSetup.config['host']+'/api'], at['aud']
@@ -278,5 +277,17 @@ class OAuth2Test < Test::Unit::TestCase
     assert_equal TestSetup.users.dig(2,'username'), at['sub']
     assert_equal 'write', at['omejdn']
     assert_equal requested_claims.dig('*','dynattribute','value'), at['dynattribute']
+  end
+
+  def request_userinfo(access_token)
+    get '/userinfo', {}, {'HTTP_AUTHORIZATION' => "Bearer #{access_token}"}
+    assert last_response.ok?
+    JSON.parse last_response.body
+  end
+
+  def test_userinfo_endpoint
+    response = request_authorization TestSetup.users[0], @client, '', true, ['openid','email']
+    userinfo = request_userinfo response['access_token']
+    check_keys ['openid','email','sub'], userinfo
   end
 end

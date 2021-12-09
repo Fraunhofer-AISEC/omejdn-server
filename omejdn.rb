@@ -411,6 +411,7 @@ before '/userinfo' do
   begin
     key = Server.load_skey['sk']
     @token = (JWT.decode jwt, key.public_key, true, { algorithm: Config.base_config.dig('token', 'algorithm') })[0]
+    @client = Client.find_by_id @token['client_id']
     @user = User.find_by_id(@token['sub'])
     halt 403 unless [@token['aud']].flatten.include?("#{Config.base_config['host']}/userinfo")
   rescue StandardError => e
@@ -422,7 +423,7 @@ end
 
 get '/userinfo' do
   headers['Content-Type'] = 'application/json'
-  JSON.generate OAuthHelper.userinfo(@user, @token[0])
+  JSON.generate OAuthHelper.userinfo(@client, @user, @token)
 end
 
 ########## LOGIN/LOGOUT ##################
@@ -531,7 +532,7 @@ before '/api/v1/*' do
     @user_may_write = (@scopes.include? 'omejdn:write') || @user_is_admin
     @user_may_read  = (@scopes.include? 'omejdn:read')  || @user_may_write
     @user = User.find_by_id token['sub']
-    @client = Client.find_by_id token['sub']
+    @client = Client.find_by_id token['client_id']
   rescue StandardError => e
     p e if debug
     halt 401
