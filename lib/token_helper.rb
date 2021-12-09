@@ -15,25 +15,27 @@ end
 
 # A helper for building JWT access tokens and ID tokens
 class TokenHelper
-  def server_key; end
-
   def self.build_access_token_stub(attrs, client, scopes, resources, claims)
     base_config = Config.base_config
     now = Time.new.to_i
-    {
+    token = {
       'scope' => (scopes.join ' '),
       'aud' => resources,
-      'iss' => base_config['token']['issuer'],
+      'iss' => base_config.dig('token', 'issuer'),
       'nbf' => now,
       'iat' => now,
       'jti' => Base64.urlsafe_encode64(rand(2**64).to_s),
-      'exp' => now + base_config['token']['expiration'],
+      'exp' => now + base_config.dig('token', 'expiration'),
       'client_id' => client.client_id
-    }.merge(map_claims_to_userinfo(attrs, claims, client, scopes))
+    }
+    reserved = {}
+    reserved['userinfo_req_claims'] = claims['userinfo'] unless (claims['userinfo'] || {}).empty?
+    token['omejdn_reserved'] = reserved unless reserved.empty?
+    token.merge(map_claims_to_userinfo(attrs, claims['access_token'], client, scopes))
   end
 
   # Builds a JWT access token for client including scopes and attributes
-  def self.build_access_token(client, scopes, resources, user, claims)
+  def self.build_access_token(client, user, scopes, claims, resources)
     # Use user attributes if we have a user context, else use client
     # attributes.
     if user
@@ -55,7 +57,7 @@ class TokenHelper
   def self.add_jwt_claim(jwt_body, key, value)
     # Address is handled differently. For reasons...
     if address_claim?(key)
-      jwt_body['address'] = {} if jwt_body['address'].nil?
+      jwt_body['address'] ||= {}
       jwt_body['address'][key] = value
       return
     end
@@ -64,6 +66,7 @@ class TokenHelper
 
   def self.map_claims_to_userinfo(attrs, claims, client, scopes)
     new_payload = {}
+    claims ||= {}
 
     # Add attribute if it was requested indirectly through OIDC
     # scope and scope is allowed for client.
@@ -75,12 +78,12 @@ class TokenHelper
     # Add attribute if it was specifically requested through OIDC
     # claims parameter.
     attrs.each do |attr|
-      next unless claims.key?(attr['key']) && !claims[attr['key']].nil?
+      next unless (name = claims[attr['key']])
 
-      if    attr['dynamic'] && claims[attr['key']]['value']
-        add_jwt_claim(new_payload, attr['key'], claims[attr['key']]['value'])
-      elsif attr['dynamic'] && claims[attr['key']]['values']
-        add_jwt_claim(new_payload, attr['key'], claims[attr['key']]['values'][0])
+      if    attr['dynamic'] && name['value']
+        add_jwt_claim(new_payload, attr['key'], name['value'])
+      elsif attr['dynamic'] && name['values']
+        add_jwt_claim(new_payload, attr['key'], name.dig('values', 0))
       elsif attr['value']
         add_jwt_claim(new_payload, attr['key'], attr['value'])
       end
@@ -89,30 +92,21 @@ class TokenHelper
   end
 
   # Builds a JWT ID token for client including user attributes
-  def self.build_id_token(client, uentry, nonce, claims, scopes)
+  def self.build_id_token(client, user, scopes, claims, nonce)
     base_config = Config.base_config
     now = Time.new.to_i
     new_payload = {
       'aud' => client.client_id,
-      'iss' => base_config['token']['issuer'],
-      'sub' => uentry.username,
+      'iss' => base_config.dig('id_token', 'issuer'),
+      'sub' => user.username,
       'nbf' => now,
       'iat' => now,
-      'exp' => now + base_config['id_token']['expiration']
-    }.merge(map_claims_to_userinfo(uentry.attributes, claims, client, scopes))
+      'exp' => now + base_config.dig('id_token', 'expiration'),
+      'auth_time' => user.auth_time
+    }.merge(map_claims_to_userinfo(user.attributes, claims['id_token'], client, scopes))
     new_payload['nonce'] = nonce unless nonce.nil?
-    signing_material = Server.load_skey('token')
+    signing_material = Server.load_skey('id_token')
     kid = JSON::JWK.new(signing_material['pk'])[:kid]
     JWT.encode new_payload, signing_material['sk'], 'RS256', { typ: 'JWT', kid: kid }
   end
-
-  # TODO: old, might needs to be changed
-  def self.subject_from_cert(cert)
-    Encoding.default_external = Encoding::UTF_8
-
-    subject = cert.subject.to_s(OpenSSL::X509::Name::ONELINE & ~ASN1_STRFLGS_ESC_MSB).delete(' ')
-    subject.force_encoding(Encoding::UTF_8)
-  end
-
-  private :server_key
 end

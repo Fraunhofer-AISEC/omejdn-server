@@ -9,7 +9,7 @@ require_relative './user_db'
 class User
   include BCrypt
 
-  attr_accessor :username, :password, :attributes, :extern, :backend
+  attr_accessor :username, :password, :attributes, :extern, :backend, :auth_time
 
   def self.verify_credential(user, pass)
     dbs = UserDbLoader.load_db
@@ -108,31 +108,14 @@ class User
     user
   end
 
-  def claim?(claim)
-    parts = claim.split(':', 2)
-    searchkey = parts[0]
-    searchvalue = parts.length > 1 ? parts[1] : nil
-    attributes.each do |a|
-      key = a['key']
-      next unless key == searchkey
-
-      return a['value'] == searchvalue unless searchvalue.nil?
-
-      return true
+  def claim?(searchkey, searchvalue = nil)
+    attribute = attributes.select { |a| a['key'] == searchkey }.first
+    if attribute.nil?
+      false
+    elsif searchvalue.nil?
+      true
+    else
+      attribute['value'] == searchvalue
     end
-    false
-  end
-
-  def remove_claim(claim)
-    attributes.each do |a|
-      attributes.delete a if a['key'] == claim
-    end
-  end
-
-  def add_scopeclaim(claim)
-    attributes.push({
-                      'key' => claim,
-                      'value' => true
-                    })
   end
 end

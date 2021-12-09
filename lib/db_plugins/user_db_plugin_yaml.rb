@@ -39,7 +39,7 @@ class YamlUserDb < UserDb
 
   def load_users
     user_backend_config = Config.user_backend_config
-    (YAML.safe_load File.read user_backend_config['yaml']['location']) || []
+    (YAML.safe_load File.read user_backend_config.dig('yaml', 'location')) || []
   end
 
   def write_user_db(users)
@@ -48,7 +48,7 @@ class YamlUserDb < UserDb
       users_yaml << user.to_dict
     end
     user_backend_config = Config.user_backend_config
-    Config.write_config(user_backend_config['yaml']['location'], users_yaml.to_yaml)
+    Config.write_config(user_backend_config.dig('yaml', 'location'), users_yaml.to_yaml)
   end
 
   def users
