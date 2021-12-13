@@ -26,6 +26,7 @@ end
 # Helper functions for OAuth related tasks
 class OAuthHelper
   # Identifies a client from the request parameters and optionally enforces authentication
+  # This function may not assume the existence of any parameter that could be within a request object
   def self.identify_client(params, authenticate: true)
     client = nil
     if params[:client_assertion_type] # RFC 7521, Section 4.2
@@ -45,8 +46,21 @@ class OAuthHelper
     client
   end
 
-  def self.retrieve_request_uri(_request_uri)
-    uri = URI(url_params[:request_uri])
+  # This function ensures a URI is allowed to be used by a client
+  def self.verify_redirect_uri(params, client, require_existence)
+    unless params[:redirect_uri]
+      raise OAuthError, 'invalid_request' if require_existence || [client.redirect_uri].flatten.length != 1
+
+      params[:redirect_uri] = [client.redirect_uri].flatten[0]
+    end
+    escaped_redir = CGI.unescape(params[:redirect_uri])&.gsub('%20', '+')
+    raise OAuthError, 'invalid_request' unless ([client.redirect_uri].flatten + ['localhost']).any? do |uri|
+                                                 escaped_redir == uri
+                                               end
+  end
+
+  def self.retrieve_request_uri(request_uri)
+    uri = URI(request_uri)
     Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
       res = http.request Net::HTTP::Get.new(uri)
       res.body
@@ -63,7 +77,7 @@ class OAuthHelper
     # On the other hand, we require https!
     jwt, params = nil
     if url_params.key? :request_uri
-      throw OAuthError.new 'invalid_request' if url_params.key? :request
+      raise OAuthError, 'invalid_request' if url_params.key? :request
 
       if url_params[:request_uri].start_with? 'urn:ietf:params:oauth:request_uri:'
         # Retrieve token from Pushed Authorization Request Cache
@@ -72,25 +86,26 @@ class OAuthHelper
         # Retrieve remote token
         jwt = retrieve_request_uri url_params[:request_uri]
       end
-      throw OAuthError.new 'invalid_request_uri' unless jwt || params
+      raise OAuthError, 'invalid_request_uri' unless jwt || params
     elsif url_params.key? :request
       jwt = url_params[:request]
-      throw OAuthError.new 'invalid_request_object' unless jwt
+      raise OAuthError, 'invalid_request_object' unless jwt
     end
-
-    return url_params unless jwt || params
 
     if jwt
       client = Client.find_by_id url_params[:client_id]
-      throw OAuthError.new 'invalid_client' if client.nil?
+      raise OAuthError, 'invalid_client' if client.nil?
 
       params, = Client.decode_jwt jwt, client
-      throw OAuthError.new 'invalid_client' unless params['client_id'] == url_params[:client_id]
+      raise OAuthError, 'invalid_client' unless params['client_id'] == url_params[:client_id]
     end
 
-    url_params.delete(:request_uri)
-    url_params.delete(:request)
-    url_params.merge! params
+    if params
+      url_params.delete(:request_uri)
+      url_params.delete(:request)
+      url_params.merge! params
+    end
+    url_params
   end
 
   def self.token_response(access_token, scopes, id_token)
@@ -112,11 +127,6 @@ class OAuthHelper
 
   def self.supported_scopes
     Config.scope_mapping_config.map { |m| m[0] }
-  end
-
-  def self.error_response(error, desc = '')
-    response = { 'error' => error, 'error_description' => desc }
-    JSON.generate response
   end
 
   def self.new_authz_code

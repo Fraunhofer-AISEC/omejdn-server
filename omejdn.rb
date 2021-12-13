@@ -249,11 +249,23 @@ def next_task(completed_task = nil)
   redirect to("#{my_path}/login")
 end
 
+def handle_auth_error(error)
+  # Try to determine the response_url to send the error to.
+  response_url = session[:redirect_uri_verified]
+  halt 400, error.to_s if response_url.nil?
+  query = []
+  query << "state=#{session.dig(:url_params, :state)}" unless session.dig(:url_params, :state).nil?
+  query << "error=#{error.type}"
+  query << "error_description=#{error.description}"
+  redirect to "#{response_url}?#{query.join '&'}"
+end
+
 # Pushed Authorization Requests
 post '/par' do
-  throw OAuthError.new 'invalid_request' if params.key(:request_uri)
-  OAuthHelper.prepare_params params
+  raise OAuthError, 'invalid_request' if params.key(:request_uri) # Not allowed here
+
   OAuthHelper.identify_client params, authenticate: false
+  OAuthHelper.prepare_params params
 
   uri = "urn:ietf:params:oauth:request_uri:#{SecureRandom.uuid}"
   PARCache.get[uri] = params
@@ -265,24 +277,23 @@ end
 
 # Handle authorization request
 get '/authorize' do
-  # Save parameters
-  OAuthHelper.prepare_params params
-  session[:url_params] = params
-
-  # Required OAuth parameters
+  # Initial sanity checks and request object resolution
+  session[:redirect_uri_verified] = nil # Use this for redirection in error cases
   client = OAuthHelper.identify_client params, authenticate: false
-  halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
-  # We require specifying the scope
-  halt 400, OAuthHelper.error_response('invalid_scope') unless params[:scope]
-  if openid?(params[:scope].split) || [client.redirect_uri].flatten.length != 1
-    escaped_redir = CGI.unescape(params[:redirect_uri] || '')&.gsub('%20', '+')
-    unless ([client.redirect_uri].flatten + ['localhost']).any? { |uri| escaped_redir == uri }
-      halt 400, OAuthHelper.error_response('invalid_request')
-    end
+  if params[:redirect_uri] # Used for error messages, might be overwritten by request objects
+    OAuthHelper.verify_redirect_uri params, client, true
+    session[:redirect_uri_verified] = params[:redirect_uri]
   end
+  OAuthHelper.prepare_params params
+  OAuthHelper.verify_redirect_uri params, client, openid?(params[:scope].split) # For real this time
+  session[:redirect_uri_verified] = params[:redirect_uri]
+  session[:url_params] = params # Save parameters
+
+  # We require specifying the scope
+  raise OAuthError, 'invalid_scope' unless params[:scope]
 
   unless params[:response_type] == 'code'
-    halt 400, OAuthHelper.error_response('unsupported_response_type', "Given: #{params[:response_type]}")
+    raise OAuthError.new 'unsupported_response_type', "Given: #{params[:response_type]}"
   end
 
   # Tasks the user has to perform
@@ -302,15 +313,10 @@ get '/authorize' do
   params[:prompt]&.split&.each do |task|
     case task
     when 'none'
-      if session[:tasks].include AuthorizationTask::ACCOUNT_SELECT
-        halt 400, OAuthHelper.error_response('account_selection_required')
-      elsif session[:tasks].include AuthorizationTask::LOGIN
-        halt 400, OAuthHelper.error_response('login_required')
-      elsif session[:tasks].include AuthorizationTask::CONSENT
-        halt 400, OAuthHelper.error_response('consent_required')
-      elsif params[:prompt] != 'none'
-        halt 400, OAuthHelper.error_response('invalid_request', "Invalid 'prompt' values: #{params[:prompt]}")
-      end
+      raise OAuthError, 'account_selection_required' if session[:tasks].include? AuthorizationTask::ACCOUNT_SELECT
+      raise OAuthError, 'login_required'             if session[:tasks].include? AuthorizationTask::LOGIN
+      raise OAuthError, 'consent_required'           if session[:tasks].include? AuthorizationTask::CONSENT
+      raise OAuthError.new 'invalid_request', "Invalid 'prompt' values: #{params[:prompt]}" if params[:prompt] != 'none'
     when 'login'
       session[:tasks] << AuthorizationTask::LOGIN
     when 'consent'
@@ -328,6 +334,8 @@ get '/authorize' do
   session[:tasks] << AuthorizationTask::ISSUE
   session[:tasks].sort!.uniq!
   next_task
+rescue OAuthError => e
+  handle_auth_error e
 end
 
 get '/consent' do
@@ -337,10 +345,10 @@ get '/consent' do
   end
 
   user = UserSession.get[session[:user]]
-  halt 400, OAuthHelper.error_response('invalid_user', '') if user.nil?
+  raise OAuthError, 'invalid_user' if user.nil?
 
   client = Client.find_by_id session.dig(:url_params, 'client_id')
-  halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
+  raise OAuthError, 'invalid_client' if client.nil?
 
   scope_mapping = Config.scope_mapping_config
   session[:scopes] = client.filter_scopes(session.dig(:url_params, :scope).split)
@@ -359,7 +367,7 @@ get '/consent' do
   p "The user seems to be #{user.username}" if debug
 
   session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config.dig('token', 'audience')].flatten
-  halt 400, OAuthHelper.error_response('invalid_target') unless client.resources_allowed? session[:resources]
+  raise OAuthError, 'invalid_target' unless client.resources_allowed? session[:resources]
 
   # Seems to be in order
   return haml :authorization_page, locals: {
@@ -369,16 +377,20 @@ get '/consent' do
     scopes: session[:scopes],
     scope_description: Config.scope_description_config
   }
+rescue OAuthError => e
+  handle_auth_error e
 end
 
 post '/consent' do
   session[:consent] ||= {}
   session[:consent][session.dig(:url_params, :client_id)] = session[:scopes]
   next_task AuthorizationTask::CONSENT
+rescue OAuthError => e
+  handle_auth_error e
 end
 
 def issue_code
-  url_params = session[:url_params]
+  url_params = session.delete(:url_params)
   cache = {}
   cache[:user] = UserSession.get[session[:user]]
   cache[:scopes] = session[:scopes]
@@ -396,7 +408,7 @@ def issue_code
   end
   code = OAuthHelper.new_authz_code
   RequestCache.get[code] = cache
-  redirect_uri = url_params[:redirect_uri]
+  redirect_uri = session.delete(:redirect_uri_verified)
   resp = "?code=#{code}&state=#{url_params[:state]}"
   redirect to(redirect_uri + resp)
 end
@@ -473,6 +485,8 @@ post '/login' do
   UserSession.get[nonce] = user
   session[:user] = nonce
   next_task AuthorizationTask::LOGIN
+rescue OAuthError => e
+  handle_auth_error e
 end
 
 # FIXME
