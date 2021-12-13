@@ -155,21 +155,86 @@ class OAuthHelper
     jwks.uniq { |k| k['kid'] }
   end
 
-  def self.openid_configuration(host, path)
+  def self.configuration_metadata(host, path)
     base_config = Config.base_config
     metadata = {}
+
+    # RFC 8414 (also OpenID Connect Core for the most part)
     metadata['issuer'] = base_config.dig('token', 'issuer')
     metadata['authorization_endpoint'] = "#{path}/authorize"
     metadata['token_endpoint'] = "#{path}/token"
-    metadata['userinfo_endpoint'] = "#{path}/userinfo"
     metadata['jwks_uri'] = "#{host}/.well-known/jwks.json"
     # metadata["registration_endpoint"] = "#{host}/FIXME"
     metadata['scopes_supported'] = OAuthHelper.supported_scopes
     metadata['response_types_supported'] = ['code']
     metadata['response_modes_supported'] = ['query'] # FIXME: we only do query atm no fragment
     metadata['grant_types_supported'] = ['authorization_code']
-    metadata['id_token_signing_alg_values_supported'] = base_config.dig('token', 'algorithm')
+    metadata['token_endpoint_auth_methods_supported'] = %w[none private_key_jwt]
+    metadata['token_endpoint_auth_signing_alg_values_supported'] = %w[RS256 RS512 ES256 ES512]
+    metadata['service_documentation'] = 'https://github.com/Fraunhofer-AISEC/omejdn-server/wiki'
+    # metadata['ui_locales_supported'] =
+    # metadata['op_policy_uri'] =
+    # metadata['op_tos_uri'] =
+    # metadata['revocation_endpoint'] =
+    # metadata['revocation_endpoint_auth_methods_supported'] =
+    # metadata['revocation_endpoint_auth_signing_alg_values_supported'] =
+    # metadata['introspection_endpoint'] =
+    # metadata['introspection_endpoint_auth_methods_supported'] =
+    # metadata['introspection_endpoint_auth_signing_alg_values_supported'] =
+    metadata['code_challenge_methods_supported'] = ['S256']
+
+    # RFC 8628
+    # metadata['device_authorization_endpoint'] =
+
+    # RFC 8705
+    # metadata['tls_client_certificate_bound_access_tokens'] =
+    # metadata['mtls_endpoint_aliases'] =
+
+    # RFC 9101
+    metadata['require_signed_request_object'] = true
+
+    # RFC 9126
+    metadata['pushed_authorization_request_endpoint'] = "#{path}/par"
+    metadata['require_pushed_authorization_requests'] = false
+
+    # RFC-ietf-oauth-jwt-introspection-response-12
+    # metadata['introspection_signing_alg_values_supported'] =
+    # metadata['introspection_encryption_alg_values_supported'] =
+    # metadata['introspection_encryption_enc_values_supported'] =
+
+    # OpenID Connect Discovery 1.0
+    metadata['userinfo_endpoint'] = "#{path}/userinfo"
+    metadata['acr_values_supported'] = []
+    metadata['subject_types_supported'] = 'public'
+    metadata['id_token_signing_alg_values_supported'] = base_config.dig('id_token', 'algorithm')
+    metadata['id_token_encryption_alg_values_supported'] = ['none']
+    metadata['id_token_encryption_enc_values_supported'] = ['none']
+    metadata['userinfo_signing_alg_values_supported'] = ['none']
+    metadata['userinfo_encryption_alg_values_supported'] = ['none']
+    metadata['userinfo_encryption_enc_values_supported'] = ['none']
+    metadata['request_object_signing_alg_values_supported'] = %w[RS256 RS512 ES256 ES512]
+    metadata['request_object_encryption_alg_values_supported'] = ['none'] # TODO: Implement decryption
+    metadata['request_object_encryption_enc_values_supported'] = ['none']
+    metadata['display_values_supported'] = ['page'] # TODO: Different UIs
+    metadata['claim_types_supported'] = ['normal']
+    metadata['claims_supported'] = [] # TODO: What to disclose here?
+    # metadata['claims_locales_supported'] =
+    metadata['claims_parameter_supported'] = true
+    metadata['request_parameter_supported'] = true
+    metadata['request_uri_parameter_supported'] = true
+    metadata['require_request_uri_registration'] = false
+
+    # Signing as per RFC 8414
+    metadata['signed_metadata'] = sign_metadata metadata
     metadata
+  end
+
+  def self.sign_metadata(metadata)
+    to_sign = metadata.merge
+    to_sign['iss'] = to_sign['issuer']
+    signing_material = Server.load_skey('token')
+    kid = JSON::JWK.new(signing_material['pk'])[:kid]
+    JWT.encode to_sign, signing_material['sk'], 'RS256', { kid: kid }
   end
 
   def self.adapt_requested_claims(req_claims)

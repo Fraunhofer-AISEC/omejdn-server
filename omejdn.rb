@@ -819,19 +819,17 @@ end
 ########## WELL-KNOWN ENDPOINTS ##################
 
 before '/.well-known*' do
+  headers['Content-Type'] = 'application/json'
   headers['Cache-Control'] = "max-age=#{60 * 60 * 24}, must-revalidate"
   headers.delete('Pragma')
 end
 
 get '/.well-known/jwks.json' do
-  headers['Content-Type'] = 'application/json'
   OAuthHelper.generate_jwks.to_json
 end
 
-get '/.well-known/openid-configuration' do
-  headers['Content-Type'] = 'application/json'
-  p "Host #{Config.base_config['host']},#{my_path}"
-  JSON.generate OAuthHelper.openid_configuration(Config.base_config['host'], my_path)
+get '/.well-known/(oauth-authorization-server|openid-configuration)' do
+  JSON.generate OAuthHelper.configuration_metadata(Config.base_config['host'], my_path)
 end
 
 get '/.well-known/webfinger' do
