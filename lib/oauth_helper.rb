@@ -45,14 +45,23 @@ class OAuthHelper
     client
   end
 
+  def self.retrieve_request_uri(_request_uri)
+    uri = URI(url_params[:request_uri])
+    Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
+      res = http.request Net::HTTP::Get.new(uri)
+      res.body
+    end
+  rescue StandardError
+    nil
+  end
+
   # Retrieves the request parameters from the URL parameters, for authorization flows
   def self.prepare_params(url_params)
     # We deviate from the OIDC spec in favor of RFC 9101
     # For example, we do not require specifying the scope outside the request parameter,
     # if it is provided within said parameter.
     # On the other hand, we require https!
-    jwt = nil
-    params = nil
+    jwt, params = nil
     if url_params.key? :request_uri
       throw OAuthError.new 'invalid_request' if url_params.key? :request
 
@@ -61,35 +70,22 @@ class OAuthHelper
         params = PARCache.get[url_params[:request_uri]]
       elsif url_params[:request_uri].start_with? 'https://'
         # Retrieve remote token
-        begin
-          uri = URI(url_params[:request_uri])
-          Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
-            res = http.request Net::HTTP::Get.new(uri)
-            jwt = res.body
-          end
-        rescue StandardError
-          jwt = nil
-        end
-      elsif jwt.nil?
-        throw OAuthError.new 'invalid_request_uri'
+        jwt = retrieve_request_uri url_params[:request_uri]
       end
+      throw OAuthError.new 'invalid_request_uri' unless jwt || params
     elsif url_params.key? :request
       jwt = url_params[:request]
-      throw OAuthError.new 'invalid_request_object' if jwt.nil?
+      throw OAuthError.new 'invalid_request_object' unless jwt
     end
 
-    return url_params if jwt.nil? && params.nil?
+    return url_params unless jwt || params
 
     if jwt
-      jwt_untrusted = JWT.decode jwt, nil, false
-      throw OAuthError.new 'invalid_client' if jwt_untrusted.dig(0, 'client_id') != url_params[:client_id]
-
       client = Client.find_by_id url_params[:client_id]
       throw OAuthError.new 'invalid_client' if client.nil?
 
-      aud = Config.base_config['accept_audience']
-      params = (JWT.decode jwt, client.certificate&.public_key, true,
-                           { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_untrusted.dig(1, 'alg') })[0]
+      params, = Client.decode_jwt jwt, client
+      throw OAuthError.new 'invalid_client' unless params['client_id'] == url_params[:client_id]
     end
 
     url_params.delete(:request_uri)

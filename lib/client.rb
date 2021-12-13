@@ -58,6 +58,23 @@ class Client
     [jwt_hdr['alg'], jwt_dec['sub']]
   end
 
+  def self.decode_jwt(jwt, client = nil)
+    jwt_dec, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
+
+    return nil if jwt['sub'] && jwt_dec['sub'] != jwt_dec['iss']
+    return nil unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
+
+    client ||= find_by_id(jwt_dec['iss'] || jwt_dec['sub'] || jwt_dec['client_id'])
+
+    aud = Config.base_config['accept_audience']
+    jwt_dec, = JWT.decode jwt, client.certificate&.public_key, true,
+                          { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_hdr['alg'] }
+    [jwt_dec, client]
+  rescue StandardError => e
+    puts "Error decoding JWT #{jwt}: #{e}"
+    nil
+  end
+
   def self.find_by_jwt(jwt)
     clients = load_clients
     puts "looking for client of #{jwt}" if Config.base_config['app_env'] != 'production'
