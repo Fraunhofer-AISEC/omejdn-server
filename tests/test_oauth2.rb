@@ -279,15 +279,38 @@ class OAuth2Test < Test::Unit::TestCase
     assert_equal requested_claims.dig('*','dynattribute','value'), at['dynattribute']
   end
 
-  def request_userinfo(access_token)
-    get '/userinfo', {}, {'HTTP_AUTHORIZATION' => "Bearer #{access_token}"}
-    assert last_response.ok?
-    JSON.parse last_response.body
+  def test_authorization_flow_with_request_object
+    payload = {
+      'response_type' => 'code',
+      'client_id' => @client.client_id,
+      'redirect_uri' => @client.redirect_uri,
+      'state' => 'testState',
+      'scope' => 'omejdn:write'
+    }
+    @client.certificate = @certificate_rsa
+    jwt = JWT.encode payload, @priv_key_rsa , 'RS256', { typ: 'at+jwt' }
+    get  ('/authorize?request='+jwt+'&client_id='+@client.client_id), {}, {}
+    assert last_response.redirect?
+    assert ["http://localhost:4567/consent", "http://localhost:4567/login"].include? last_response.original_headers['Location']
   end
 
-  def test_userinfo_endpoint
-    response = request_authorization TestSetup.users[0], @client, '', true, ['openid','email']
-    userinfo = request_userinfo response['access_token']
-    check_keys ['openid','email','sub'], userinfo
+  def test_authorization_flow_with_request_uri
+    payload = {
+      'response_type' => 'code',
+      'client_id' => @client.client_id,
+      'redirect_uri' => @client.redirect_uri,
+      'state' => 'testState',
+      'scope' => 'omejdn:write'
+    }
+    @client.certificate = @certificate_rsa
+    jwt = JWT.encode payload, @priv_key_rsa , 'RS256', { typ: 'at+jwt' }
+
+    post '/par', {'client_id'=>@client.client_id, 'request'=>jwt}, {}
+    assert last_response.created?
+    uri = (JSON.parse last_response.body)['request_uri']
+    # GET /authorize
+    get  ('/authorize?request_uri='+uri+'&client_id='+@client.client_id), {}, {}
+    assert last_response.redirect?
+    assert ["http://localhost:4567/consent", "http://localhost:4567/login"].include? last_response.original_headers['Location']
   end
 end
