@@ -409,8 +409,18 @@ def issue_code
   code = OAuthHelper.new_authz_code
   RequestCache.get[code] = cache
   redirect_uri = session.delete(:redirect_uri_verified)
-  resp = "?code=#{code}&state=#{url_params[:state]}"
-  redirect to(redirect_uri + resp)
+  response_params = {
+    code: code,
+    state: url_params[:state]
+  }
+  case url_params[:response_mode]
+  when 'form_post'
+    halt 200, (haml :submitted, locals: response_params.merge({ redirect_uri: redirect_uri }))
+  when 'fragment'
+    redirect to("#{redirect_uri}##{URI.encode_www_form response_params}")
+  else # 'query' and unsupported types
+    redirect to("#{redirect_uri}?#{URI.encode_www_form response_params}")
+  end
 end
 
 ########## USERINFO ##################

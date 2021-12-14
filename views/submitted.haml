@@ -1,0 +1,9 @@
+%link{:type => "text/css", :rel => "stylesheet", :href => "css/main.css"}
+%body{:onload => 'javascript:document.forms[0].submit()'}
+  <center>
+  %div
+    %form{:action => "#{locals[:redirect_uri]}", :method => "post"}
+      %fieldset
+        %input{:type => "hidden", :name => "state", :value => "#{locals[:state]}"}
+        %input{:type => "hidden", :name => "code",  :value => "#{locals[:code]}"}
+  </center>

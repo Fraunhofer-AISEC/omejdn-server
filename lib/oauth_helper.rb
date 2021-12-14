@@ -176,13 +176,13 @@ class OAuthHelper
     metadata['jwks_uri'] = "#{host}/.well-known/jwks.json"
     # metadata["registration_endpoint"] = "#{host}/FIXME"
     metadata['scopes_supported'] = OAuthHelper.supported_scopes
-    metadata['response_types_supported'] = ['code']
+    metadata['response_types_supported'] = %w[code fragment form_post]
     metadata['response_modes_supported'] = ['query'] # FIXME: we only do query atm no fragment
     metadata['grant_types_supported'] = ['authorization_code']
     metadata['token_endpoint_auth_methods_supported'] = %w[none private_key_jwt]
     metadata['token_endpoint_auth_signing_alg_values_supported'] = %w[RS256 RS512 ES256 ES512]
     metadata['service_documentation'] = 'https://github.com/Fraunhofer-AISEC/omejdn-server/wiki'
-    # metadata['ui_locales_supported'] =
+    metadata['ui_locales_supported'] = []
     # metadata['op_policy_uri'] =
     # metadata['op_tos_uri'] =
     # metadata['revocation_endpoint'] =
@@ -197,8 +197,8 @@ class OAuthHelper
     # metadata['device_authorization_endpoint'] =
 
     # RFC 8705
-    # metadata['tls_client_certificate_bound_access_tokens'] =
-    # metadata['mtls_endpoint_aliases'] =
+    metadata['tls_client_certificate_bound_access_tokens'] = false
+    metadata['mtls_endpoint_aliases'] = {}
 
     # RFC 9101
     metadata['require_signed_request_object'] = true
@@ -228,7 +228,7 @@ class OAuthHelper
     metadata['display_values_supported'] = ['page'] # TODO: Different UIs
     metadata['claim_types_supported'] = ['normal']
     metadata['claims_supported'] = [] # TODO: What to disclose here?
-    # metadata['claims_locales_supported'] =
+    metadata['claims_locales_supported'] = []
     metadata['claims_parameter_supported'] = true
     metadata['request_parameter_supported'] = true
     metadata['request_uri_parameter_supported'] = true
