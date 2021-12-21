@@ -166,7 +166,7 @@ end
 
 # Handle token request
 post '/token' do
-  resources = [params[:resource] || []].flatten
+  resources = [*params[:resource]]
 
   case params[:grant_type]
   when 'client_credentials'
@@ -192,7 +192,6 @@ post '/token' do
   else
     raise OAuthError.new 'unsupported_grant_type', "Given: #{params[:grant_type]}"
   end
-  headers['Content-Type'] = 'application/json'
   raise OAuthError, 'access_denied' if scopes.empty?
 
   resources << ("#{Config.base_config['host']}/userinfo") if openid?(scopes)
@@ -207,9 +206,13 @@ post '/token' do
   access_token = TokenHelper.build_access_token client, user, scopes, req_claims, resources
   # Delete the authorization code as it is single use
   RequestCache.get.delete(params[:code])
-  OAuthHelper.token_response access_token, scopes, id_token
+  halt 200, (OAuthHelper.token_response access_token, scopes, id_token)
 rescue OAuthError => e
   halt 400, e.to_s
+end
+
+after '/token' do
+  headers['Content-Type'] = 'application/json'
 end
 
 ########## AUTHORIZATION FLOW ##################
@@ -436,7 +439,7 @@ before '/userinfo' do
     @token = (JWT.decode jwt, key.public_key, true, { algorithm: Config.base_config.dig('token', 'algorithm') })[0]
     @client = Client.find_by_id @token['client_id']
     @user = User.find_by_id(@token['sub'])
-    halt 403 unless [@token['aud']].flatten.include?("#{Config.base_config['host']}/userinfo")
+    halt 403 unless [*@token['aud']].include?("#{Config.base_config['host']}/userinfo")
   rescue StandardError => e
     p e if debug
     @user = nil
@@ -551,7 +554,7 @@ before '/api/v1/*' do
     halt 401 if jwt.nil? || jwt.empty?
     token = JWT.decode(jwt, Server.load_skey['sk'].public_key, true,
                        { algorithm: Config.base_config.dig('token', 'algorithm') })[0]
-    halt 403 unless [token['aud']].flatten.include?("#{Config.base_config['host']}/api")
+    halt 403 unless [*token['aud']].include?("#{Config.base_config['host']}/api")
     @scopes = token['scope'].split
     @user_is_admin  = (@scopes.include? 'omejdn:admin')
     @user_may_write = (@scopes.include? 'omejdn:write') || @user_is_admin

@@ -31,7 +31,7 @@ class OAuthHelper
     client = nil
     if params[:client_assertion_type] # RFC 7521, Section 4.2
       if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
-        client = Client.find_by_jwt params[:client_assertion]
+        _, client = Client.decode_jwt params[:client_assertion]
       end
       raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
 

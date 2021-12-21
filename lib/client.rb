@@ -46,25 +46,17 @@ class Client
     client
   end
 
-  def self.extract_jwt_cid(jwt)
-    begin
-      jwt_dec, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
-      return nil unless jwt_dec['sub'] == jwt_dec['iss']
-      return nil unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
-    rescue StandardError => e
-      puts "Error decoding JWT #{jwt}: #{e}"
-      return nil
-    end
-    [jwt_hdr['alg'], jwt_dec['sub']]
-  end
-
+  # Decodes a JWT and optionally finds the issuing client
   def self.decode_jwt(jwt, client = nil)
     jwt_dec, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
 
     return nil if jwt['sub'] && jwt_dec['sub'] != jwt_dec['iss']
     return nil unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
 
-    client ||= find_by_id(jwt_dec['iss'] || jwt_dec['sub'] || jwt_dec['client_id'])
+    client_id = jwt_dec['iss'] || jwt_dec['sub'] || jwt_dec['client_id']
+    client ||= find_by_id client_id
+
+    raise 'Client does not exist' if client.nil?
 
     aud = Config.base_config['accept_audience']
     jwt_dec, = JWT.decode jwt, client.certificate&.public_key, true,
@@ -72,29 +64,6 @@ class Client
     [jwt_dec, client]
   rescue StandardError => e
     puts "Error decoding JWT #{jwt}: #{e}"
-    nil
-  end
-
-  def self.find_by_jwt(jwt)
-    clients = load_clients
-    puts "looking for client of #{jwt}" if Config.base_config['app_env'] != 'production'
-    jwt_alg, jwt_cid = extract_jwt_cid jwt
-    return nil if jwt_cid.nil?
-
-    clients.each do |client|
-      next unless client.client_id == jwt_cid
-
-      puts "Client #{jwt_cid} found"
-      # Try verify
-      aud = Config.base_config['accept_audience']
-      JWT.decode jwt, client.certificate&.public_key, true,
-                 { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_alg }
-      return client
-    rescue StandardError => e
-      puts "Tried #{client.name}: #{e}" if Config.base_config['app_env'] != 'production'
-      return nil
-    end
-    puts "ERROR: Client #{jwt_cid} does not exist"
     nil
   end
 
@@ -111,7 +80,7 @@ class Client
   end
 
   def filter_scopes(scopes)
-    (scopes || []).select { |s| allowed_scopes.include? s }
+    (scopes || []) & allowed_scopes
   end
 
   def allowed_scoped_attributes(scopes)
@@ -119,9 +88,7 @@ class Client
   end
 
   def resources_allowed?(resources)
-    return true if @allowed_resources.nil?
-
-    resources.reject { |r| @allowed_resources.include? r }.empty?
+    @allowed_resources.nil? || (resources - @allowed_resources).empty?
   end
 
   def certificate_file
@@ -129,16 +96,13 @@ class Client
   end
 
   def certificate
-    begin
-      filename = certificate_file
-      return nil unless File.exist? filename # no cert registered
+    cert = OpenSSL::X509::Certificate.new File.read certificate_file
+    raise 'Certificate expired' if cert.not_after < Time.now
+    raise 'Certificate not yet valid' if cert.not_before > Time.now
 
-      cert = OpenSSL::X509::Certificate.new File.read filename
-      now = Time.now
-      return cert unless cert.not_after < now || cert.not_before > now
-    rescue StandardError => e
-      p "Unable to load key ``#{filename}'': #{e}"
-    end
+    cert
+  rescue StandardError => e
+    p "Unable to load key ``#{certificate_file}'': #{e}"
     nil
   end
 
