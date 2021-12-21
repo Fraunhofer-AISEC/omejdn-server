@@ -165,11 +165,33 @@ class OAuthHelper
     jwks.uniq { |k| k['kid'] }
   end
 
-  def self.configuration_metadata(host, path)
-    base_config = Config.base_config
+  def self.configuration_metadata_oidc_discovery(base_config, _host, path)
     metadata = {}
+    metadata['userinfo_endpoint'] = "#{path}/userinfo"
+    metadata['acr_values_supported'] = []
+    metadata['subject_types_supported'] = 'public'
+    metadata['id_token_signing_alg_values_supported'] = base_config.dig('id_token', 'algorithm')
+    metadata['id_token_encryption_alg_values_supported'] = ['none']
+    metadata['id_token_encryption_enc_values_supported'] = ['none']
+    metadata['userinfo_signing_alg_values_supported'] = ['none']
+    metadata['userinfo_encryption_alg_values_supported'] = ['none']
+    metadata['userinfo_encryption_enc_values_supported'] = ['none']
+    metadata['request_object_signing_alg_values_supported'] = %w[RS256 RS512 ES256 ES512]
+    metadata['request_object_encryption_alg_values_supported'] = ['none'] # TODO: Implement decryption
+    metadata['request_object_encryption_enc_values_supported'] = ['none']
+    metadata['display_values_supported'] = ['page'] # TODO: Different UIs
+    metadata['claim_types_supported'] = ['normal']
+    metadata['claims_supported'] = [] # TODO: What to disclose here?
+    metadata['claims_locales_supported'] = []
+    metadata['claims_parameter_supported'] = true
+    metadata['request_parameter_supported'] = true
+    metadata['request_uri_parameter_supported'] = true
+    metadata['require_request_uri_registration'] = false
+    metadata
+  end
 
-    # RFC 8414 (also OpenID Connect Core for the most part)
+  def self.configuration_metadata_rfc8414(base_config, host, path)
+    metadata = {}
     metadata['issuer'] = base_config.dig('token', 'issuer')
     metadata['authorization_endpoint'] = "#{path}/authorize"
     metadata['token_endpoint'] = "#{path}/token"
@@ -192,6 +214,15 @@ class OAuthHelper
     # metadata['introspection_endpoint_auth_methods_supported'] =
     # metadata['introspection_endpoint_auth_signing_alg_values_supported'] =
     metadata['code_challenge_methods_supported'] = ['S256']
+    metadata
+  end
+
+  def self.configuration_metadata(host, path)
+    base_config = Config.base_config
+    metadata = {}
+
+    # RFC 8414 (also OpenID Connect Core for the most part)
+    metadata.merge!(configuration_metadata_rfc8414(base_config, host, path))
 
     # RFC 8628
     # metadata['device_authorization_endpoint'] =
@@ -213,26 +244,7 @@ class OAuthHelper
     # metadata['introspection_encryption_enc_values_supported'] =
 
     # OpenID Connect Discovery 1.0
-    metadata['userinfo_endpoint'] = "#{path}/userinfo"
-    metadata['acr_values_supported'] = []
-    metadata['subject_types_supported'] = 'public'
-    metadata['id_token_signing_alg_values_supported'] = base_config.dig('id_token', 'algorithm')
-    metadata['id_token_encryption_alg_values_supported'] = ['none']
-    metadata['id_token_encryption_enc_values_supported'] = ['none']
-    metadata['userinfo_signing_alg_values_supported'] = ['none']
-    metadata['userinfo_encryption_alg_values_supported'] = ['none']
-    metadata['userinfo_encryption_enc_values_supported'] = ['none']
-    metadata['request_object_signing_alg_values_supported'] = %w[RS256 RS512 ES256 ES512]
-    metadata['request_object_encryption_alg_values_supported'] = ['none'] # TODO: Implement decryption
-    metadata['request_object_encryption_enc_values_supported'] = ['none']
-    metadata['display_values_supported'] = ['page'] # TODO: Different UIs
-    metadata['claim_types_supported'] = ['normal']
-    metadata['claims_supported'] = [] # TODO: What to disclose here?
-    metadata['claims_locales_supported'] = []
-    metadata['claims_parameter_supported'] = true
-    metadata['request_parameter_supported'] = true
-    metadata['request_uri_parameter_supported'] = true
-    metadata['require_request_uri_registration'] = false
+    metadata.merge!(configuration_metadata_oidc_discovery(base_config, host, path))
 
     # Signing as per RFC 8414
     metadata['signed_metadata'] = sign_metadata metadata
