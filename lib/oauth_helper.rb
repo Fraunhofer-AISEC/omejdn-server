@@ -46,20 +46,9 @@ class OAuthHelper
     client
   end
 
-  # This function ensures a URI is allowed to be used by a client
-  def self.verify_redirect_uri(params, client, require_existence)
-    unless params[:redirect_uri]
-      raise OAuthError, 'invalid_request' if require_existence || [client.redirect_uri].flatten.length != 1
+  def self.retrieve_request_uri(request_uri, client)
+    raise OAuthError, 'invalid_request_uri' unless client.request_uri_allowed? request_uri
 
-      params[:redirect_uri] = [client.redirect_uri].flatten[0]
-    end
-    escaped_redir = CGI.unescape(params[:redirect_uri])&.gsub('%20', '+')
-    raise OAuthError, 'invalid_request' unless ([client.redirect_uri].flatten + ['localhost']).any? do |uri|
-                                                 escaped_redir == uri
-                                               end
-  end
-
-  def self.retrieve_request_uri(request_uri)
     uri = URI(request_uri)
     Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
       res = http.request Net::HTTP::Get.new(uri)
@@ -70,7 +59,7 @@ class OAuthHelper
   end
 
   # Retrieves the request parameters from the URL parameters, for authorization flows
-  def self.prepare_params(url_params)
+  def self.prepare_params(url_params, client)
     # We deviate from the OIDC spec in favor of RFC 9101
     # For example, we do not require specifying the scope outside the request parameter,
     # if it is provided within said parameter.
@@ -84,7 +73,7 @@ class OAuthHelper
         params = PARCache.get[url_params[:request_uri]]
       elsif url_params[:request_uri].start_with? 'https://'
         # Retrieve remote token
-        jwt = retrieve_request_uri url_params[:request_uri]
+        jwt = retrieve_request_uri url_params[:request_uri], client
       end
       raise OAuthError, 'invalid_request_uri' unless jwt || params
     elsif url_params.key? :request
@@ -93,9 +82,6 @@ class OAuthHelper
     end
 
     if jwt
-      client = Client.find_by_id url_params[:client_id]
-      raise OAuthError, 'invalid_client' if client.nil?
-
       params, = Client.decode_jwt jwt, client
       raise OAuthError, 'invalid_client' unless params['client_id'] == url_params[:client_id]
     end
@@ -186,7 +172,7 @@ class OAuthHelper
     metadata['claims_parameter_supported'] = true
     metadata['request_parameter_supported'] = true
     metadata['request_uri_parameter_supported'] = true
-    metadata['require_request_uri_registration'] = false
+    metadata['require_request_uri_registration'] = true
     metadata
   end
 

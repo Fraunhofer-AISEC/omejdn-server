@@ -267,8 +267,8 @@ end
 post '/par' do
   raise OAuthError, 'invalid_request' if params.key(:request_uri) # Not allowed here
 
-  OAuthHelper.identify_client params, authenticate: false
-  OAuthHelper.prepare_params params
+  client = OAuthHelper.identify_client params, authenticate: false
+  OAuthHelper.prepare_params params, client
 
   uri = "urn:ietf:params:oauth:request_uri:#{SecureRandom.uuid}"
   PARCache.get[uri] = params
@@ -283,13 +283,11 @@ get '/authorize' do
   # Initial sanity checks and request object resolution
   session[:redirect_uri_verified] = nil # Use this for redirection in error cases
   client = OAuthHelper.identify_client params, authenticate: false
-  if params[:redirect_uri] # Used for error messages, might be overwritten by request objects
-    OAuthHelper.verify_redirect_uri params, client, true
-    session[:redirect_uri_verified] = params[:redirect_uri]
-  end
-  OAuthHelper.prepare_params params
-  OAuthHelper.verify_redirect_uri params, client, openid?(params[:scope].split) # For real this time
-  session[:redirect_uri_verified] = params[:redirect_uri]
+  # Used for error messages, might be overwritten by request objects
+  session[:redirect_uri_verified] = client.verify_redirect_uri params[:redirect_uri], true if params[:redirect_uri]
+  OAuthHelper.prepare_params params, client
+  uri = client.verify_redirect_uri params[:redirect_uri], openid?(params[:scope].split) # For real this time
+  session[:redirect_uri_verified] = uri
   session[:url_params] = params # Save parameters
 
   # We require specifying the scope
@@ -399,7 +397,7 @@ def issue_code
   cache[:scopes] = session[:scopes]
   cache[:resources] = session[:resources]
   cache[:nonce] = url_params[:nonce]
-  cache[:redirect_uri] = url_params[:redirect_uri]
+  cache[:redirect_uri] = session[:redirect_uri_verified]
   cache[:claims] = JSON.parse session.dig(:url_params, 'claims') || '{}'
   unless url_params[:code_challenge].nil?
     unless url_params[:code_challenge_method] == 'S256'

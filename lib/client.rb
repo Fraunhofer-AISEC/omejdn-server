@@ -3,7 +3,7 @@
 # OAuth client helper class
 class Client
   attr_accessor :client_id, :redirect_uri, :name,
-                :allowed_scopes, :attributes, :allowed_resources
+                :allowed_scopes, :attributes, :allowed_resources, :request_uri
 
   def self.find_by_id(client_id)
     load_clients.each do |client|
@@ -15,6 +15,7 @@ class Client
   def apply_values(ccnf)
     @client_id = ccnf['client_id']
     @redirect_uri = ccnf['redirect_uri']
+    @request_uri = ccnf['request_uri']
     @name = ccnf['name']
     @attributes = ccnf['attributes']
     @allowed_scopes = ccnf['allowed_scopes']
@@ -72,11 +73,12 @@ class Client
       'client_id' => @client_id,
       'name' => @name,
       'redirect_uri' => @redirect_uri,
+      'request_uri' => @request_uri,
       'allowed_scopes' => @allowed_scopes,
+      'allowed_resources' => @allowed_resources,
       'attributes' => @attributes
     }
-    result['allowed_resources'] = @allowed_resources unless @allowed_resources.nil?
-    result
+    result.compact!
   end
 
   def filter_scopes(scopes)
@@ -89,6 +91,21 @@ class Client
 
   def resources_allowed?(resources)
     @allowed_resources.nil? || (resources - @allowed_resources).empty?
+  end
+
+  def request_uri_allowed?(uri)
+    [*@request_uri].include? uri
+  end
+
+  # This function ensures a URI is allowed to be used by a client
+  def verify_redirect_uri(uri, require_existence)
+    raise OAuthError, 'invalid_request' if !uri && (require_existence || [*@redirect_uri].length != 1)
+
+    uri ||= [*@redirect_uri][0]
+    escaped_redir = CGI.unescape(uri)&.gsub('%20', '+')
+    raise OAuthError, 'invalid_request' unless ([*@redirect_uri] + ['localhost']).include? escaped_redir
+
+    uri
   end
 
   def certificate_file
