@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+# Enforce logging output
+$stdout.sync = true
+$stderr.sync = true
+
 require 'rubygems'
 require 'bundler/setup'
 require 'rack'
