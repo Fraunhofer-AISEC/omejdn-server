@@ -130,6 +130,6 @@ class Client
       File.delete filename if File.exist? filename
       return
     end
-    File.open(filename, 'w') { |file| file.write(new_cert) }
+    File.write(filename, new_cert)
   end
 end
