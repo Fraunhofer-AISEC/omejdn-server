@@ -79,7 +79,7 @@ class OAuthHelper
         jwks << jwk
       end
     end
-    { 'keys': jwks.uniq { |k| k['kid'] } }
+    { keys: jwks.uniq { |k| k['kid'] } }
   end
 
   def self.openid_configuration(host, path)
