@@ -148,7 +148,7 @@ class OAuthHelper
         jwks << jwk
       end
     end
-    jwks.uniq { |k| k['kid'] }
+    { keys: jwks.uniq { |k| k['kid'] } }
   end
 
   def self.configuration_metadata_oidc_discovery(base_config, _host, path)
