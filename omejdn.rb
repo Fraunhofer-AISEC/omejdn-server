@@ -131,6 +131,14 @@ class RequestCache
   end
 end
 
+# A cache for Pushed Authorization Requests
+class PARCache
+  @cache = {}
+  def self.get
+    @cache
+  end
+end
+
 before do
   # We define global cache control headers here
   # They may be overwritten where necessary
@@ -162,72 +170,53 @@ end
 
 # Handle token request
 post '/token' do
-  client = nil
-  scopes = []
-  resources = [params['resource'] || []].flatten
-  req_claims = {}
+  resources = [*params[:resource]]
 
   case params[:grant_type]
   when 'client_credentials'
-    if params[:client_assertion_type] != 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
-      halt 400, OAuthHelper.error_response('unauthorized_grant', 'Invalid client_assertion_type')
-    end
-    jwt = params[:client_assertion]
-    halt 400, OAuthHelper.error_response('invalid_grant', 'Assertion missing') if jwt.nil?
-    client = Client.find_by_jwt jwt
-    halt 400, OAuthHelper.error_response('invalid_client', 'Client unknown') if client.nil?
+    client = OAuthHelper.identify_client params, authenticate: true
     scopes = client.filter_scopes(params[:scope]&.split) || []
     resources = [Config.base_config.dig('token', 'audience')] if resources.empty?
-    halt 400, OAuthHelper.error_response('invalid_target', '') unless client.resources_allowed? resources
     req_claims = JSON.parse(params[:claims] || '{}')
-
+    raise OAuthError, 'invalid_target' unless client.resources_allowed? resources
   when 'authorization_code'
-    code = params[:code]
-    halt 400, OAuthHelper.error_response('invalid_code', '') if code.nil?
-    cache = RequestCache.get[code]
-    halt 400, OAuthHelper.error_response('invalid_code', '') if cache.nil?
-    # Only verify PKCE if given in request
-    unless cache[:pkce].nil?
-      halt 400, OAuthHelper.error_response('invalid_request', 'Code verifier missing') if params[:code_verifier].nil?
-      unless OAuthHelper.validate_pkce(cache[:pkce], params[:code_verifier], cache[:pkce_method])
-        halt 400, OAuthHelper.error_response('invalid_request', 'Code verifier mismatch')
-      end
-    end
-    client = Client.find_by_id params[:client_id]
-    halt 400, OAuthHelper.error_response('invalid_client', 'No client_id given') if client.nil?
-    if cache[:redirect_uri] && cache[:redirect_uri] != params[:redirect_uri]
-      halt 400, OAuthHelper.error_response('invalid_request')
-    end
+    cache = RequestCache.get[params[:code]]
+    raise OAuthError, 'invalid_code' if cache.nil?
+
+    OAuthHelper.validate_pkce(cache[:pkce], params[:code_verifier], cache[:pkce_method]) unless cache[:pkce].nil?
+    client = OAuthHelper.identify_client params, authenticate: false
     scopes = client.filter_scopes(params[:scope]&.split)
     scopes = cache[:scopes] || [] if scopes.empty?
-    halt 400, OAuthHelper.error_response('invalid_scope', '') unless (scopes - cache[:scopes]).empty?
     resources = cache[:resources] if resources.empty?
-    halt 400, OAuthHelper.error_response('invalid_target', '') unless (resources - cache[:resources]).empty?
     req_claims = cache[:claims] || {}
     req_claims = JSON.parse params[:claims] if params[:claims]
-
+    raise OAuthError, 'invalid_scope'  unless (scopes - cache[:scopes]).empty?
+    raise OAuthError, 'invalid_target' unless (resources - cache[:resources]).empty?
+    raise OAuthError, 'invalid_request' if cache[:redirect_uri] && cache[:redirect_uri] != params[:redirect_uri]
   else
-    halt 400, OAuthHelper.error_response('unsupported_grant_type', "Given: #{params[:grant_type]}")
+    raise OAuthError.new 'unsupported_grant_type', "Given: #{params[:grant_type]}"
   end
-  headers['Content-Type'] = 'application/json'
-  halt 400, OAuthHelper.error_response('access_denied', '') if scopes.empty?
+  raise OAuthError, 'access_denied' if scopes.empty?
+
   resources << ("#{Config.base_config['host']}/userinfo") if openid?(scopes)
   resources << ("#{Config.base_config['host']}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
 
   OAuthHelper.adapt_requested_claims req_claims
 
-  begin
-    user = cache&.dig(:user)
-    nonce = cache&.dig(:nonce)
-    id_token = TokenHelper.build_id_token client, user, scopes, req_claims, nonce if openid?(scopes)
-    # RFC 9068
-    access_token = TokenHelper.build_access_token client, user, scopes, req_claims, resources
-    # Delete the authorization code as it is single use
-    RequestCache.get.delete(code)
-    OAuthHelper.token_response access_token, scopes, id_token
-  rescue OAuth2Error
-    halt 400, OAuthHelper.error_response('invalid_scope', '')
-  end
+  user = cache&.dig(:user)
+  nonce = cache&.dig(:nonce)
+  id_token = TokenHelper.build_id_token client, user, scopes, req_claims, nonce if openid?(scopes)
+  # RFC 9068
+  access_token = TokenHelper.build_access_token client, user, scopes, req_claims, resources
+  # Delete the authorization code as it is single use
+  RequestCache.get.delete(params[:code])
+  halt 200, (OAuthHelper.token_response access_token, scopes, id_token)
+rescue OAuthError => e
+  halt 400, e.to_s
+end
+
+after '/token' do
+  headers['Content-Type'] = 'application/json'
 end
 
 ########## AUTHORIZATION FLOW ##################
@@ -267,25 +256,50 @@ def next_task(completed_task = nil)
   redirect to("#{my_path}/login")
 end
 
+def handle_auth_error(error)
+  # Try to determine the response_url to send the error to.
+  response_url = session[:redirect_uri_verified]
+  halt 400, error.to_s if response_url.nil?
+  query = []
+  query << "state=#{session.dig(:url_params, :state)}" unless session.dig(:url_params, :state).nil?
+  query << "error=#{error.type}"
+  query << "error_description=#{error.description}"
+  redirect to "#{response_url}?#{query.join '&'}"
+end
+
+# Pushed Authorization Requests
+post '/par' do
+  raise OAuthError, 'invalid_request' if params.key(:request_uri) # Not allowed here
+
+  client = OAuthHelper.identify_client params, authenticate: false
+  OAuthHelper.prepare_params params, client
+
+  uri = "urn:ietf:params:oauth:request_uri:#{SecureRandom.uuid}"
+  PARCache.get[uri] = params
+  headers['Content-Type'] = 'application/json'
+  halt 201, { 'request_uri' => uri, 'expires_in' => 60 }.to_json # TODO: Expiration
+rescue OAuthError => e
+  halt 400, e.to_s
+end
+
 # Handle authorization request
 get '/authorize' do
-  # Required OAuth parameters
-  unless params[:response_type] == 'code'
-    halt 400, OAuthHelper.error_response('unsupported_response_type', "Given: #{params[:response_type]}")
-  end
-  client = Client.find_by_id params[:client_id]
-  halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
-  # We require specifying the scope
-  halt 400, OAuthHelper.error_response('invalid_scope') unless params[:scope]
-  if openid?(params[:scope].split) || [client.redirect_uri].flatten.length != 1
-    escaped_redir = CGI.unescape(params[:redirect_uri] || '')&.gsub('%20', '+')
-    unless ([client.redirect_uri].flatten + ['localhost']).any? { |uri| escaped_redir == uri }
-      halt 400, OAuthHelper.error_response('invalid_request')
-    end
-  end
+  # Initial sanity checks and request object resolution
+  session[:redirect_uri_verified] = nil # Use this for redirection in error cases
+  client = OAuthHelper.identify_client params, authenticate: false
+  # Used for error messages, might be overwritten by request objects
+  session[:redirect_uri_verified] = client.verify_redirect_uri params[:redirect_uri], true if params[:redirect_uri]
+  OAuthHelper.prepare_params params, client
+  uri = client.verify_redirect_uri params[:redirect_uri], openid?(params[:scope].split) # For real this time
+  session[:redirect_uri_verified] = uri
+  session[:url_params] = params # Save parameters
 
-  # Save parameters
-  session[:url_params] = params
+  # We require specifying the scope
+  raise OAuthError, 'invalid_scope' unless params[:scope]
+
+  unless params[:response_type] == 'code'
+    raise OAuthError.new 'unsupported_response_type', "Given: #{params[:response_type]}"
+  end
 
   # Tasks the user has to perform
   session[:tasks] = []
@@ -304,15 +318,10 @@ get '/authorize' do
   params[:prompt]&.split&.each do |task|
     case task
     when 'none'
-      if session[:tasks].include AuthorizationTask::ACCOUNT_SELECT
-        halt 400, OAuthHelper.error_response('account_selection_required')
-      elsif session[:tasks].include AuthorizationTask::LOGIN
-        halt 400, OAuthHelper.error_response('login_required')
-      elsif session[:tasks].include AuthorizationTask::CONSENT
-        halt 400, OAuthHelper.error_response('consent_required')
-      elsif params[:prompt] != 'none'
-        halt 400, OAuthHelper.error_response('invalid_request', "Invalid 'prompt' values: #{params[:prompt]}")
-      end
+      raise OAuthError, 'account_selection_required' if session[:tasks].include? AuthorizationTask::ACCOUNT_SELECT
+      raise OAuthError, 'login_required'             if session[:tasks].include? AuthorizationTask::LOGIN
+      raise OAuthError, 'consent_required'           if session[:tasks].include? AuthorizationTask::CONSENT
+      raise OAuthError.new 'invalid_request', "Invalid 'prompt' values: #{params[:prompt]}" if params[:prompt] != 'none'
     when 'login'
       session[:tasks] << AuthorizationTask::LOGIN
     when 'consent'
@@ -330,6 +339,8 @@ get '/authorize' do
   session[:tasks] << AuthorizationTask::ISSUE
   session[:tasks].sort!.uniq!
   next_task
+rescue OAuthError => e
+  handle_auth_error e
 end
 
 get '/consent' do
@@ -339,10 +350,10 @@ get '/consent' do
   end
 
   user = UserSession.get[session[:user]]
-  halt 400, OAuthHelper.error_response('invalid_user', '') if user.nil?
+  raise OAuthError, 'invalid_user' if user.nil?
 
   client = Client.find_by_id session.dig(:url_params, 'client_id')
-  halt 400, OAuthHelper.error_response('invalid_client') if client.nil?
+  raise OAuthError, 'invalid_client' if client.nil?
 
   scope_mapping = Config.scope_mapping_config
   session[:scopes] = client.filter_scopes(session.dig(:url_params, :scope).split)
@@ -361,7 +372,7 @@ get '/consent' do
   p "The user seems to be #{user.username}" if debug
 
   session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config.dig('token', 'audience')].flatten
-  halt 400, OAuthHelper.error_response('invalid_target') unless client.resources_allowed? session[:resources]
+  raise OAuthError, 'invalid_target' unless client.resources_allowed? session[:resources]
 
   # Seems to be in order
   return haml :authorization_page, locals: {
@@ -371,27 +382,30 @@ get '/consent' do
     scopes: session[:scopes],
     scope_description: Config.scope_description_config
   }
+rescue OAuthError => e
+  handle_auth_error e
 end
 
 post '/consent' do
   session[:consent] ||= {}
   session[:consent][session.dig(:url_params, :client_id)] = session[:scopes]
   next_task AuthorizationTask::CONSENT
+rescue OAuthError => e
+  handle_auth_error e
 end
 
 def issue_code
-  url_params = session[:url_params]
+  url_params = session.delete(:url_params)
   cache = {}
   cache[:user] = UserSession.get[session[:user]]
   cache[:scopes] = session[:scopes]
   cache[:resources] = session[:resources]
   cache[:nonce] = url_params[:nonce]
-  cache[:redirect_uri] = url_params[:redirect_uri]
+  cache[:redirect_uri] = session[:redirect_uri_verified]
   cache[:claims] = JSON.parse session.dig(:url_params, 'claims') || '{}'
   unless url_params[:code_challenge].nil?
     unless url_params[:code_challenge_method] == 'S256'
-      halt 400, OAuthHelper.error_response('invalid_request',
-                                           'Transform algorithm not supported')
+      raise OAuthError.new 'invalid_request', 'Transform algorithm not supported'
     end
 
     cache[:pkce] = url_params[:code_challenge]
@@ -399,9 +413,19 @@ def issue_code
   end
   code = OAuthHelper.new_authz_code
   RequestCache.get[code] = cache
-  redirect_uri = url_params[:redirect_uri]
-  resp = "?code=#{code}&state=#{url_params[:state]}"
-  redirect to(redirect_uri + resp)
+  redirect_uri = session.delete(:redirect_uri_verified)
+  response_params = {
+    code: code,
+    state: url_params[:state]
+  }
+  case url_params[:response_mode]
+  when 'form_post'
+    halt 200, (haml :submitted, locals: response_params.merge({ redirect_uri: redirect_uri }))
+  when 'fragment'
+    redirect to("#{redirect_uri}##{URI.encode_www_form response_params}")
+  else # 'query' and unsupported types
+    redirect to("#{redirect_uri}?#{URI.encode_www_form response_params}")
+  end
 end
 
 ########## USERINFO ##################
@@ -417,7 +441,7 @@ before '/userinfo' do
     @token = (JWT.decode jwt, key.public_key, true, { algorithm: Config.base_config.dig('token', 'algorithm') })[0]
     @client = Client.find_by_id @token['client_id']
     @user = User.find_by_id(@token['sub'])
-    halt 403 unless [@token['aud']].flatten.include?("#{Config.base_config['host']}/userinfo")
+    halt 403 unless [*@token['aud']].include?("#{Config.base_config['host']}/userinfo")
   rescue StandardError => e
     p e if debug
     @user = nil
@@ -476,6 +500,8 @@ post '/login' do
   UserSession.get[nonce] = user
   session[:user] = nonce
   next_task AuthorizationTask::LOGIN
+rescue OAuthError => e
+  handle_auth_error e
 end
 
 # FIXME
@@ -530,7 +556,7 @@ before '/api/v1/*' do
     halt 401 if jwt.nil? || jwt.empty?
     token = JWT.decode(jwt, Server.load_skey['sk'].public_key, true,
                        { algorithm: Config.base_config.dig('token', 'algorithm') })[0]
-    halt 403 unless [token['aud']].flatten.include?("#{Config.base_config['host']}/api")
+    halt 403 unless [*token['aud']].include?("#{Config.base_config['host']}/api")
     @scopes = token['scope'].split
     @user_is_admin  = (@scopes.include? 'omejdn:admin')
     @user_may_write = (@scopes.include? 'omejdn:write') || @user_is_admin
@@ -822,19 +848,17 @@ end
 ########## WELL-KNOWN ENDPOINTS ##################
 
 before '/.well-known*' do
+  headers['Content-Type'] = 'application/json'
   headers['Cache-Control'] = "max-age=#{60 * 60 * 24}, must-revalidate"
   headers.delete('Pragma')
 end
 
 get '/.well-known/jwks.json' do
-  headers['Content-Type'] = 'application/json'
   OAuthHelper.generate_jwks.to_json
 end
 
-get '/.well-known/openid-configuration' do
-  headers['Content-Type'] = 'application/json'
-  p "Host #{Config.base_config['host']},#{my_path}"
-  JSON.generate OAuthHelper.openid_configuration(Config.base_config['host'], my_path)
+get '/.well-known/(oauth-authorization-server|openid-configuration)' do
+  JSON.generate OAuthHelper.configuration_metadata(Config.base_config['host'], my_path)
 end
 
 get '/.well-known/webfinger' do

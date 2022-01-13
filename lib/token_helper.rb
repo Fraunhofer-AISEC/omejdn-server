@@ -10,9 +10,6 @@ require 'openssl'
 # Need this constant to encode subject the right way.
 ASN1_STRFLGS_ESC_MSB = 4
 
-class OAuth2Error < RuntimeError
-end
-
 # A helper for building JWT access tokens and ID tokens
 class TokenHelper
   def self.build_access_token_stub(attrs, client, scopes, resources, claims)

@@ -3,7 +3,7 @@
 # OAuth client helper class
 class Client
   attr_accessor :client_id, :redirect_uri, :name,
-                :allowed_scopes, :attributes, :allowed_resources
+                :allowed_scopes, :attributes, :allowed_resources, :request_uri
 
   def self.find_by_id(client_id)
     load_clients.each do |client|
@@ -15,6 +15,7 @@ class Client
   def apply_values(ccnf)
     @client_id = ccnf['client_id']
     @redirect_uri = ccnf['redirect_uri']
+    @request_uri = ccnf['request_uri']
     @name = ccnf['name']
     @attributes = ccnf['attributes']
     @allowed_scopes = ccnf['allowed_scopes']
@@ -46,38 +47,24 @@ class Client
     client
   end
 
-  def self.extract_jwt_cid(jwt)
-    begin
-      jwt_dec, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
-      return nil unless jwt_dec['sub'] == jwt_dec['iss']
-      return nil unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
-    rescue StandardError => e
-      puts "Error decoding JWT #{jwt}: #{e}"
-      return nil
-    end
-    [jwt_hdr['alg'], jwt_dec['sub']]
-  end
+  # Decodes a JWT and optionally finds the issuing client
+  def self.decode_jwt(jwt, client = nil)
+    jwt_dec, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
 
-  def self.find_by_jwt(jwt)
-    clients = load_clients
-    puts "looking for client of #{jwt}" if Config.base_config['app_env'] != 'production'
-    jwt_alg, jwt_cid = extract_jwt_cid jwt
-    return nil if jwt_cid.nil?
+    return nil if jwt['sub'] && jwt_dec['sub'] != jwt_dec['iss']
+    return nil unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
 
-    clients.each do |client|
-      next unless client.client_id == jwt_cid
+    client_id = jwt_dec['iss'] || jwt_dec['sub'] || jwt_dec['client_id']
+    client ||= find_by_id client_id
 
-      puts "Client #{jwt_cid} found"
-      # Try verify
-      aud = Config.base_config['accept_audience']
-      JWT.decode jwt, client.certificate&.public_key, true,
-                 { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_alg }
-      return client
-    rescue StandardError => e
-      puts "Tried #{client.name}: #{e}" if Config.base_config['app_env'] != 'production'
-      return nil
-    end
-    puts "ERROR: Client #{jwt_cid} does not exist"
+    raise 'Client does not exist' if client.nil?
+
+    aud = Config.base_config['accept_audience']
+    jwt_dec, = JWT.decode jwt, client.certificate&.public_key, true,
+                          { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_hdr['alg'] }
+    [jwt_dec, client]
+  rescue StandardError => e
+    puts "Error decoding JWT #{jwt}: #{e}"
     nil
   end
 
@@ -86,15 +73,16 @@ class Client
       'client_id' => @client_id,
       'name' => @name,
       'redirect_uri' => @redirect_uri,
+      'request_uri' => @request_uri,
       'allowed_scopes' => @allowed_scopes,
+      'allowed_resources' => @allowed_resources,
       'attributes' => @attributes
     }
-    result['allowed_resources'] = @allowed_resources unless @allowed_resources.nil?
-    result
+    result.compact!
   end
 
   def filter_scopes(scopes)
-    (scopes || []).select { |s| allowed_scopes.include? s }
+    (scopes || []) & allowed_scopes
   end
 
   def allowed_scoped_attributes(scopes)
@@ -102,9 +90,22 @@ class Client
   end
 
   def resources_allowed?(resources)
-    return true if @allowed_resources.nil?
+    @allowed_resources.nil? || (resources - @allowed_resources).empty?
+  end
 
-    resources.reject { |r| @allowed_resources.include? r }.empty?
+  def request_uri_allowed?(uri)
+    [*@request_uri].include? uri
+  end
+
+  # This function ensures a URI is allowed to be used by a client
+  def verify_redirect_uri(uri, require_existence)
+    raise OAuthError, 'invalid_request' if !uri && (require_existence || [*@redirect_uri].length != 1)
+
+    uri ||= [*@redirect_uri][0]
+    escaped_redir = CGI.unescape(uri)&.gsub('%20', '+')
+    raise OAuthError, 'invalid_request' unless ([*@redirect_uri] + ['localhost']).include? escaped_redir
+
+    uri
   end
 
   def certificate_file
@@ -112,16 +113,13 @@ class Client
   end
 
   def certificate
-    begin
-      filename = certificate_file
-      return nil unless File.exist? filename # no cert registered
+    cert = OpenSSL::X509::Certificate.new File.read certificate_file
+    raise 'Certificate expired' if cert.not_after < Time.now
+    raise 'Certificate not yet valid' if cert.not_before > Time.now
 
-      cert = OpenSSL::X509::Certificate.new File.read filename
-      now = Time.now
-      return cert unless cert.not_after < now || cert.not_before > now
-    rescue StandardError => e
-      p "Unable to load key ``#{filename}'': #{e}"
-    end
+    cert
+  rescue StandardError => e
+    p "Unable to load key ``#{certificate_file}'': #{e}"
     nil
   end
 
