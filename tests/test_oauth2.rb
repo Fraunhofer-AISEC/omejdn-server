@@ -161,8 +161,6 @@ class OAuth2Test < Test::Unit::TestCase
     request_client_credentials @client, "ES512", @priv_key_ec512, @certificate_ec512
     request_client_credentials @client, "RS256", @priv_key_rsa,   @certificate_rsa
     request_client_credentials @client, "RS512", @priv_key_rsa,   @certificate_rsa
-    request_client_credentials @client, "PS512", @priv_key_rsa,   @certificate_rsa, '', false
-    request_client_credentials @client, "PS256", @priv_key_rsa,   @certificate_rsa, '', false
   end
 
   def request_authorization(user, client, query_additions='', should_work=true, scopes = ['omejdn:write'])
