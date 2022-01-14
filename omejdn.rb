@@ -152,6 +152,7 @@ before do
     end)
     halt 404 if options.empty?
     headers['Allow'] = options.join(',')
+    headers['Access-Control-Allow-Methods'] = options.join(',')
     headers['Content-Type'] ||= 'text/html'
     halt 200, options.join(',')
   end
