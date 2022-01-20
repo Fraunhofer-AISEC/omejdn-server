@@ -850,7 +850,7 @@ end
 
 before '/.well-known*' do
   headers['Content-Type'] = 'application/json'
-  headers['Cache-Control'] = "max-age=#{60 * 60 * 24}, must-revalidate"
+  headers['Cache-Control'] = "public, max-age=#{60 * 60 * 24}, must-revalidate"
   headers.delete('Pragma')
 end
 
