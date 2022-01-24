@@ -265,6 +265,7 @@ def handle_auth_error(error)
   query << "state=#{session.dig(:url_params, :state)}" unless session.dig(:url_params, :state).nil?
   query << "error=#{error.type}"
   query << "error_description=#{error.description}"
+  query << "iss=#{Config.base_config.dig('token', 'issuer')}"
   redirect to "#{response_url}?#{query.join '&'}"
 end
 
@@ -414,12 +415,16 @@ def issue_code
   end
   code = OAuthHelper.new_authz_code
   RequestCache.get[code] = cache
-  redirect_uri = session.delete(:redirect_uri_verified)
   response_params = {
     code: code,
-    state: url_params[:state]
+    state: url_params[:state],
+    iss: Config.base_config.dig('token', 'issuer')
   }
-  case url_params[:response_mode]
+  auth_response session.delete(:redirect_uri_verified), url_params[:response_mode], response_params
+end
+
+def auth_response(redirect_uri, response_mode, response_params)
+  case response_mode
   when 'form_post'
     halt 200, (haml :submitted, locals: response_params.merge({ redirect_uri: redirect_uri }))
   when 'fragment'
