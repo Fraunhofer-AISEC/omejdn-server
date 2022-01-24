@@ -195,6 +195,7 @@ class OAuth2Test < Test::Unit::TestCase
     assert code=header_hash[client.redirect_uri+'?code'].first
     # p code
     assert_equal 'testState', header_hash['state'].first
+    assert_equal TestSetup.config['token']['issuer'], header_hash['iss'].first
 
     # Get /token
     query = 'grant_type=authorization_code'+

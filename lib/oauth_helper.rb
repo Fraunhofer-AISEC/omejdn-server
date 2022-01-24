@@ -229,6 +229,9 @@ class OAuthHelper
     # metadata['introspection_encryption_alg_values_supported'] =
     # metadata['introspection_encryption_enc_values_supported'] =
 
+    # RFC-ietf-oauth-iss-auth-resp-04
+    metadata['authorization_response_iss_parameter_supported'] = true
+
     # OpenID Connect Discovery 1.0
     metadata.merge!(configuration_metadata_oidc_discovery(base_config, host, path))
 
