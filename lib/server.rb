@@ -22,32 +22,15 @@ class Server
   end
 
   def self.load_pkey(token_type = 'token')
-    config = Config.base_config
-    cert_files = config.dig(token_type, 'jwks_additions') || []
+    cert_files = Config.base_config.dig(token_type, 'jwks_additions') || []
     cert_files.filter { |f| File.exist? f }.map do |f|
-      file_contents = File.read(f)
       result = {}
       # The file could be either a certificate or a key
       begin
-        # Is it a cert/-chain?
-        # FIXME: The OpenSSL Ruby Gem will eventually get support for chain loading starting with version 3.0.0
-        # See: https://github.com/ruby/openssl/pull/441
-        # For now, we support PEM chains using this hack
-        if file_contents.ascii_only? # PEM with chain support
-          chain_split = file_contents.split('-----')
-          chain = chain_split.select.with_index do |_, i|
-            ((i - 2) % 4).zero?
-          end
-          chain = chain.map { |c| "-----BEGIN CERTIFICATE-----\n#{c}-----END CERTIFICATE-----\n" }
-        else # DER
-          chain = [file_contents]
-        end
-        certs = chain.map { |c| OpenSSL::X509::Certificate._load c }
-        result['certs'] = certs
-        result['pk'] = certs[0].public_key
+        result['certs'] = OpenSSL::X509::Certificate.load_file f
+        result['pk'] = result['certs'][0].public_key
       rescue StandardError
-        # Is it a secret/public key?
-        key = OpenSSL::PKey :RSA.new file_contents
+        key = OpenSSL::PKey::RSA.new File.read(f)
         result['pk'] = key.public_key
       end
       result
