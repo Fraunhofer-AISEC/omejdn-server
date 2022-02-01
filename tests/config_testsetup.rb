@@ -3,13 +3,20 @@
 # Always load this BEFORE omejdn.rb
 ENV['OMEJDN_IGNORE_ENV'] = "true"
 
+require 'yaml'
 
 class TestSetup
 
-  def self.setup
+  def self.backup
     @backup_users   = File.read './config/users.yml'
     @backup_clients = File.read './config/clients.yml'
     @backup_omejdn  = File.read './config/omejdn.yml'
+    File.open('./config/users.yml', 'w')   { |file| file.write(users.to_yaml) }
+    File.open('./config/clients.yml', 'w') { |file| file.write(clients.to_yaml) }
+    File.open('./config/omejdn.yml', 'w')  { |file| file.write(config.to_yaml) }
+  end
+
+  def self.setup
     File.open('./config/users.yml', 'w')   { |file| file.write(users.to_yaml) }
     File.open('./config/clients.yml', 'w') { |file| file.write(clients.to_yaml) }
     File.open('./config/omejdn.yml', 'w')  { |file| file.write(config.to_yaml) }
@@ -106,6 +113,9 @@ class TestSetup
         'algorithm' => 'RS256',
         'issuer' => 'http://localhost:4567'
       },
+      'plugins' => {
+        'user_db' => ['yaml']
+      },
       'user_backend' => ['yaml'],
       'user_backend_default' => 'yaml',
       'user_selfservice' => {
@@ -117,3 +127,6 @@ class TestSetup
     }
   end
 end
+
+# Backup all Config Files
+TestSetup.backup

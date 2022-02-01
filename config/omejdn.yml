@@ -41,6 +41,10 @@ user_backend:
 # Default user backend
 user_backend_default: yaml
 
+plugins:
+  user_db:
+    - yaml
+
 # User Selfservice API
 user_selfservice:
   enabled: true

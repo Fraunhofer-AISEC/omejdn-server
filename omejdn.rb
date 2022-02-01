@@ -8,13 +8,6 @@ require 'rubygems'
 require 'bundler/setup'
 require 'rack'
 require 'cgi'
-
-require_relative './lib/client'
-require_relative './lib/config'
-require_relative './lib/user'
-require_relative './lib/token_helper'
-require_relative './lib/oauth_helper'
-require_relative './lib/user_db'
 require 'sinatra'
 require 'sinatra/cookies'
 # require 'sinatra/cors'
@@ -25,6 +18,13 @@ require 'webrick'
 require 'webrick/https'
 require 'net/http'
 require 'bcrypt'
+
+require_relative './lib/client'
+require_relative './lib/config'
+require_relative './lib/user'
+require_relative './lib/token_helper'
+require_relative './lib/oauth_helper'
+require_relative './lib/plugins'
 
 OMEJDN_LICENSE = 'Apache2.0'
 
@@ -890,3 +890,6 @@ get '/about' do
   return JSON.generate({ 'version' => version,
                          'license' => OMEJDN_LICENSE })
 end
+
+# Load all Plugins
+PluginLoader.initialize

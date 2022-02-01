@@ -2,8 +2,7 @@
 
 require 'bcrypt'
 require 'sinatra/activerecord'
-require_relative './claim_mapper'
-require_relative './user_db'
+require_relative './plugins'
 
 # Class representing a user from a DB
 class User
@@ -12,15 +11,15 @@ class User
   attr_accessor :username, :password, :attributes, :extern, :backend, :auth_time
 
   def verify_password(pass)
-    UserDbLoader.load_db(backend)&.verify_password(self, pass) || false
+    PluginLoader.load_plugin('user_db', backend)&.verify_password(self, pass) || false
   end
 
   def self.all_users
-    UserDbLoader.all_dbs.map(&:all_users).flatten
+    PluginLoader.load_plugins('user_db').map(&:all_users).flatten
   end
 
   def self.find_by_id(username)
-    UserDbLoader.all_dbs.each do |db|
+    PluginLoader.load_plugins('user_db').each do |db|
       user = db.find_by_id(username)
       return user unless user.nil?
     end
@@ -48,19 +47,19 @@ class User
   end
 
   def self.delete_user(username)
-    !UserDbLoader.all_dbs.index { |db| db.delete_user(username) }.nil?
+    !PluginLoader.load_plugins('user_db').index { |db| db.delete_user(username) }.nil?
   end
 
   def self.add_user(user, user_backend)
-    UserDbLoader.load_db(user_backend).create_user(user)
+    PluginLoader.load_plugin('user_db', user_backend).create_user(user)
   end
 
   def save
-    UserDbLoader.load_db(backend || Config.base_config['user_backend_default']).update_user(self)
+    PluginLoader.load_plugin('user_db', backend || Config.base_config['user_backend_default']).update_user(self)
   end
 
   def update_password(new_password)
-    UserDbLoader.load_db(backend).update_password(self, User.string_to_pass_hash(new_password))
+    PluginLoader.load_plugin('user_db', backend).update_password(self, User.string_to_pass_hash(new_password))
   end
 
   def self.generate_extern_user(provider, json)
@@ -73,8 +72,9 @@ class User
     user = User.new
     user.username = username
     user.extern = provider['name'] || false
-    user.attributes = []
-    user.attributes |= ClaimMapper.map_claims(json, provider) unless provider['claim_mapper'].nil?
+    user.attributes = [*provider['claim_mapper']].map do |mapper|
+      PluginLoader.load_plugin('claim_mapper',mapper).map_claims(json, provider)
+    end.flatten(1)
     User.add_user(user, Config.base_config['user_backend_default'])
     user
   end

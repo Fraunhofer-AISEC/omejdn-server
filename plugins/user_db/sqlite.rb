@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'sqlite3'
+require_rel './_abstract'
 
 # The SQlite DB plugin for users
 class SqliteUserDb < UserDb
@@ -84,8 +85,8 @@ class SqliteUserDb < UserDb
 end
 
 # Monkey patch the loader
-class UserDbLoader
-  def self.load_sqlite_db
+class PluginLoader
+  def self.load_user_db_sqlite
     SqliteUserDb.new
   end
 end

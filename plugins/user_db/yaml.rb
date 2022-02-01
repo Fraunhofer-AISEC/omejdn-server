@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_rel './_abstract'
+
 # The DB backend for yaml files
 class YamlUserDb < UserDb
   def create_user(user)
@@ -69,8 +71,8 @@ class YamlUserDb < UserDb
 end
 
 # Monkey patch the loader
-class UserDbLoader
-  def self.load_yaml_db
+class PluginLoader
+  def self.load_user_db_yaml
     YamlUserDb.new
   end
 end

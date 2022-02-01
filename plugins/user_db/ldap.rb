@@ -3,6 +3,7 @@
 require 'socket'
 require 'net/ldap'
 require 'base64'
+require_rel './_abstract'
 
 # LDAP User DB backend
 class LdapUserDb < UserDb
@@ -123,8 +124,8 @@ class LdapUserDb < UserDb
 end
 
 # Monkey patch the loader
-class UserDbLoader
-  def self.load_ldap_db
+class PluginLoader
+  def self.load_user_db_ldap
     LdapUserDb.new
   end
 end
