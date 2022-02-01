@@ -11,41 +11,29 @@ class User
 
   attr_accessor :username, :password, :attributes, :extern, :backend, :auth_time
 
-  def self.verify_credential(user, pass)
-    dbs = UserDbLoader.load_db
-    dbs.each do |db|
-      next unless db.name == user.backend
-
-      return db.verify_credential(user, pass)
-    end
-    false
+  def verify_password(pass)
+    UserDbLoader.load_db(backend)&.verify_password(self, pass) || false
   end
 
   def self.all_users
-    users = []
-    dbs = UserDbLoader.load_db
-    dbs.each do |db|
-      users += db.load_users
-    end
-    users
+    UserDbLoader.all_dbs.map(&:all_users).flatten
   end
 
   def self.find_by_id(username)
-    dbs = UserDbLoader.load_db
-    dbs.each do |db|
+    UserDbLoader.all_dbs.each do |db|
       user = db.find_by_id(username)
       return user unless user.nil?
     end
     nil
   end
 
-  def self.from_json(json)
+  def self.from_dict(dict)
     user = User.new
-    user.username = json['username']
-    user.attributes = json['attributes']
-    user.extern = json['extern']
-    user.password = BCrypt::Password.create(json['password']) unless user.extern
-
+    user.username = dict['username']
+    user.attributes = dict['attributes']
+    user.extern = dict['extern']
+    user.backend = dict['backend']
+    user.password = string_to_pass_hash(dict['password']) unless user.extern
     user
   end
 
@@ -53,43 +41,26 @@ class User
     {
       'username' => username,
       'attributes' => attributes,
-      'password' => password.to_s,
-      'extern' => extern
-    }
+      'password' => password&.to_s,
+      'extern' => extern,
+      'backend' => backend
+    }.compact
   end
 
   def self.delete_user(username)
-    dbs = UserDbLoader.load_db
-    user_found = false
-    dbs.each do |db|
-      user_found = db.delete_user(username)
-      break if user_found
-    end
-    user_found
+    !UserDbLoader.all_dbs.index { |db| db.delete_user(username) }.nil?
   end
 
   def self.add_user(user, user_backend)
-    db = UserDbLoader.public_send("load_#{user_backend}_db")
-    db.create_user(user)
+    UserDbLoader.load_db(user_backend).create_user(user)
   end
 
-  def self.update_user(user, _oauth_providers = nil)
-    # TODO: Why the _oauth_providers argument? Unimplemented feature?
-    # Extern User: Update omejdn:write scope if necessary
-    dbs = UserDbLoader.load_db
-    dbs.each do |db|
-      user_found = db.update_user(user)
-      break if user_found
-    end
+  def save
+    UserDbLoader.load_db(backend || Config.base_config['user_backend_default']).update_user(self)
   end
 
-  def self.change_password(user, new_password)
-    password = BCrypt::Password.create(new_password)
-    dbs = UserDbLoader.load_db
-    dbs.each do |db|
-      user_found = db.change_password(user, password)
-      return true if user_found
-    end
+  def update_password(new_password)
+    UserDbLoader.load_db(backend).update_password(self, User.string_to_pass_hash(new_password))
   end
 
   def self.generate_extern_user(provider, json)
@@ -116,6 +87,19 @@ class User
       true
     else
       attribute['value'] == searchvalue
+    end
+  end
+
+  # usernames are unique
+  def ==(other)
+    username == other.username
+  end
+
+  def self.string_to_pass_hash(str)
+    if BCrypt::Password.valid_hash? str
+      BCrypt::Password.new str
+    else
+      BCrypt::Password.create str
     end
   end
 end

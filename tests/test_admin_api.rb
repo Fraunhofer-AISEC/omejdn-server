@@ -52,7 +52,8 @@ class AdminApiTest < Test::Unit::TestCase
       'attributes' => [
         { 'key' => 'exampleKey2', 'value' => 'exampleValue2' }
       ],
-      'password' => 'somepw'
+      'password' => 'somepw',
+      'backend' => 'yaml'
     }
     post '/api/v1/config/users', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     # p last_response
@@ -73,7 +74,8 @@ class AdminApiTest < Test::Unit::TestCase
       'attributes' => [
         { 'key' => 'exampleKey', 'value' => 'exampleValue2' }
       ],
-      'password' => 'secure'
+      'password' => 'secure',
+      'backend' => 'yaml'
     }
     put '/api/v1/config/users/testUser', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?

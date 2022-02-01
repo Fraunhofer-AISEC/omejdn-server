@@ -3,101 +3,68 @@
 # The DB backend for yaml files
 class YamlUserDb < UserDb
   def create_user(user)
-    t_users = users
-    t_users << user
-    write_user_db t_users
+    users = all_users
+    users << user
+    write_user_db users
   end
 
   def delete_user(username)
-    t_users = users
-    t_users.each do |concretuser|
-      next unless concretuser.username.eql?(username)
+    user = find_by_id username
+    return false unless user
 
-      t_users.delete(concretuser)
-      write_user_db t_users
-      return true
-    end
-    false
+    users = all_users
+    users.delete(user)
+    write_user_db users
+    true
   end
 
   def update_user(user)
-    t_users = users
-    user_in_yaml = false
-    t_users.each do |concretuser|
-      next if concretuser.username != user.username
+    users = all_users
+    idx = users.index user
+    return false unless idx
 
-      concretuser.attributes = user.attributes unless user.attributes.nil?
-      concretuser.password = user.password unless user.password.nil?
-      concretuser.backend = user.backend unless user.backend.nil?
-      concretuser.extern = user.extern unless user.extern.nil?
-      user_in_yaml = true
-      break
+    users[idx] = user
+    write_user_db users
+    true
+  end
+
+  def all_users
+    ((YAML.safe_load File.read db_file) || []).map do |user|
+      user['backend'] = 'yaml'
+      User.from_dict user
     end
-    write_user_db t_users if user_in_yaml
-    user_in_yaml
   end
 
-  def load_users
-    user_backend_config = Config.user_backend_config
-    (YAML.safe_load File.read user_backend_config.dig('yaml', 'location')) || []
+  def update_password(user, password)
+    user.password = password
+    update_user(user)
   end
 
-  def write_user_db(users)
-    users_yaml = []
-    users.each do |user|
-      users_yaml << user.to_dict
-    end
-    user_backend_config = Config.user_backend_config
-    Config.write_config(user_backend_config.dig('yaml', 'location'), users_yaml.to_yaml)
-  end
-
-  def users
-    t_users = []
-    load_users.each do |arr|
-      user = User.new
-      user.username = arr['username']
-      user.extern = arr['extern']
-      user.password = BCrypt::Password.new(arr['password']) unless user.extern
-      user.attributes = arr['attributes']
-      user.backend = 'yaml'
-      t_users << user
-    rescue BCrypt::Errors::InvalidHash => e
-      p "Error adding user: #{e}"
-    end
-    t_users
-  end
-
-  def change_password(user, password)
-    t_users = users
-    user_in_yaml = false
-    t_users.each do |concretuser|
-      next if concretuser.username != user.username
-
-      concretuser.password = password
-      write_user_db t_users
-      user_in_yaml = true
-    end
-    write_user_db t_users if user_in_yaml
-    user_in_yaml
-  end
-
-  def verify_credential(user, password)
+  def verify_password(user, password)
     user.password == password
   end
 
   def find_by_id(username)
-    load_users.each do |arr|
-      next unless arr['username'] == username
+    ((YAML.safe_load File.read db_file) || []).each do |user|
+      next unless user['username'] == username
 
-      user = User.new
-      user.username = arr['username']
-      user.extern = arr['extern']
-      user.password = BCrypt::Password.new(arr['password']) unless user.extern
-      user.attributes = arr['attributes']
-      user.backend = 'yaml'
-      return user
+      user['backend'] = 'yaml'
+      return User.from_dict user
     end
     nil
+  end
+
+  private
+
+  def db_file
+    Config.user_backend_config.dig('yaml', 'location')
+  end
+
+  def write_user_db(users)
+    Config.write_config(db_file, users.map(&:to_dict).map do |u|
+                                   u.delete('backend')
+                                   u
+                                 end.to_yaml)
   end
 end
 

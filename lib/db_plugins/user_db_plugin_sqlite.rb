@@ -5,8 +5,7 @@ require 'sqlite3'
 # The SQlite DB plugin for users
 class SqliteUserDb < UserDb
   def create_user(user)
-    user_backend_config = Config.user_backend_config
-    db = SQLite3::Database.open user_backend_config.dig('sqlite', 'location')
+    db = connect_db
     db.execute 'CREATE TABLE IF NOT EXISTS password(username TEXT PRIMARY KEY, password TEXT)'
     db.execute 'CREATE TABLE IF NOT EXISTS attributes(username TEXT, key TEXT, value TEXT, PRIMARY KEY (username, key))'
     db.execute 'INSERT INTO password(username, password) VALUES(?, ?)', user.username, user.password
@@ -18,37 +17,19 @@ class SqliteUserDb < UserDb
   end
 
   def delete_user(username)
-    user_backend_config = Config.user_backend_config
-    db = SQLite3::Database.open user_backend_config.dig('sqlite', 'location')
-    user_in_sqlite = (db.execute 'SELECT EXISTS(SELECT 1 FROM password WHERE username=?)', username).dig(0, 0)
-    return false unless user_in_sqlite == 1
+    db = connect_db
+    return false unless user_in_db(username, db)
 
-    db.execute 'DELETE FROM password WHERE username=?', username
+    db.execute 'DELETE FROM password   WHERE username=?', username
     db.execute 'DELETE FROM attributes WHERE username=?', username
     true
   end
 
-  def delete_missing_attributes(user, db)
-    db.results_as_hash = true
-    (db.execute 'SELECT key, value FROM attributes WHERE username=?', user.username).each do |existing_attribute|
-      next if user.attributes.any? do |a|
-                a['key'] == existing_attribute['key']
-              end
-
-      db.execute 'DELETE FROM attributes WHERE username=? AND key=?', user.username,
-                 existing_attribute['key']
-    end
-    true
-  end
-
   def update_user(user)
-    user_backend_config = Config.user_backend_config
-    db = SQLite3::Database.open user_backend_config.dig('sqlite', 'location')
-    user_in_sqlite = (db.execute 'SELECT EXISTS(SELECT 1 FROM password WHERE username=?)', user.username).dig(0, 0)
-    return false unless user_in_sqlite == 1
+    db = connect_db
+    return false unless user_in_db(user.username, db)
 
-    db.results_as_hash = true
-    delete_missing_attributes(user, db)
+    db.execute 'DELETE FROM attributes WHERE username=?', user.username
     user.attributes.each do |attribute|
       db.execute 'INSERT OR REPLACE INTO attributes (username, key, value) VALUES (?, ?, ?)', user.username,
                  attribute['key'], attribute['value']
@@ -57,63 +38,48 @@ class SqliteUserDb < UserDb
     true
   end
 
-  def verify_credential(user, password)
+  def verify_password(user, password)
     user.password == password
   end
 
-  def load_users
-    user_backend_config = Config.user_backend_config
-    db = SQLite3::Database.open user_backend_config.dig('sqlite', 'location')
-    db.results_as_hash = true
-    begin
-      t_users = db.execute 'SELECT * FROM password'
-      t_users.each do |user|
-        user['attributes'] =
-          db.execute 'SELECT key, value FROM attributes WHERE attributes.username = ?', user['username']
-      end
-      db.close
-      t_users
-    rescue StandardError => e
-      p e
-      db.close
-      []
+  def all_users
+    db = connect_db
+    users = db.execute 'SELECT * FROM password'
+    users.each do |user|
+      user['backend'] = 'sqlite'
+      user['attributes'] =
+        db.execute 'SELECT key, value FROM attributes WHERE attributes.username = ?', user['username']
     end
+    db.close
+    users.map { |user| User.from_dict user }
   end
 
-  def users
-    t_users = []
-    load_users.each do |arr|
-      user = User.new
-      user.username = arr['username']
-      user.password = arr['password']
-      user.attributes = arr['attributes']
-      t_users << user
-    end
-    t_users
-  end
-
-  def change_password(user, password)
-    user_backend_config = Config.user_backend_config
-    db = SQLite3::Database.open user_backend_config.dig('sqlite', 'location')
-    user_in_sqlite = (db.execute 'SELECT EXISTS(SELECT 1 FROM password WHERE username=?)', user.username).dig(0, 0)
-    return false unless user_in_sqlite == 1
+  def update_password(user, password)
+    db = connect_db
+    return false unless user_in_db(user.username, db)
 
     db.execute 'UPDATE password SET password=? WHERE username=?', password, user.username
   end
 
   def find_by_id(username)
-    load_users.each do |arr|
-      next unless arr['username'] == username
+    db = connect_db
+    user = db.execute 'SELECT * FROM password WHERE username=?', username
+    return nil if user.empty?
 
-      user = User.new
-      user.username = arr['username']
-      user.extern = arr['extern']
-      user.password = BCrypt::Password.new(arr['password']) unless user.extern
-      user.attributes = arr['attributes']
-      user.backend = 'sqlite'
-      return user
-    end
-    nil
+    user = user[0]
+    user['attributes'] = db.execute 'SELECT key, value FROM attributes WHERE attributes.username = ?', username
+    user['backend'] = 'sqlite'
+    User.from_dict user
+  end
+
+  def connect_db
+    db = SQLite3::Database.open Config.user_backend_config.dig('sqlite', 'location')
+    db.results_as_hash = true
+    db
+  end
+
+  def user_in_db(_username, db)
+    (db.execute 'SELECT EXISTS(SELECT 1 FROM password WHERE username=?)', user.username).dig(0, 0) == 1
   end
 end
 

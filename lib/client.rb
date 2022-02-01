@@ -69,7 +69,7 @@ class Client
   end
 
   def to_dict
-    result = {
+    {
       'client_id' => @client_id,
       'name' => @name,
       'redirect_uri' => @redirect_uri,
@@ -77,8 +77,7 @@ class Client
       'allowed_scopes' => @allowed_scopes,
       'allowed_resources' => @allowed_resources,
       'attributes' => @attributes
-    }
-    result.compact!
+    }.compact
   end
 
   def filter_scopes(scopes)
@@ -131,5 +130,9 @@ class Client
       return
     end
     File.write(filename, new_cert)
+  end
+
+  def ==(other)
+    client_id == other.client_id
   end
 end

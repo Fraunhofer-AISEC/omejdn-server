@@ -6,7 +6,6 @@ require 'abstraction'
 # Abstract UserDb interface
 class UserDb
   abstract
-  attr_accessor :name
 
   def create_user(user)
     raise NotImplementedError
@@ -20,38 +19,31 @@ class UserDb
     raise NotImplementedError
   end
 
-  def users
-    raise NotImplementedError
-  end
-
-  def load_users
-    raise NotImplementedError
-  end
-
-  def change_password(user, new_password)
-    raise NotImplementedError
-  end
-
-  def verify_credential(user, password)
+  def all_users
     raise NotImplementedError
   end
 
   def find_by_id(user)
     raise NotImplementedError
   end
+
+  def update_password(user, new_password)
+    raise NotImplementedError
+  end
+
+  def verify_password(user, password)
+    raise NotImplementedError
+  end
 end
 
 # The loader class
 class UserDbLoader
-  def self.load_db
-    config = Config.base_config
-    plugins = []
-    config['user_backend'].each do |plugin|
-      db = public_send("load_#{plugin}_db")
-      db.name = plugin
-      plugins << db
-    end
-    plugins
+  def self.load_db(plugin)
+    public_send("load_#{plugin}_db")
+  end
+
+  def self.all_dbs
+    Config.base_config['user_backend'].map { |plugin| public_send("load_#{plugin}_db") }
   end
 end
 

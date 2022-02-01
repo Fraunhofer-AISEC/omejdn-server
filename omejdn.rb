@@ -66,17 +66,14 @@ def create_admin
   admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
   p "Setting admin username `#{admin_name}' and password `#{admin_pw}'" if debug
   admin = User.find_by_id(admin_name)
-  if admin.nil?
-    admin = User.new
-    admin.username = admin_name
-    admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
-                        { 'key' => 'name', 'value' => 'Admin' }]
-    admin.password = BCrypt::Password.create(admin_pw)
-    User.add_user(admin, Config.base_config['user_backend_default'])
-  else
-    admin.password = BCrypt::Password.create(admin_pw)
-    User.update_user(admin)
-  end
+  return admin.update_password(admin_pw) if admin
+
+  admin = User.new
+  admin.username = admin_name
+  admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
+                      { 'key' => 'name', 'value' => 'Admin' }]
+  admin.password = BCrypt::Password.create(admin_pw)
+  User.add_user(admin, Config.base_config['user_backend_default'])
 end
 adjust_config unless ENV['OMEJDN_IGNORE_ENV'] # We need this to not overwrite the config during tests
 create_admin  unless ENV['OMEJDN_IGNORE_ENV']
@@ -498,9 +495,7 @@ end
 
 post '/login' do
   user = User.find_by_id(params[:username])
-  redirect to("#{my_path}/login?error=\"Not a valid user.\"") if user.nil?
-  redirect to("#{my_path}/login?error=\"Credentials incorrect\"") unless User.verify_credential(user,
-                                                                                                params[:password])
+  redirect to("#{my_path}/login?error=\"Credentials incorrect\"") unless user&.verify_password(params[:password])
   nonce = rand(2**512)
   user.auth_time = Time.new.to_i
   UserSession.get[nonce] = user
@@ -594,7 +589,7 @@ put '/api/v1/user' do
   JSON.parse(request.body.read)['attributes'].each do |e|
     updated_user.attributes << e if editable.include? e['key']
   end
-  User.update_user updated_user
+  updated_user.save
   halt 204
 end
 
@@ -609,10 +604,8 @@ put '/api/v1/user/password' do
   json = (JSON.parse request.body.read)
   current_password = json['currentPassword']
   new_password = json['newPassword']
-  unless User.verify_credential(@user, current_password)
-    halt 403, { 'passwordChange' => 'not successfull, password incorrect' }
-  end
-  User.change_password(@user, new_password)
+  halt 403, { 'passwordChange' => 'not successfull, password incorrect' } unless @user.verify_password(current_password)
+  @user.update_password(new_password)
   halt 204
 end
 
@@ -638,12 +631,12 @@ end
 
 # Users
 get '/api/v1/config/users' do
-  halt 200, JSON.generate(User.all_users)
+  halt 200, JSON.generate(User.all_users.map(&:to_dict))
 end
 
 post '/api/v1/config/users' do
   json = JSON.parse request.body.read
-  user = User.from_json(json)
+  user = User.from_dict(json)
   User.add_user(user, json['userBackend'] || Config.base_config['user_backend_default'])
   halt 201
 end
@@ -651,16 +644,15 @@ end
 get '/api/v1/config/users/:username' do
   user = User.find_by_id params['username']
   halt 404 if user.nil?
-  halt 200, { 'username' => user.username, 'password' => user.password, 'attributes' => user.attributes }.to_json
+  halt 200, user.to_dict.to_json
 end
 
 put '/api/v1/config/users/:username' do
   user = User.find_by_id params['username']
   halt 404 if user.nil?
-  updated_user = User.from_json(JSON.parse(request.body.read))
+  updated_user = User.from_dict(JSON.parse(request.body.read))
   updated_user.username = user.username
-  oauth_providers = Config.oauth_provider_config
-  User.update_user(updated_user, oauth_providers)
+  updated_user.save
   halt 204
 end
 
@@ -674,7 +666,7 @@ put '/api/v1/config/users/:username/password' do
   user = User.find_by_id params['username']
   halt 404 if user.nil?
   json = (JSON.parse request.body.read)
-  User.change_password(user, json['newPassword'])
+  user.update_password(json['newPassword'])
   halt 204
 end
 

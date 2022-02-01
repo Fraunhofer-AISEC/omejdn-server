@@ -32,14 +32,16 @@ class TestSetup
         { 'key' => 'asdfasf', 'value' => 'asdfasf' },
         { 'key' => 'exampleKey', 'value' => 'exampleValue' }
       ],
-      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC' # "mypassword"
+      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC', # "mypassword"
+      'backend' => 'yaml'
     },
     {
       'username' => 'testUser2',
       'attributes' => [
         { 'key' => 'omejdn', 'value' => 'write' }
       ],
-      'password' => '$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi'
+      'password' => '$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi',
+      'backend' => 'yaml'
     },
     {
       'username' => 'dynamic_claims',
@@ -47,7 +49,8 @@ class TestSetup
         { 'key' => 'omejdn', 'value' => 'write' },
         { 'key' => 'dynattribute', 'dynamic' => true }
       ],
-      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC'
+      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC',
+      'backend' => 'yaml'
     }]
   end
 

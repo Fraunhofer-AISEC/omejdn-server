@@ -48,6 +48,7 @@ class SelfServiceApiTest < Test::Unit::TestCase
     assert last_response.ok?
     expected = TestSetup.users[0]
     expected.delete('password')
+    expected.delete('backend')
     assert_equal expected, JSON.parse(last_response.body)
   end
 
