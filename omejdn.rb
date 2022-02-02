@@ -21,7 +21,7 @@ require 'net/http'
 require_relative './lib/client'
 require_relative './lib/config'
 require_relative './lib/user'
-require_relative './lib/token_helper'
+require_relative './lib/token'
 require_relative './lib/oauth_helper'
 require_relative './lib/plugins'
 
@@ -183,8 +183,8 @@ post '/token' do
 
   user = cache&.dig(:user)
   nonce = cache&.dig(:nonce)
-  id_token = TokenHelper.build_id_token client, user, scopes, req_claims, nonce if openid?(scopes)
-  access_token = TokenHelper.build_access_token client, user, scopes, req_claims, resources
+  id_token = Token.id_token client, user, scopes, req_claims, nonce if openid?(scopes)
+  access_token = Token.access_token client, user, scopes, req_claims, resources
   # Delete the authorization code as it is single use
   AuthorizationCache.get.delete(params[:code])
   halt 200, (OAuthHelper.token_response access_token, scopes, id_token)
@@ -350,7 +350,7 @@ get '/consent' do
   p "The user seems to be #{user.username}" if debug
 
   session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config.dig('token', 'audience')].flatten
-  raise OAuthError.new 'invalid_target', "Resources not granted" unless client.resources_allowed? session[:resources]
+  raise OAuthError.new 'invalid_target', 'Resources not granted' unless client.resources_allowed? session[:resources]
 
   # Seems to be in order
   return haml :authorization_page, locals: {

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require_relative './config'
-require_relative './token_helper'
 require 'json'
 require 'set'
 require 'securerandom'
@@ -106,9 +105,46 @@ class OAuthHelper
 
   def self.userinfo(client, user, token)
     req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
-    userinfo = TokenHelper.map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
+    userinfo = map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
     userinfo['sub'] = user.username
     userinfo
+  end
+
+  def self.add_jwt_claim(jwt_body, key, value)
+    # Address is handled differently. For reasons...
+    if %w[street_address postal_code locality region country].include?(key)
+      jwt_body['address'] ||= {}
+      jwt_body['address'][key] = value
+      return
+    end
+    jwt_body[key] = value
+  end
+
+  def self.map_claims_to_userinfo(attrs, claims, client, scopes)
+    new_payload = {}
+    claims ||= {}
+
+    # Add attribute if it was requested indirectly through OIDC
+    # scope and scope is allowed for client.
+    allowed_scoped_attrs = client.allowed_scoped_attributes(scopes)
+    attrs.select { |a| allowed_scoped_attrs.include?(a['key']) }
+         .each { |a| add_jwt_claim(new_payload, a['key'], a['value']) }
+    return new_payload if claims.empty?
+
+    # Add attribute if it was specifically requested through OIDC
+    # claims parameter.
+    attrs.each do |attr|
+      next unless (name = claims[attr['key']])
+
+      if    attr['dynamic'] && name['value']
+        add_jwt_claim(new_payload, attr['key'], name['value'])
+      elsif attr['dynamic'] && name['values']
+        add_jwt_claim(new_payload, attr['key'], name.dig('values', 0))
+      elsif attr['value']
+        add_jwt_claim(new_payload, attr['key'], attr['value'])
+      end
+    end
+    new_payload
   end
 
   def self.supported_scopes

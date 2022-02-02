@@ -44,6 +44,8 @@ plugins:
   api:
     - user_selfservice_v1
     - admin_v1
+  claim_mapper:
+    - attributes
 
 # User Selfservice API
 user_selfservice:

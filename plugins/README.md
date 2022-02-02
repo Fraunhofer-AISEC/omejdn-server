@@ -5,7 +5,7 @@ You can add your own plugins here in the corresponding folder.
 Omejdn supports the following types of plugins:
 
 * **user_db**: Storage backends for users
-* **claim_mapper**: Mapping claims to new users
+* **claim_mapper**: Mapping claims from and to user/client attributes
 * **api**: Additional Endpoints and APIs
 
 Plugins can be activated by specifying them in `omejdn.yml`:

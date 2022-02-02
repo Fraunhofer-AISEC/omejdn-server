@@ -114,7 +114,8 @@ class TestSetup
       },
       'plugins' => {
         'user_db' => ['yaml'],
-        'api' => ['admin_v1', 'user_selfservice_v1']
+        'api' => ['admin_v1', 'user_selfservice_v1'],
+        'claim_mapper' => ['attribute']
       },
       'user_backend_default' => 'yaml',
       'user_selfservice' => {

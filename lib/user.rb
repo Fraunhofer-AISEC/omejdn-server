@@ -73,7 +73,7 @@ class User
     user.username = username
     user.extern = provider['name'] || false
     user.attributes = [*provider['claim_mapper']].map do |mapper|
-      PluginLoader.load_plugin('claim_mapper', mapper).map_claims(json, provider)
+      PluginLoader.load_plugin('claim_mapper', mapper).map_from_provider(json, provider)
     end.flatten(1)
     User.add_user(user, Config.base_config['user_backend_default'])
     user

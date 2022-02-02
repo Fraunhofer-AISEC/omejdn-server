@@ -6,7 +6,7 @@ require 'require_all'
 class PluginLoader
   # Load all relevant files
   def self.initialize
-    Config.base_config['plugins'].each do |type, plugins|
+    (Config.base_config['plugins'] || {}).each do |type, plugins|
       plugins.each do |name|
         puts "Loading Plugin (#{type}): #{name}"
         require_rel "../plugins/#{type}/#{name}"
@@ -22,7 +22,7 @@ class PluginLoader
 
   # Load all plugins of a type
   def self.load_plugins(type)
-    Config.base_config.dig('plugins', type).map do |name|
+    (Config.base_config.dig('plugins', type) || []).map do |name|
       public_send("load_#{type}_#{name}")
     end
   end
