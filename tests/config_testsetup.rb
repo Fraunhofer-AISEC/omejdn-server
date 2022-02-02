@@ -114,9 +114,9 @@ class TestSetup
         'issuer' => 'http://localhost:4567'
       },
       'plugins' => {
-        'user_db' => ['yaml']
+        'user_db' => ['yaml'],
+        'api' => ['admin_v1', 'user_selfservice_v1']
       },
-      'user_backend' => ['yaml'],
       'user_backend_default' => 'yaml',
       'user_selfservice' => {
         'enabled' => true,

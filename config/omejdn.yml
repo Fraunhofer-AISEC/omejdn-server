@@ -35,19 +35,18 @@ id_token:
   algorithm: RS256
   issuer: http://localhost:4567
 
-# Enabled user backends (can be configured in user_backend.yml)
-user_backend:
-- yaml
 # Default user backend
 user_backend_default: yaml
 
 plugins:
   user_db:
     - yaml
+  api:
+    - user_selfservice_v1
+    - admin_v1
 
 # User Selfservice API
 user_selfservice:
-  enabled: true
   allow_deletion: true
   allow_password_change: true
   editable_attributes:

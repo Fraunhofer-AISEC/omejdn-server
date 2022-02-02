@@ -5,14 +5,13 @@ require_relative './config'
 require_relative './client'
 require 'jwt'
 require 'base64'
-require 'openssl'
 
 # Need this constant to encode subject the right way.
 ASN1_STRFLGS_ESC_MSB = 4
 
 # A helper for building JWT access tokens and ID tokens
 class TokenHelper
-  # Builds a JWT access token for client including scopes and attributes
+  # Builds a RFC 9068 JWT access token for client including scopes and attributes
   def self.build_access_token(client, user, scopes, claims, resources)
     # Use user attributes if we have a user context, else use client
     # attributes.
