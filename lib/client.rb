@@ -51,8 +51,8 @@ class Client
   def self.decode_jwt(jwt, client = nil)
     jwt_dec, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
 
-    return nil if jwt['sub'] && jwt_dec['sub'] != jwt_dec['iss']
-    return nil unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
+    raise 'Not self-issued' if jwt['sub'] && jwt_dec['sub'] != jwt_dec['iss']
+    raise 'Algorithm unsupported' unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
 
     client_id = jwt_dec['iss'] || jwt_dec['sub'] || jwt_dec['client_id']
     client ||= find_by_id client_id
@@ -65,7 +65,7 @@ class Client
     [jwt_dec, client]
   rescue StandardError => e
     puts "Error decoding JWT #{jwt}: #{e}"
-    nil
+    raise OAuthError.new 'invalid_client', "Error decoding JWT: #{e}"
   end
 
   def to_dict

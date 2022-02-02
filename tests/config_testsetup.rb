@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 # Always load this BEFORE omejdn.rb
-ENV['OMEJDN_IGNORE_ENV'] = "true"
 
 require 'yaml'
 

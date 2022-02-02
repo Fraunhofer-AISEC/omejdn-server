@@ -33,12 +33,12 @@ class OAuthHelper
       if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
         _, client = Client.decode_jwt params[:client_assertion]
       end
-      raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
+      raise OAuthError.new 'invalid_client', 'Client assertion not accepted' if client.nil?
 
       return client
     end
 
-    raise OAuthError.new 'invalid_client', 'Client unknown' if authenticate
+    raise OAuthError.new 'invalid_client', 'Client not authenticated' if authenticate
 
     client = Client.find_by_id params[:client_id]
     raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
@@ -66,7 +66,7 @@ class OAuthHelper
     # On the other hand, we require https!
     jwt, params = nil
     if url_params.key? :request_uri
-      raise OAuthError, 'invalid_request' if url_params.key? :request
+      raise OAuthError.new 'invalid_request', 'request{,_uri}, pick one.' if url_params.key? :request
 
       if url_params[:request_uri].start_with? 'urn:ietf:params:oauth:request_uri:'
         # Retrieve token from Pushed Authorization Request Cache

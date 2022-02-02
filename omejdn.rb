@@ -17,7 +17,6 @@ require 'json/jwt'
 require 'webrick'
 require 'webrick/https'
 require 'net/http'
-require 'bcrypt'
 
 require_relative './lib/client'
 require_relative './lib/config'
@@ -46,57 +45,53 @@ def openid?(scopes)
   Config.base_config['openid'] && (scopes.include? 'openid')
 end
 
-def adjust_config
-  # account for environment overrides
-  base_config = Config.base_config
-  base_config['host'] = ENV['HOST'] || base_config['host']
-  base_config['path_prefix'] = ENV['OMEJDN_PATH_PREFIX'] || base_config['path_prefix'] || ''
-  base_config['bind_to'] = ENV['BIND_TO'] || base_config['bind_to'] || '0.0.0.0'
-  base_config['allow_origin'] = ENV['ALLOW_ORIGIN'] || base_config['allow_origin'] || '*'
-  base_config['app_env'] = ENV['APP_ENV'] || base_config['app_env'] || 'debug'
-  base_config['accept_audience'] =
-    ENV['OMEJDN_JWT_AUD_OVERRIDE'] || base_config['accept_audience'] || base_config['host']
-  Config.base_config = base_config
+def apply_env(config, env_key, conf_key, fallback)
+  config[conf_key] = ENV[env_key] || config[conf_key] || fallback
 end
-
-def create_admin
-  # Initialize admin user if given in ENV
-  return unless ENV['OMEJDN_ADMIN']
-
-  admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
-  p "Setting admin username `#{admin_name}' and password `#{admin_pw}'" if debug
-  admin = User.find_by_id(admin_name)
-  return admin.update_password(admin_pw) if admin
-
-  admin = User.new
-  admin.username = admin_name
-  admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
-                      { 'key' => 'name', 'value' => 'Admin' }]
-  admin.password = BCrypt::Password.create(admin_pw)
-  User.add_user(admin, Config.base_config['user_backend_default'])
-end
-adjust_config unless ENV['OMEJDN_IGNORE_ENV'] # We need this to not overwrite the config during tests
-create_admin  unless ENV['OMEJDN_IGNORE_ENV']
 
 configure do
+  # account for environment overrides
+  config = Config.base_config
+  apply_env(config, 'HOST', 'host', 'https://localhost:4567')
+  apply_env(config, 'OMEJDN_PATH_PREFIX', 'path_prefix', '')
+  apply_env(config, 'BIND_TO', 'bind_to', '0.0.0.0')
+  apply_env(config, 'ALLOW_ORIGIN', 'allow_origin', '*')
+  apply_env(config, 'APP_ENV', 'app_env', 'debug')
+  apply_env(config, 'OMEJDN_JWT_AUD_OVERRIDE', 'accept_audience', config['host'])
+  Config.base_config = config
+
+  # Initialize admin user if given in ENV
+  if ENV['OMEJDN_ADMIN']
+    admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
+    admin = User.find_by_id(admin_name)
+    if admin
+      admin.update_password(admin_pw)
+    else
+      admin = User.from_dict({
+                               'username' => admin_name,
+                               'attributes' => [{ 'key' => 'omejdn', 'value' => 'admin' }],
+                               'password' => admin_pw
+                             })
+      User.add_user(admin, config['user_backend_default'])
+    end
+  end
+
   # Easier debugging for local tests
   set :raise_errors, debug && !ENV['HOST']
   set :show_exceptions, debug && ENV['HOST']
+  set :bind, config['bind_to']
+  enable :sessions
+  set :sessions, secure: (config['host'].start_with? 'https://')
+  set :session_store, Rack::Session::Pool
+
+  set :allow_origin, config['allow_origin']
+  set :allow_methods, 'GET,HEAD,POST,PUT,DELETE'
+  set :allow_headers, 'content-type,if-modified-since, authorization'
+  set :expose_headers, 'location,link'
+  set :allow_credentials, true
 end
 
-set :bind, Config.base_config['bind_to']
-enable :sessions
-set :sessions, secure: (Config.base_config['host'].start_with? 'https://')
-set :session_store, Rack::Session::Pool
-
-set :allow_origin, Config.base_config['allow_origin']
-set :allow_methods, 'GET,HEAD,POST,PUT,DELETE'
-set :allow_headers, 'content-type,if-modified-since, authorization'
-set :expose_headers, 'location,link'
-set :allow_credentials, true
-
-# A User session dummy class. We probably want to use
-# a KV-store at some point
+# Stores User Sessions. We probably want to use a KV-store at some point
 class UserSession
   @user_session = {}
   def self.get
@@ -104,31 +99,16 @@ class UserSession
   end
 end
 
-# The format of this cache data structure is:
-#
-# {
-#   <authorization code> => {
-#                             :user => User,
-#                             :nonce => <oauth nonce> (optional)
-#                             :scopes => Requested scopes
-#                             :resources => Requested resources
-#                             :claims => claim parameter
-#                             :pkce => Code challenge
-#                             :pkce_method => Code challenge method
-#                           },
-#   <authorization code #1> => {...},
-#   ...
-# }
-# A User session dummy class. We probably want to use
-# a KV-store at some point
-class RequestCache
+# Stores Authorization Code Metadata inbetween authorization and token retrieval
+# Contains: user, nonce, scopes, resources, claims, pkce challenge and method
+class AuthorizationCache
   @request_cache = {}
   def self.get
     @request_cache
   end
 end
 
-# A cache for Pushed Authorization Requests
+# Stores Pushed Authorization Request Objects inbetween request push and authorization
 class PARCache
   @cache = {}
   def self.get
@@ -176,10 +156,10 @@ post '/token' do
     scopes = client.filter_scopes(params[:scope]&.split) || []
     resources = [Config.base_config.dig('token', 'audience')] if resources.empty?
     req_claims = JSON.parse(params[:claims] || '{}')
-    raise OAuthError, 'invalid_target' unless client.resources_allowed? resources
+    raise OAuthError.new 'invalid_target', "Access denied to: #{resources}" unless client.resources_allowed? resources
   when 'authorization_code'
-    cache = RequestCache.get[params[:code]]
-    raise OAuthError, 'invalid_code' if cache.nil?
+    cache = AuthorizationCache.get[params[:code]]
+    raise OAuthError.new 'invalid_code', 'The Authorization code was not recognized' if cache.nil?
 
     OAuthHelper.validate_pkce(cache[:pkce], params[:code_verifier], cache[:pkce_method]) unless cache[:pkce].nil?
     client = OAuthHelper.identify_client params, authenticate: false
@@ -188,16 +168,16 @@ post '/token' do
     resources = cache[:resources] if resources.empty?
     req_claims = cache[:claims] || {}
     req_claims = JSON.parse params[:claims] if params[:claims]
-    raise OAuthError, 'invalid_scope'  unless (scopes - cache[:scopes]).empty?
-    raise OAuthError, 'invalid_target' unless (resources - cache[:resources]).empty?
+    raise OAuthError.new 'invalid_scope', 'Ungranted scopes requested' unless (scopes - cache[:scopes]).empty?
+    raise OAuthError.new 'invalid_target', "No access to: #{resources}" unless (resources - cache[:resources]).empty?
     raise OAuthError, 'invalid_request' if cache[:redirect_uri] && cache[:redirect_uri] != params[:redirect_uri]
   else
     raise OAuthError.new 'unsupported_grant_type', "Given: #{params[:grant_type]}"
   end
-  raise OAuthError, 'access_denied' if scopes.empty?
+  raise OAuthError.new 'access_denied', 'No scopes granted' if scopes.empty?
 
-  resources << ("#{Config.base_config['host']}/userinfo") if openid?(scopes)
-  resources << ("#{Config.base_config['host']}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
+  resources << ("#{my_path}/userinfo") if openid?(scopes)
+  resources << ("#{my_path}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
 
   OAuthHelper.adapt_requested_claims req_claims
 
@@ -206,7 +186,7 @@ post '/token' do
   id_token = TokenHelper.build_id_token client, user, scopes, req_claims, nonce if openid?(scopes)
   access_token = TokenHelper.build_access_token client, user, scopes, req_claims, resources
   # Delete the authorization code as it is single use
-  RequestCache.get.delete(params[:code])
+  AuthorizationCache.get.delete(params[:code])
   halt 200, (OAuthHelper.token_response access_token, scopes, id_token)
 rescue OAuthError => e
   halt 400, e.to_s
@@ -267,7 +247,7 @@ end
 
 # Pushed Authorization Requests
 post '/par' do
-  raise OAuthError, 'invalid_request' if params.key(:request_uri) # Not allowed here
+  raise OAuthError.new 'invalid_request', 'Request URI not supported here' if params.key(:request_uri)
 
   client = OAuthHelper.identify_client params, authenticate: false
   OAuthHelper.prepare_params params, client
@@ -293,7 +273,7 @@ get '/authorize' do
   session[:url_params] = params # Save parameters
 
   # We require specifying the scope
-  raise OAuthError, 'invalid_scope' unless params[:scope]
+  raise OAuthError.new 'invalid_scope', 'No scopes specified' unless params[:scope]
 
   unless params[:response_type] == 'code'
     raise OAuthError.new 'unsupported_response_type', "Given: #{params[:response_type]}"
@@ -348,10 +328,10 @@ get '/consent' do
   end
 
   user = UserSession.get[session[:user]]
-  raise OAuthError, 'invalid_user' if user.nil?
+  raise OAuthError.new 'invalid_user', 'User session invalid' if user.nil?
 
   client = Client.find_by_id session.dig(:url_params, 'client_id')
-  raise OAuthError, 'invalid_client' if client.nil?
+  raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
 
   scope_mapping = Config.scope_mapping_config
   session[:scopes] = client.filter_scopes(session.dig(:url_params, :scope).split)
@@ -370,7 +350,7 @@ get '/consent' do
   p "The user seems to be #{user.username}" if debug
 
   session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config.dig('token', 'audience')].flatten
-  raise OAuthError, 'invalid_target' unless client.resources_allowed? session[:resources]
+  raise OAuthError.new 'invalid_target', "Resources not granted" unless client.resources_allowed? session[:resources]
 
   # Seems to be in order
   return haml :authorization_page, locals: {
@@ -410,7 +390,7 @@ def issue_code
     cache[:pkce_method] = url_params[:code_challenge_method]
   end
   code = OAuthHelper.new_authz_code
-  RequestCache.get[code] = cache
+  AuthorizationCache.get[code] = cache
   response_params = {
     code: code,
     state: url_params[:state],

@@ -8,7 +8,7 @@ class PluginLoader
   def self.initialize
     Config.base_config['plugins'].each do |type, plugins|
       plugins.each do |name|
-        p "Loading Plugin (#{type}): #{name}"
+        puts "Loading Plugin (#{type}): #{name}"
         require_rel "../plugins/#{type}/#{name}"
       end
     end
