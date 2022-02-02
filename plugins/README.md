@@ -38,3 +38,5 @@ You might want to include it in your plugin like so:
 ```ruby
 require_rel './_abstract'
 ```
+
+Likewise, if your plugin depends on other plugins, you should require them.

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative './server'
+require_relative './keys'
 require_relative './config'
 require_relative './client'
 require 'jwt'
@@ -12,13 +12,17 @@ ASN1_STRFLGS_ESC_MSB = 4
 
 # A helper for building JWT access tokens and ID tokens
 class TokenHelper
-  def self.build_access_token_stub(attrs, client, scopes, resources, claims)
+  # Builds a JWT access token for client including scopes and attributes
+  def self.build_access_token(client, user, scopes, claims, resources)
+    # Use user attributes if we have a user context, else use client
+    # attributes.
     base_config = Config.base_config
     now = Time.new.to_i
     token = {
       'scope' => (scopes.join ' '),
       'aud' => resources,
       'iss' => base_config.dig('token', 'issuer'),
+      'sub' => user&.username || client.client_id,
       'nbf' => now,
       'iat' => now,
       'jti' => Base64.urlsafe_encode64(rand(2**64).to_s),
@@ -28,32 +32,14 @@ class TokenHelper
     reserved = {}
     reserved['userinfo_req_claims'] = claims['userinfo'] unless (claims['userinfo'] || {}).empty?
     token['omejdn_reserved'] = reserved unless reserved.empty?
-    token.merge(map_claims_to_userinfo(attrs, claims['access_token'], client, scopes))
-  end
-
-  # Builds a JWT access token for client including scopes and attributes
-  def self.build_access_token(client, user, scopes, claims, resources)
-    # Use user attributes if we have a user context, else use client
-    # attributes.
-    if user
-      new_payload = build_access_token_stub(user.attributes, client, scopes, resources, claims)
-      new_payload['sub'] = user.username
-    else
-      new_payload = build_access_token_stub(client.attributes, client, scopes, resources, claims)
-      new_payload['sub'] = client.client_id if user.nil?
-    end
-    signing_material = Server.load_skey('token')
-    kid = JSON::JWK.new(signing_material['pk'])[:kid]
-    JWT.encode new_payload, signing_material['sk'], 'RS256', { typ: 'at+jwt', kid: kid }
-  end
-
-  def self.address_claim?(key)
-    %w[street_address postal_code locality region country].include?(key)
+    token.merge!(map_claims_to_userinfo((user || client).attributes, claims['access_token'], client, scopes))
+    key_pair = Keys.load_skey('token')
+    JWT.encode token, key_pair['sk'], 'RS256', { typ: 'at+jwt', kid: key_pair['kid'] }
   end
 
   def self.add_jwt_claim(jwt_body, key, value)
     # Address is handled differently. For reasons...
-    if address_claim?(key)
+    if %w[street_address postal_code locality region country].include?(key)
       jwt_body['address'] ||= {}
       jwt_body['address'][key] = value
       return
@@ -102,8 +88,7 @@ class TokenHelper
       'auth_time' => user.auth_time
     }.merge(map_claims_to_userinfo(user.attributes, claims['id_token'], client, scopes))
     new_payload['nonce'] = nonce unless nonce.nil?
-    signing_material = Server.load_skey('id_token')
-    kid = JSON::JWK.new(signing_material['pk'])[:kid]
-    JWT.encode new_payload, signing_material['sk'], 'RS256', { typ: 'JWT', kid: kid }
+    key_pair = Keys.load_skey('id_token')
+    JWT.encode new_payload, key_pair['sk'], 'RS256', { typ: 'JWT', kid: key_pair['kid'] }
   end
 end

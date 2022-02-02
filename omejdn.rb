@@ -440,7 +440,7 @@ before '/userinfo' do
   jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
   halt 401 if jwt.nil? || jwt.empty?
   begin
-    key = Server.load_skey['sk']
+    key = Keys.load_skey['sk']
     @token = (JWT.decode jwt, key.public_key, true, { algorithm: Config.base_config.dig('token', 'algorithm') })[0]
     @client = Client.find_by_id @token['client_id']
     @user = User.find_by_id(@token['sub'])
@@ -555,7 +555,7 @@ before '/api/v1/*' do
   begin
     jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
     halt 401 if jwt.nil? || jwt.empty?
-    token = JWT.decode(jwt, Server.load_skey['sk'].public_key, true,
+    token = JWT.decode(jwt, Keys.load_skey['sk'].public_key, true,
                        { algorithm: Config.base_config.dig('token', 'algorithm') })[0]
     halt 403 unless [*token['aud']].include?("#{Config.base_config['host']}/api")
     @scopes = token['scope'].split
@@ -692,7 +692,7 @@ put '/api/v1/config/clients' do
 end
 
 post '/api/v1/config/clients' do
-  client = Client.from_json(JSON.parse(request.body.read))
+  client = Client.from_dict(JSON.parse(request.body.read))
   clients = Client.load_clients
   clients << client
   Config.client_config = clients
@@ -852,7 +852,7 @@ before '/.well-known*' do
 end
 
 get '/.well-known/jwks.json' do
-  OAuthHelper.generate_jwks.to_json
+  Keys.generate_jwks.to_json
 end
 
 get '/.well-known/(oauth-authorization-server|openid-configuration)' do

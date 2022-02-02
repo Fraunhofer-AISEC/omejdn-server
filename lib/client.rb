@@ -41,7 +41,7 @@ class Client
     clients
   end
 
-  def self.from_json(json)
+  def self.from_dict(json)
     client = Client.new
     client.apply_values(json)
     client

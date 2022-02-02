@@ -4,7 +4,6 @@ require 'require_all'
 
 # Extend this by an appropriate function to load a Plugin
 class PluginLoader
-
   # Load all relevant files
   def self.initialize
     Config.base_config['plugins'].each do |type, plugins|
@@ -27,5 +26,4 @@ class PluginLoader
       public_send("load_#{type}_#{name}")
     end
   end
-
 end
