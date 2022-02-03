@@ -13,10 +13,7 @@ before '/api/v1/config/*' do
   return if request.env['REQUEST_METHOD'] == 'OPTIONS'
 
   jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
-  halt 401 if jwt.nil? || jwt.empty?
-  token = JWT.decode(jwt, Keys.load_skey['sk'].public_key, true,
-                     { algorithm: Config.base_config.dig('token', 'algorithm') })[0]
-  halt 403 unless [*token['aud']].include?("#{Config.base_config['host']}/api")
+  token = Token.decode jwt, '/api'
   halt 403 unless token['scope'].split.include? 'omejdn:admin'
   halt 401 unless Client.find_by_id token['client_id']
 rescue StandardError => e

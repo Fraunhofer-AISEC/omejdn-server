@@ -15,7 +15,7 @@ app_env: debug
 openid: true
 
 # Overwrite the aud claim value to accept in client's bearer tokens (defaults to host)
-#accept_audience:
+accept_audience:
 
 # Token signing keys, certificates and default values
 # jwks_additions may be used to specify additional certificates and keys to be published in the JWKS
@@ -40,34 +40,25 @@ user_backend_default: yaml
 
 plugins:
   user_db:
-    - yaml
+    yaml:
+      location: config/users.yml
+#    sqlite:
+#      location: config/users.db
+#    ldap:
+#      host: localhost
+#      port: 636
+#      base_dn: ''
+#      uid_key: dn
   api:
-    - user_selfservice_v1
-    - admin_v1
+    admin_v1:
+    user_selfservice_v1:
+      allow_deletion: true
+      allow_password_change: true
+      editable_attributes:
+        - email
+        - address
+        - phone_number
   claim_mapper:
-    - attributes
-
-# User Selfservice API
-user_selfservice:
-  allow_deletion: true
-  allow_password_change: true
-  editable_attributes:
-    - name
-    - family_name
-    - given_name
-    - middle_name
-    - nickname
-    - preferred_username
-    - profile
-    - picture
-    - website
-    - gender
-    - birthdate
-    - zoneinfo
-    - locale
-    - updated_at
-    - email
-    - email_verified
-    - address
-    - phone_number
-    - phone_number_verified
+    attribute:
+      skip_access_token: false
+      skip_id_token: false

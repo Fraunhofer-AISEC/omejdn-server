@@ -4,6 +4,16 @@ require_rel './_abstract'
 
 # The DB backend for yaml files
 class YamlUserDb < UserDb
+  attr_reader :config
+
+  def initialize(config)
+    super()
+    @config = {
+      'location' => 'config/users.yml'
+    }.merge(config || {})
+    Config.write_config(db_file, [].to_yaml) unless File.exist? config['location']
+  end
+
   def create_user(user)
     users = all_users
     users << user
@@ -59,7 +69,7 @@ class YamlUserDb < UserDb
   private
 
   def db_file
-    Config.user_backend_config.dig('yaml', 'location')
+    @config['location']
   end
 
   def write_user_db(users)
@@ -72,7 +82,7 @@ end
 
 # Monkey patch the loader
 class PluginLoader
-  def self.load_user_db_yaml
-    YamlUserDb.new
+  def self.load_user_db_yaml(config)
+    YamlUserDb.new config
   end
 end

@@ -7,7 +7,19 @@ require_rel './_abstract'
 
 # LDAP User DB backend
 class LdapUserDb < UserDb
+  attr_reader :config
+
   @dn_cache = {}
+
+  def initialize(config)
+    super()
+    @config = {
+      'host' => 'localhost',
+      'port' => 636,
+      'base_dn' => '',
+      'uid_key' => 'dn'
+    }.merge(config || {})
+  end
 
   def decode_value(value, encoding)
     begin
@@ -21,7 +33,7 @@ class LdapUserDb < UserDb
 
   def ldap_entry_to_user(entry)
     user = {
-      'username' => entry.dig(Config.user_backend_config.dig('ldap', 'uidKey'), 0),
+      'username' => entry.dig(@config['uid_key'], 0),
       'password' => nil,
       'extern' => true,
       'backend' => 'ldap'
@@ -52,8 +64,7 @@ class LdapUserDb < UserDb
   end
 
   def all_users
-    config = Config.user_backend_config
-    ldap = connect_directory(config)
+    ldap = connect_directory
     t_users = []
     ldap.search do |entry|
       user = ldap_entry_to_user(entry)
@@ -62,33 +73,32 @@ class LdapUserDb < UserDb
     t_users
   end
 
-  def lookup_user(username, config)
+  def lookup_user(username)
     return @dn_cache[username] unless @dnCache[username].nil?
 
-    dir = connect_directory(config)
-    dir.search(filter: Net::LDAP::Filter.eq(config.dig('ldap', 'uidKey'), username)) do |entry|
+    dir = connect_directory
+    dir.search(filter: Net::LDAP::Filter.eq(@config['uid_key'], username)) do |entry|
       return entry.dn
     end
     nil
   end
 
   def verify_password(user, password)
-    config = Config.user_backend_config
-    user_dn = lookup_user(user.username, config) if user_dn.nil?
+    user_dn = lookup_user(user.username) if user_dn.nil?
     return false if user_dn.nil?
 
-    !connect_directory(config, user_dn, password).nil?
+    !connect_directory(user_dn, password).nil?
   end
 
-  def connect_directory(config, bind_dn = nil, bind_pass = nil)
+  def connect_directory(bind_dn = nil, bind_pass = nil)
     if bind_dn.nil?
       bind_dn   = ENV['OMEJDN_LDAP_BIND_DN']
       bind_pass = ENV['OMEJDN_LDAP_BIND_PW']
     end
     ldap_conf = {
-      host: config.dig('ldap', 'host'),
-      port: config.dig('ldap', 'port'),
-      base: config.dig('ldap', 'baseDN'),
+      host: @config['host'],
+      port: @config['port'],
+      base: @config['base_dn'],
       verbose: true,
       encryption: {
         method: :simple_tls,
@@ -110,9 +120,8 @@ class LdapUserDb < UserDb
   end
 
   def find_by_id(username)
-    config = Config.user_backend_config
-    ldap = connect_directory(config)
-    uid_key = config.dig('ldap', 'uidKey')
+    ldap = connect_directory
+    uid_key = @config['uidKey']
     filter = Net::LDAP::Filter.eq(uid_key, username)
     ldap.search(filter: filter) do |entry|
       puts "DN: #{entry.dn}"

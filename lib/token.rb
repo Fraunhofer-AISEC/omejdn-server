@@ -58,4 +58,13 @@ class Token
     key_pair = Keys.load_skey('id_token')
     JWT.encode token, key_pair['sk'], 'RS256', { typ: 'JWT', kid: key_pair['kid'] }
   end
+
+  # Decodes an access token for inspection
+  def self.decode(token, endpoint = nil)
+    raise 'No token found' if token.nil? | token.empty?
+
+    args = { algorithm: Config.base_config.dig('token', 'algorithm') }
+    args.merge!({ aud: "#{Config.base_config['host']}#{endpoint}", verify_aud: true }) if endpoint
+    JWT.decode(token, Keys.load_skey['sk'].public_key, true, args)[0]
+  end
 end

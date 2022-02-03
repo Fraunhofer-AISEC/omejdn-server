@@ -5,10 +5,23 @@ require_rel './_abstract'
 
 # The SQlite DB plugin for users
 class SqliteUserDb < UserDb
+  attr_reader :config
+
+  def initialize(config)
+    super()
+    @config = {
+      'location' => 'config/users.db'
+    }.merge(config || {})
+    return if File.exist? @config['location']
+
+    db = connect_db
+    db.execute 'CREATE TABLE password(username TEXT PRIMARY KEY, password TEXT)'
+    db.execute 'CREATE TABLE attributes(username TEXT, key TEXT, value TEXT, PRIMARY KEY (username, key))'
+    db.close
+  end
+
   def create_user(user)
     db = connect_db
-    db.execute 'CREATE TABLE IF NOT EXISTS password(username TEXT PRIMARY KEY, password TEXT)'
-    db.execute 'CREATE TABLE IF NOT EXISTS attributes(username TEXT, key TEXT, value TEXT, PRIMARY KEY (username, key))'
     db.execute 'INSERT INTO password(username, password) VALUES(?, ?)', user.username, user.password
     user.attributes.each do |attribute|
       db.execute 'INSERT INTO attributes (username, key, value) VALUES (?, ?, ?)', user.username, attribute['key'],
@@ -74,7 +87,7 @@ class SqliteUserDb < UserDb
   end
 
   def connect_db
-    db = SQLite3::Database.open Config.user_backend_config.dig('sqlite', 'location')
+    db = SQLite3::Database.open @config['location']
     db.results_as_hash = true
     db
   end
@@ -86,7 +99,7 @@ end
 
 # Monkey patch the loader
 class PluginLoader
-  def self.load_user_db_sqlite
-    SqliteUserDb.new
+  def self.load_user_db_sqlite(config)
+    SqliteUserDb.new config
   end
 end

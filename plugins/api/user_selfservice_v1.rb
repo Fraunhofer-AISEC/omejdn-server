@@ -12,16 +12,13 @@ before '/api/v1/user*' do
   return if request.env['REQUEST_METHOD'] == 'OPTIONS'
 
   jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
-  halt 401 if jwt.nil? || jwt.empty?
-  token = JWT.decode(jwt, Keys.load_skey['sk'].public_key, true,
-                     { algorithm: Config.base_config.dig('token', 'algorithm') })[0]
-  halt 403 unless [*token['aud']].include?("#{Config.base_config['host']}/api")
+  token = Token.decode jwt, '/api'
   scopes = token['scope'].split
   user_may_write = !(scopes & ['omejdn:admin', 'omejdn:write']).empty?
   user_may_read  = !(scopes & ['omejdn:admin', 'omejdn:write', 'omejdn:read']).empty?
   halt 403 unless request.env['REQUEST_METHOD'] == 'GET' ? user_may_read : user_may_write
   @user = User.find_by_id token['sub']
-  @selfservice_config = Config.base_config['user_selfservice']
+  @selfservice_config = Config.base_config.dig('plugins', 'api', 'user_selfservice_v1')
   halt 401 if @user.nil?
   halt 403 if @selfservice_config.nil?
 rescue StandardError => e

@@ -113,17 +113,24 @@ class TestSetup
         'issuer' => 'http://localhost:4567'
       },
       'plugins' => {
-        'user_db' => ['yaml'],
-        'api' => ['admin_v1', 'user_selfservice_v1'],
-        'claim_mapper' => ['attribute']
+        'user_db' => {
+          'yaml' => {
+            'location' => 'config/users.yml'
+          }
+        },
+        'api' => {
+          'admin_v1' => nil,
+          'user_selfservice_v1' => {
+            'allow_deletion' => true,
+            'allow_password_change' => true,
+            'editable_attributes' => ['name']
+          }
+        },
+        'claim_mapper' => {
+          'attribute' => nil
+        }
       },
-      'user_backend_default' => 'yaml',
-      'user_selfservice' => {
-        'enabled' => true,
-        'allow_deletion' => true,
-        'allow_password_change' => true,
-        'editable_attributes' => ['name']
-      }
+      'user_backend_default' => 'yaml'
     }
   end
 end

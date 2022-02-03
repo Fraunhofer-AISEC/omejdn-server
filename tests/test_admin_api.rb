@@ -29,7 +29,7 @@ class AdminApiTest < Test::Unit::TestCase
   def test_require_admin_scope
     get '/api/v1/config/users', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@insufficient_token}" }
     # p last_response
-    assert last_response.forbidden?
+    assert last_response.unauthorized?
   end
 
   def test_get_users
