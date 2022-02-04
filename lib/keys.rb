@@ -21,24 +21,24 @@ class Keys
     Base64.urlsafe_encode64(OpenSSL::Digest::SHA1.new(certs[0].to_der).to_s)
   end
 
-  def self.load_pkey(token_type = 'token')
-    cert_files = Config.base_config.dig(token_type, 'jwks_additions') || []
-    cert_files.filter { |f| File.exist? f }.map do |f|
+  def self.load_pkey(token_type = 'access_token')
+    cert_files = Dir.entries('keys/omejdn').select{ |f| !f.start_with? '.' }
+    cert_files.map do |f|
       result = {}
       # The file could be either a certificate or a key
       begin
-        result['certs'] = OpenSSL::X509::Certificate.load_file f
+        result['certs'] = OpenSSL::X509::Certificate.load_file "keys/omejdn/#{f}"
         result['pk'] = result['certs'][0].public_key
       rescue StandardError
-        key = OpenSSL::PKey::RSA.new File.read(f)
+        key = OpenSSL::PKey::RSA.new File.read("keys/omejdn/#{f}")
         result['pk'] = key.public_key
       end
       result
     end
   end
 
-  def self.load_skey(token_type = 'token')
-    filename = Config.base_config.dig(token_type, 'signing_key')
+  def self.load_skey(token_type = 'access_token')
+    filename = 'keys/omejdn/omejdn.key'
     setup_skey(filename) unless File.exist? filename
     sk = OpenSSL::PKey::RSA.new File.read(filename)
     pk = load_pkey(token_type).select { |c| c.dig('certs', 0) && (c.dig('certs', 0).check_private_key sk) }.first

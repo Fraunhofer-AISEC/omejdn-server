@@ -1,0 +1,47 @@
+---
+issuer: https://daps.aisec.fraunhofer.de
+front_url: https://daps.aisec.fraunhofer.de/v3
+bind_to: 0.0.0.0:4567
+allow_origin: "*"
+
+app_env: debug
+
+openid: true
+
+default_audience: TestServer
+accept_audience:
+
+access_token:
+  expiration: 3600
+  algorithm: RS256
+id_token:
+  expiration: 3600
+  algorithm: RS256
+
+# Default user backend
+user_backend_default: yaml
+
+plugins:
+  user_db:
+    yaml:
+      location: config/users.yml
+#    sqlite:
+#      location: config/users.db
+#    ldap:
+#      host: localhost
+#      port: 636
+#      base_dn: ''
+#      uid_key: dn
+  api:
+    admin_v1:
+    user_selfservice_v1:
+      allow_deletion: true
+      allow_password_change: true
+      editable_attributes:
+        - email
+        - address
+        - phone_number
+  claim_mapper:
+    attribute:
+      skip_access_token: false
+      skip_id_token: false

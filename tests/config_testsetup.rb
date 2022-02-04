@@ -88,29 +88,22 @@ class TestSetup
 
   def self.config
     {
-      'host' => 'http://localhost:4567',
-      'bind_to' => '0.0.0.0',
-      'path_prefix' => '',
+      'issuer' => 'http://localhost:4567',
+      'front_url' => 'http://localhost:4567',
+      'bind_to' => '0.0.0.0:4567',
+      'allow_origin' => '*',
       'app_env' => 'test',
       'openid' => true,
-      'token' => {
+      'default_audience' => 'TestServer',
+      'accept_audience' => 'http://localhost:4567',
+      'user_backend_default' => 'yaml',
+      'access_token' => {
         'expiration' => 3600,
-        'signing_key' => 'tests/test_resources/omejdn_test.pem',
-        'jwks_additions' => [
-          'tests/test_resources/omejdn_test.cert'
-        ],
         'algorithm' => 'RS256',
-        'audience' => 'TestServer',
-        'issuer' => 'http://localhost:4567'
       },
       'id_token' => {
         'expiration' => 3600,
-        'signing_key' => 'tests/test_resources/omejdn_test.pem',
-        'jwks_additions' => [
-          'tests/test_resources/omejdn_test.cert'
-        ],
         'algorithm' => 'RS256',
-        'issuer' => 'http://localhost:4567'
       },
       'plugins' => {
         'user_db' => {
@@ -129,8 +122,7 @@ class TestSetup
         'claim_mapper' => {
           'attribute' => nil
         }
-      },
-      'user_backend_default' => 'yaml'
+      }
     }
   end
 end

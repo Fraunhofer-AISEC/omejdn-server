@@ -20,7 +20,7 @@ class Config
   end
 
   def self.read_config(file, fallback)
-    YAML.safe_load (File.read file), fallback: fallback, filename: file
+    (YAML.safe_load (File.read file), fallback: fallback, filename: file) || fallback
   end
 
   def self.client_config

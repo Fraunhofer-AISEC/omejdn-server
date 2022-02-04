@@ -20,12 +20,12 @@ class Token
     token = {
       'scope' => (scopes.join ' '),
       'aud' => resources,
-      'iss' => base_config.dig('token', 'issuer'),
+      'iss' => base_config.dig('issuer'),
       'sub' => user&.username || client.client_id,
       'nbf' => now,
       'iat' => now,
       'jti' => Base64.urlsafe_encode64(rand(2**64).to_s),
-      'exp' => now + base_config.dig('token', 'expiration'),
+      'exp' => now + base_config.dig('access_token', 'expiration'),
       'client_id' => client.client_id
     }
     PluginLoader.load_plugins('claim_mapper').each do |mapper|
@@ -34,7 +34,7 @@ class Token
     reserved = {}
     reserved['userinfo_req_claims'] = claims['userinfo'] unless (claims['userinfo'] || {}).empty?
     token['omejdn_reserved'] = reserved unless reserved.empty?
-    key_pair = Keys.load_skey('token')
+    key_pair = Keys.load_skey('access_token')
     JWT.encode token, key_pair['sk'], 'RS256', { typ: 'at+jwt', kid: key_pair['kid'] }
   end
 
@@ -63,8 +63,8 @@ class Token
   def self.decode(token, endpoint = nil)
     raise 'No token found' if token.nil? | token.empty?
 
-    args = { algorithm: Config.base_config.dig('token', 'algorithm') }
-    args.merge!({ aud: "#{Config.base_config['host']}#{endpoint}", verify_aud: true }) if endpoint
+    args = { algorithm: Config.base_config.dig('access_token', 'algorithm') }
+    args.merge!({ aud: "#{Config.base_config['front_url']}#{endpoint}", verify_aud: true }) if endpoint
     JWT.decode(token, Keys.load_skey['sk'].public_key, true, args)[0]
   end
 end

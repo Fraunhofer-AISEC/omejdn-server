@@ -30,7 +30,7 @@ class OAuthHelper
     client = nil
     if params[:client_assertion_type] # RFC 7521, Section 4.2
       if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
-        _, client = Client.decode_jwt params[:client_assertion]
+        _, client = Client.decode_jwt params[:client_assertion], true
       end
       raise OAuthError.new 'invalid_client', 'Client assertion not accepted' if client.nil?
 
@@ -81,7 +81,7 @@ class OAuthHelper
     end
 
     if jwt
-      params, = Client.decode_jwt jwt, client
+      params, = Client.decode_jwt jwt, false, client
       raise OAuthError, 'invalid_client' unless params['client_id'] == url_params[:client_id]
     end
 
@@ -97,7 +97,7 @@ class OAuthHelper
     response = {}
     response['access_token'] = access_token
     response['id_token'] = id_token unless id_token.nil?
-    response['expires_in'] = Config.base_config.dig('token', 'expiration')
+    response['expires_in'] = Config.base_config.dig('access_token', 'expiration')
     response['token_type'] = 'bearer'
     response['scope'] = scopes.join ' '
     JSON.generate response
@@ -192,7 +192,7 @@ class OAuthHelper
 
   def self.configuration_metadata_rfc8414(base_config, host, path)
     metadata = {}
-    metadata['issuer'] = base_config.dig('token', 'issuer')
+    metadata['issuer'] = base_config.dig('issuer')
     metadata['authorization_endpoint'] = "#{path}/authorize"
     metadata['token_endpoint'] = "#{path}/token"
     metadata['jwks_uri'] = "#{host}/.well-known/jwks.json"
@@ -257,7 +257,7 @@ class OAuthHelper
   def self.sign_metadata(metadata)
     to_sign = metadata.merge
     to_sign['iss'] = to_sign['issuer']
-    key_pair = Keys.load_skey('token')
+    key_pair = Keys.load_skey('access_token')
     JWT.encode to_sign, key_pair['sk'], 'RS256', { kid: key_pair['kid'] }
   end
 

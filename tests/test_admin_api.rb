@@ -17,7 +17,7 @@ class AdminApiTest < Test::Unit::TestCase
     TestSetup.setup
     
     client = Client.find_by_id 'testClient'
-    @token = Token.access_token client, nil, ['omejdn:admin'], {}, TestSetup.config['host']+"/api"
+    @token = Token.access_token client, nil, ['omejdn:admin'], {}, TestSetup.config['front_url']+"/api"
     @insufficient_token = Token.access_token client, nil, ['omejdn:write'], {}, "test"
     @testCertificate = File.read './tests/test_resources/testClient.pem'
   end

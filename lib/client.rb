@@ -48,7 +48,7 @@ class Client
   end
 
   # Decodes a JWT and optionally finds the issuing client
-  def self.decode_jwt(jwt, client = nil)
+  def self.decode_jwt(jwt, verify_aud, client = nil)
     jwt_dec, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
 
     raise 'Not self-issued' if jwt['sub'] && jwt_dec['sub'] != jwt_dec['iss']
@@ -61,7 +61,7 @@ class Client
 
     aud = Config.base_config['accept_audience']
     jwt_dec, = JWT.decode jwt, client.certificate&.public_key, true,
-                          { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_hdr['alg'] }
+                          { nbf_leeway: 30, aud: aud, verify_aud: verify_aud, algorithm: jwt_hdr['alg'] }
     [jwt_dec, client]
   rescue StandardError => e
     puts "Error decoding JWT #{jwt}: #{e}"
@@ -108,7 +108,7 @@ class Client
   end
 
   def certificate_file
-    "keys/#{Base64.urlsafe_encode64(@client_id)}.cert"
+    "keys/clients/#{Base64.urlsafe_encode64(@client_id)}.cert"
   end
 
   def certificate

@@ -37,27 +37,47 @@ def debug
   Config.base_config['app_env'] != 'production'
 end
 
-def my_path
-  Config.base_config['host'] + Config.base_config['path_prefix']
-end
-
 def openid?(scopes)
   Config.base_config['openid'] && (scopes.include? 'openid')
 end
 
-def apply_env(config, env_key, conf_key, fallback)
-  config[conf_key] = ENV[env_key] || config[conf_key] || fallback
+def apply_env(config, conf_key, fallback)
+  conf_parts = conf_key.split('.')
+  env_value = ENV["OMEJDN_#{conf_parts.join('__').upcase}"]
+  conf_key = conf_parts.pop
+  conf_parts.each do |part|
+    config[part] ||= {}
+    config = config[part]
+  end
+  env_value = env_value.to_i if (Integer(env_value) rescue false)
+  env_value = false if env_value == "false"
+  env_value = true if env_value == "true"
+  config[conf_key] = env_value || config[conf_key] || fallback
 end
 
 configure do
   # account for environment overrides
   config = Config.base_config
-  apply_env(config, 'HOST', 'host', 'https://localhost:4567')
-  apply_env(config, 'OMEJDN_PATH_PREFIX', 'path_prefix', '')
-  apply_env(config, 'BIND_TO', 'bind_to', '0.0.0.0')
-  apply_env(config, 'ALLOW_ORIGIN', 'allow_origin', '*')
-  apply_env(config, 'APP_ENV', 'app_env', 'debug')
-  apply_env(config, 'OMEJDN_JWT_AUD_OVERRIDE', 'accept_audience', config['host'])
+  apply_env(config, 'issuer',           'https://localhost:4567')
+  apply_env(config, 'front_url',        config['issuer'])
+  apply_env(config, 'bind_to',          '0.0.0.0:4567')
+  apply_env(config, 'allow_origin',     '*')
+  apply_env(config, 'app_env',          'debug')
+  apply_env(config, 'openid',           false)
+  apply_env(config, 'default_audience', '')
+  apply_env(config, 'accept_audience',  config['issuer'])
+  ['access_token', 'id_token'].each do |token|
+    apply_env(config, "#{token}.expiration", 3600)
+    apply_env(config, "#{token}.algorithm",  'RS256')
+  end
+  has_user_db_configured = config.dig('plugins', 'user_db') && !config.dig('plugins', 'user_db').empty?
+  if config['openid'] && !has_user_db_configured
+    puts 'ERROR: No user_db plugin defined. Cannot serve OpenID functionality'
+    exit
+  end
+  if has_user_db_configured
+    apply_env(config, 'user_backend_default',  config.dig('plugins', 'user_db').keys.first)
+  end
   Config.base_config = config
 
   # Initialize admin user if given in ENV
@@ -79,9 +99,10 @@ configure do
   # Easier debugging for local tests
   set :raise_errors, debug && !ENV['HOST']
   set :show_exceptions, debug && ENV['HOST']
-  set :bind, config['bind_to']
+  bind_ip, bind_port = config['bind_to'].split(':')
+  set :bind, bind_ip
   enable :sessions
-  set :sessions, secure: (config['host'].start_with? 'https://')
+  set :sessions, secure: (config['front_url'].start_with? 'https://')
   set :session_store, Rack::Session::Pool
 
   set :allow_origin, config['allow_origin']
@@ -154,7 +175,7 @@ post '/token' do
   when 'client_credentials'
     client = OAuthHelper.identify_client params, authenticate: true
     scopes = client.filter_scopes(params[:scope]&.split) || []
-    resources = [Config.base_config.dig('token', 'audience')] if resources.empty?
+    resources = [Config.base_config.dig('default_audience')] if resources.empty?
     req_claims = JSON.parse(params[:claims] || '{}')
     raise OAuthError.new 'invalid_target', "Access denied to: #{resources}" unless client.resources_allowed? resources
   when 'authorization_code'
@@ -176,8 +197,9 @@ post '/token' do
   end
   raise OAuthError.new 'access_denied', 'No scopes granted' if scopes.empty?
 
-  resources << ("#{my_path}/userinfo") if openid?(scopes)
-  resources << ("#{my_path}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
+  front_url = Config.base_config['front_url']
+  resources << ("#{front_url}/userinfo") if openid?(scopes)
+  resources << ("#{front_url}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
 
   OAuthHelper.adapt_requested_claims req_claims
 
@@ -219,9 +241,9 @@ def next_task(completed_task = nil)
     session[:tasks].uniq!
     next_task
   when AuthorizationTask::LOGIN
-    redirect to("#{my_path}/login")
+    redirect to("#{Config.base_config['front_url']}/login")
   when AuthorizationTask::CONSENT
-    redirect to("#{my_path}/consent")
+    redirect to("#{Config.base_config['front_url']}/consent")
   when AuthorizationTask::ISSUE
     # Only issue code once
     session[:tasks].delete(task)
@@ -230,7 +252,7 @@ def next_task(completed_task = nil)
   # The user has jumped into some stage without an initial /authorize call
   # For now, redirect to /login
   p "Undefined task: #{task}. Redirecting to /login"
-  redirect to("#{my_path}/login")
+  redirect to("#{Config.base_config['front_url']}/login")
 end
 
 def handle_auth_error(error)
@@ -241,7 +263,7 @@ def handle_auth_error(error)
   query << "state=#{session.dig(:url_params, :state)}" unless session.dig(:url_params, :state).nil?
   query << "error=#{error.type}"
   query << "error_description=#{error.description}"
-  query << "iss=#{Config.base_config.dig('token', 'issuer')}"
+  query << "iss=#{Config.base_config.dig('issuer')}"
   redirect to "#{response_url}?#{query.join '&'}"
 end
 
@@ -349,14 +371,14 @@ get '/consent' do
   p "Granted scopes: #{session[:scopes]}"
   p "The user seems to be #{user.username}" if debug
 
-  session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config.dig('token', 'audience')].flatten
+  session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config.dig('default_audience')].flatten
   raise OAuthError.new 'invalid_target', 'Resources not granted' unless client.resources_allowed? session[:resources]
 
   # Seems to be in order
   return haml :authorization_page, locals: {
     user: user,
     client: client,
-    host: my_path,
+    host: Config.base_config['front_url'],
     scopes: session[:scopes],
     scope_description: Config.scope_description_config
   }
@@ -394,7 +416,7 @@ def issue_code
   response_params = {
     code: code,
     state: url_params[:state],
-    iss: Config.base_config.dig('token', 'issuer')
+    iss: Config.base_config.dig('issuer')
   }
   auth_response session.delete(:redirect_uri_verified), url_params[:response_mode], response_params
 end
@@ -434,13 +456,13 @@ end
 
 get '/logout' do
   session[:user] = nil
-  redirect_uri = params['post_logout_redirect_uri'] || "#{my_path}/login"
+  redirect_uri = params['post_logout_redirect_uri'] || "#{Config.base_config['front_url']}/login"
   redirect to(redirect_uri)
 end
 
 post '/logout' do
   session[:user] = nil
-  redirect_uri = params['post_logout_redirect_uri'] || "#{my_path}/login"
+  redirect_uri = params['post_logout_redirect_uri'] || "#{Config.base_config['front_url']}/login"
   redirect to(redirect_uri)
 end
 
@@ -461,14 +483,14 @@ get '/login' do
   no_password_login = Config.base_config['no_password_login'] || false
   return haml :login, locals: {
     no_password_login: no_password_login,
-    host: my_path,
+    host: Config.base_config['front_url'],
     providers: providers
   }
 end
 
 post '/login' do
   user = User.find_by_id(params[:username])
-  redirect to("#{my_path}/login?error=\"Credentials incorrect\"") unless user&.verify_password(params[:password])
+  redirect to("#{Config.base_config['front_url']}/login?error=\"Credentials incorrect\"") unless user&.verify_password(params[:password])
   nonce = rand(2**512)
   user.auth_time = Time.new.to_i
   UserSession.get[nonce] = user
@@ -529,7 +551,7 @@ get '/.well-known/jwks.json' do
 end
 
 get '/.well-known/(oauth-authorization-server|openid-configuration)' do
-  JSON.generate OAuthHelper.configuration_metadata(Config.base_config['host'], my_path)
+  JSON.generate OAuthHelper.configuration_metadata(Config.base_config['issuer'], Config.base_config['front_url'])
 end
 
 get '/.well-known/webfinger' do
@@ -549,7 +571,7 @@ get '/.well-known/webfinger' do
         links: [
           {
             rel: 'http://openid.net/specs/connect/1.0/issuer',
-            href: my_path
+            href: Config.base_config['issuer']
           }
         ]
       }
