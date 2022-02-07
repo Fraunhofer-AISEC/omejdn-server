@@ -7,10 +7,16 @@
 ## and all non-specified values will be filled in with their default values.
 ## Omejdn is aware of any changes to this file and will always use the new configuration.
 
-## Omejdn's Issuer Identifier. This must be the URL where .well-known is mounted
+## Omejdn's Issuer Identifier.
+## Please ensure that, assuming the issuer id is https://example.org/some/path,
+## Omejdn's /.well-known/oauth-authorization-server endpoint is reachable as
+## https://example.org/.well-known/oauth-authorization-server/some/path (per RFC 8414).
+## To support dynamic OpenID clients, the same endpoint should be available as
+## https://example.org/.well-known/openid-configuration/some/path and
+## https://example.org/some/path/.well-known/openid-configuration for backwards compatibility.
 #issuer: https://localhost:4567
 
-## The URL where everything else is mounted, in case it differs from `issuer`
+## The URL where Omejdn's endpoints are mounted, in case it differs from `issuer`
 #front_url: https://localhost:4567
 
 ## IP and (optionally) port to bind to

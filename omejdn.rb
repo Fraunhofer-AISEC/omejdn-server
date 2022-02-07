@@ -49,9 +49,13 @@ def apply_env(config, conf_key, fallback)
     config[part] ||= {}
     config = config[part]
   end
-  env_value = env_value.to_i if (Integer(env_value) rescue false)
-  env_value = false if env_value == "false"
-  env_value = true if env_value == "true"
+  env_value = env_value.to_i if begin
+    Integer(env_value)
+  rescue StandardError
+    false
+  end
+  env_value = false if env_value == 'false'
+  env_value = true if env_value == 'true'
   config[conf_key] = env_value || config[conf_key] || fallback
 end
 
@@ -66,7 +70,7 @@ configure do
   apply_env(config, 'openid',           false)
   apply_env(config, 'default_audience', '')
   apply_env(config, 'accept_audience',  config['issuer'])
-  ['access_token', 'id_token'].each do |token|
+  %w[access_token id_token].each do |token|
     apply_env(config, "#{token}.expiration", 3600)
     apply_env(config, "#{token}.algorithm",  'RS256')
   end
@@ -75,9 +79,7 @@ configure do
     puts 'ERROR: No user_db plugin defined. Cannot serve OpenID functionality'
     exit
   end
-  if has_user_db_configured
-    apply_env(config, 'user_backend_default',  config.dig('plugins', 'user_db').keys.first)
-  end
+  apply_env(config, 'user_backend_default', config.dig('plugins', 'user_db').keys.first) if has_user_db_configured
   Config.base_config = config
 
   # Initialize admin user if given in ENV
@@ -101,6 +103,7 @@ configure do
   set :show_exceptions, debug && ENV['HOST']
   bind_ip, bind_port = config['bind_to'].split(':')
   set :bind, bind_ip
+  set :port, bind_port if bind_port
   enable :sessions
   set :sessions, secure: (config['front_url'].start_with? 'https://')
   set :session_store, Rack::Session::Pool
@@ -175,7 +178,7 @@ post '/token' do
   when 'client_credentials'
     client = OAuthHelper.identify_client params, authenticate: true
     scopes = client.filter_scopes(params[:scope]&.split) || []
-    resources = [Config.base_config.dig('default_audience')] if resources.empty?
+    resources = [Config.base_config['default_audience']] if resources.empty?
     req_claims = JSON.parse(params[:claims] || '{}')
     raise OAuthError.new 'invalid_target', "Access denied to: #{resources}" unless client.resources_allowed? resources
   when 'authorization_code'
@@ -263,7 +266,7 @@ def handle_auth_error(error)
   query << "state=#{session.dig(:url_params, :state)}" unless session.dig(:url_params, :state).nil?
   query << "error=#{error.type}"
   query << "error_description=#{error.description}"
-  query << "iss=#{Config.base_config.dig('issuer')}"
+  query << "iss=#{Config.base_config['issuer']}"
   redirect to "#{response_url}?#{query.join '&'}"
 end
 
@@ -371,7 +374,7 @@ get '/consent' do
   p "Granted scopes: #{session[:scopes]}"
   p "The user seems to be #{user.username}" if debug
 
-  session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config.dig('default_audience')].flatten
+  session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config['default_audience']].flatten
   raise OAuthError.new 'invalid_target', 'Resources not granted' unless client.resources_allowed? session[:resources]
 
   # Seems to be in order
@@ -416,7 +419,7 @@ def issue_code
   response_params = {
     code: code,
     state: url_params[:state],
-    iss: Config.base_config.dig('issuer')
+    iss: Config.base_config['issuer']
   }
   auth_response session.delete(:redirect_uri_verified), url_params[:response_mode], response_params
 end
@@ -490,7 +493,9 @@ end
 
 post '/login' do
   user = User.find_by_id(params[:username])
-  redirect to("#{Config.base_config['front_url']}/login?error=\"Credentials incorrect\"") unless user&.verify_password(params[:password])
+  unless user&.verify_password(params[:password])
+    redirect to("#{Config.base_config['front_url']}/login?error=\"Credentials incorrect\"")
+  end
   nonce = rand(2**512)
   user.auth_time = Time.new.to_i
   UserSession.get[nonce] = user
@@ -551,7 +556,7 @@ get '/.well-known/jwks.json' do
 end
 
 get '/.well-known/(oauth-authorization-server|openid-configuration)' do
-  JSON.generate OAuthHelper.configuration_metadata(Config.base_config['issuer'], Config.base_config['front_url'])
+  OAuthHelper.configuration_metadata(Config.base_config['issuer'], Config.base_config['front_url']).to_json
 end
 
 get '/.well-known/webfinger' do

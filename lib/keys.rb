@@ -21,9 +21,8 @@ class Keys
     Base64.urlsafe_encode64(OpenSSL::Digest::SHA1.new(certs[0].to_der).to_s)
   end
 
-  def self.load_pkey(token_type = 'access_token')
-    cert_files = Dir.entries('keys/omejdn').select{ |f| !f.start_with? '.' }
-    cert_files.map do |f|
+  def self.load_pkey
+    Dir.entries('keys/omejdn').reject { |f| f.start_with? '.' }.map do |f|
       result = {}
       # The file could be either a certificate or a key
       begin
@@ -37,33 +36,29 @@ class Keys
     end
   end
 
-  def self.load_skey(token_type = 'access_token')
+  def self.load_skey
     filename = 'keys/omejdn/omejdn.key'
     setup_skey(filename) unless File.exist? filename
     sk = OpenSSL::PKey::RSA.new File.read(filename)
-    pk = load_pkey(token_type).select { |c| c.dig('certs', 0) && (c.dig('certs', 0).check_private_key sk) }.first
+    pk = load_pkey.select { |c| c.dig('certs', 0) && (c.dig('certs', 0).check_private_key sk) }.first
     kid = JSON::JWK.new(sk.public_key)[:kid]
     (pk || {}).merge({ 'sk' => sk, 'pk' => sk.public_key, 'kid' => kid })
   end
 
   def self.generate_jwks
     jwks = JSON::JWK::Set.new
-    %w[token id_token].each do |type|
-      # Load the signing key
-      key_material = [load_skey(type)]
-      key_material += load_pkey(type)
-      key_material.each do |k|
-        # Internally, this creates a KID following RFC 7638 using SHA256
-        # Only works with RSA, EC-Keys, and symmetric keys though.
-        # Further key types will require upstream changes
-        jwk = JSON::JWK.new(k['pk'])
-        jwk[:use] = 'sig'
-        if k['certs']
-          jwk[:x5c] = gen_x5c(k['certs'])
-          jwk[:x5t] = gen_x5t(k['certs'])
-        end
-        jwks << jwk
+    # Load the signing key
+    load_pkey.each do |k|
+      # Internally, this creates a KID following RFC 7638 using SHA256
+      # Only works with RSA, EC-Keys, and symmetric keys though.
+      # Further key types will require upstream changes
+      jwk = JSON::JWK.new(k['pk'])
+      jwk[:use] = 'sig'
+      if k['certs']
+        jwk[:x5c] = gen_x5c(k['certs'])
+        jwk[:x5t] = gen_x5t(k['certs'])
       end
+      jwks << jwk
     end
     { keys: jwks.uniq { |k| k['kid'] } }
   end

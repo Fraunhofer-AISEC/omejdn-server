@@ -7,9 +7,9 @@ require 'yaml'
 class TestSetup
 
   def self.backup
-    @backup_users   = File.read './config/users.yml'
-    @backup_clients = File.read './config/clients.yml'
-    @backup_omejdn  = File.read './config/omejdn.yml'
+    @backup_users   = File.read './config/users.yml'   rescue nil
+    @backup_clients = File.read './config/clients.yml' rescue nil
+    @backup_omejdn  = File.read './config/omejdn.yml'  rescue nil
     File.open('./config/users.yml', 'w')   { |file| file.write(users.to_yaml) }
     File.open('./config/clients.yml', 'w') { |file| file.write(clients.to_yaml) }
     File.open('./config/omejdn.yml', 'w')  { |file| file.write(config.to_yaml) }

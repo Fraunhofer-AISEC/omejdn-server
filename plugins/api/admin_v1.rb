@@ -166,11 +166,14 @@ put '/api/v1/config/omejdn' do
 end
 
 get '/api/v1/config/user_backend' do
-  halt 200, JSON.generate(Config.user_backend_config)
+  halt 200, JSON.generate(Config.base_config.dig('plugins', 'user_db') || {})
 end
 
 put '/api/v1/config/user_backend' do
-  Config.user_backend_config = JSON.parse request.body.read
+  config = Config.base_config
+  config['plugins'] ||= {}
+  config['plugins']['user_db'] = JSON.parse request.body.read
+  Config.base_config = config
   halt 204
 end
 

@@ -20,7 +20,7 @@ class Token
     token = {
       'scope' => (scopes.join ' '),
       'aud' => resources,
-      'iss' => base_config.dig('issuer'),
+      'iss' => base_config['issuer'],
       'sub' => user&.username || client.client_id,
       'nbf' => now,
       'iat' => now,
@@ -34,7 +34,7 @@ class Token
     reserved = {}
     reserved['userinfo_req_claims'] = claims['userinfo'] unless (claims['userinfo'] || {}).empty?
     token['omejdn_reserved'] = reserved unless reserved.empty?
-    key_pair = Keys.load_skey('access_token')
+    key_pair = Keys.load_skey
     JWT.encode token, key_pair['sk'], 'RS256', { typ: 'at+jwt', kid: key_pair['kid'] }
   end
 
@@ -55,7 +55,7 @@ class Token
     PluginLoader.load_plugins('claim_mapper').each do |mapper|
       token.merge!(mapper.map_to_id_token(client, user, scopes, claims['id_token']))
     end
-    key_pair = Keys.load_skey('id_token')
+    key_pair = Keys.load_skey
     JWT.encode token, key_pair['sk'], 'RS256', { typ: 'JWT', kid: key_pair['kid'] }
   end
 

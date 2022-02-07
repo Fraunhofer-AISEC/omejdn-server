@@ -192,7 +192,7 @@ class OAuthHelper
 
   def self.configuration_metadata_rfc8414(base_config, host, path)
     metadata = {}
-    metadata['issuer'] = base_config.dig('issuer')
+    metadata['issuer'] = base_config['issuer']
     metadata['authorization_endpoint'] = "#{path}/authorize"
     metadata['token_endpoint'] = "#{path}/token"
     metadata['jwks_uri'] = "#{host}/.well-known/jwks.json"
@@ -257,7 +257,7 @@ class OAuthHelper
   def self.sign_metadata(metadata)
     to_sign = metadata.merge
     to_sign['iss'] = to_sign['issuer']
-    key_pair = Keys.load_skey('access_token')
+    key_pair = Keys.load_skey
     JWT.encode to_sign, key_pair['sk'], 'RS256', { kid: key_pair['kid'] }
   end
 
