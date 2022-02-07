@@ -7,22 +7,25 @@ require 'yaml'
 class TestSetup
 
   def self.backup
-    @backup_users   = File.read './config/users.yml'   rescue nil
     @backup_clients = File.read './config/clients.yml' rescue nil
     @backup_omejdn  = File.read './config/omejdn.yml'  rescue nil
-    File.open('./config/users.yml', 'w')   { |file| file.write(users.to_yaml) }
+    File.open('./config/users_test.yml', 'w')   { |file| file.write(users.to_yaml) }
     File.open('./config/clients.yml', 'w') { |file| file.write(clients.to_yaml) }
     File.open('./config/omejdn.yml', 'w')  { |file| file.write(config.to_yaml) }
   end
 
   def self.setup
-    File.open('./config/users.yml', 'w')   { |file| file.write(users.to_yaml) }
+    File.open('./keys/omejdn/omejdn_test.cert', 'w') do |file|
+      file.write (File.read './tests/test_resources/omejdn_test.cert')
+    end
+    File.open('./config/users_test.yml', 'w')   { |file| file.write(users.to_yaml) }
     File.open('./config/clients.yml', 'w') { |file| file.write(clients.to_yaml) }
     File.open('./config/omejdn.yml', 'w')  { |file| file.write(config.to_yaml) }
   end
 
   def self.teardown
-    File.open('./config/users.yml', 'w')   { |file| file.write(@backup_users) }
+    File.delete './config/users_test.yml'
+    File.delete './keys/omejdn/omejdn_test.cert'
     File.open('./config/clients.yml', 'w') { |file| file.write(@backup_clients) }
     File.open('./config/omejdn.yml', 'w')  { |file| file.write(@backup_omejdn) }
   end
@@ -108,7 +111,7 @@ class TestSetup
       'plugins' => {
         'user_db' => {
           'yaml' => {
-            'location' => 'config/users.yml'
+            'location' => 'config/users_test.yml'
           }
         },
         'api' => {

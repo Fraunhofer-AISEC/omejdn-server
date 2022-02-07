@@ -289,7 +289,7 @@ class OAuth2Test < Test::Unit::TestCase
     @client.certificate = @certificate_rsa
     jwt = JWT.encode payload, @priv_key_rsa , 'RS256', { typ: 'at+jwt' }
     get  ('/authorize?request='+jwt+'&client_id='+@client.client_id), {}, {}
-    p last_response
+    # p last_response
     assert last_response.redirect?
     assert ["http://localhost:4567/consent", "http://localhost:4567/login"].include? last_response.original_headers['Location']
   end
