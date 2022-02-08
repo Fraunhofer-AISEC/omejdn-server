@@ -11,7 +11,7 @@ class YamlUserDb < UserDb
     @config = {
       'location' => 'config/users.yml'
     }.merge(config || {})
-    Config.write_config(db_file, [].to_yaml) unless File.exist? config['location']
+    Config.write_config(db_file, [].to_yaml) unless File.exist? @config['location']
   end
 
   def create_user(user)

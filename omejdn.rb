@@ -75,28 +75,18 @@ configure do
     apply_env(config, "#{token}.algorithm",  'RS256')
   end
   has_user_db_configured = config.dig('plugins', 'user_db') && !config.dig('plugins', 'user_db').empty?
+  if ENV['OMEJDN_ADMIN'] && !has_user_db_configured
+    # Try to enable yaml plugin, to have at least one user_db
+    config['plugins'] ||= {}
+    config['plugins']['user_db'] = { 'yaml' => nil }
+    has_user_db_configured = true
+  end
   if config['openid'] && !has_user_db_configured
     puts 'ERROR: No user_db plugin defined. Cannot serve OpenID functionality'
     exit
   end
   apply_env(config, 'user_backend_default', config.dig('plugins', 'user_db').keys.first) if has_user_db_configured
   Config.base_config = config
-
-  # Initialize admin user if given in ENV
-  if ENV['OMEJDN_ADMIN']
-    admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
-    admin = User.find_by_id(admin_name)
-    if admin
-      admin.update_password(admin_pw)
-    else
-      admin = User.from_dict({
-                               'username' => admin_name,
-                               'attributes' => [{ 'key' => 'omejdn', 'value' => 'admin' }],
-                               'password' => admin_pw
-                             })
-      User.add_user(admin, config['user_backend_default'])
-    end
-  end
 
   # Easier debugging for local tests
   set :raise_errors, debug && !ENV['HOST']
@@ -593,3 +583,19 @@ end
 
 # Load all Plugins
 PluginLoader.initialize
+
+# Initialize admin user if given in ENV
+if ENV['OMEJDN_ADMIN']
+  admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
+  admin = User.find_by_id(admin_name)
+  if admin
+    admin.update_password(admin_pw)
+  else
+    admin = User.from_dict({
+                             'username' => admin_name,
+                             'attributes' => [{ 'key' => 'omejdn', 'value' => 'admin' }],
+                             'password' => admin_pw
+                           })
+    User.add_user(admin, Config.base_config['user_backend_default'])
+  end
+end
