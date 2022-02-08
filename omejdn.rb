@@ -8,13 +8,6 @@ require 'rubygems'
 require 'bundler/setup'
 require 'rack'
 require 'cgi'
-
-require_relative './lib/client'
-require_relative './lib/config'
-require_relative './lib/user'
-require_relative './lib/token_helper'
-require_relative './lib/oauth_helper'
-require_relative './lib/user_db'
 require 'sinatra'
 require 'sinatra/cookies'
 # require 'sinatra/cors'
@@ -24,7 +17,13 @@ require 'json/jwt'
 require 'webrick'
 require 'webrick/https'
 require 'net/http'
-require 'bcrypt'
+
+require_relative './lib/client'
+require_relative './lib/config'
+require_relative './lib/user'
+require_relative './lib/token'
+require_relative './lib/oauth_helper'
+require_relative './lib/plugins'
 
 OMEJDN_LICENSE = 'Apache2.0'
 
@@ -38,68 +37,75 @@ def debug
   Config.base_config['app_env'] != 'production'
 end
 
-def my_path
-  Config.base_config['host'] + Config.base_config['path_prefix']
-end
-
 def openid?(scopes)
   Config.base_config['openid'] && (scopes.include? 'openid')
 end
 
-def adjust_config
-  # account for environment overrides
-  base_config = Config.base_config
-  base_config['host'] = ENV['HOST'] || base_config['host']
-  base_config['path_prefix'] = ENV['OMEJDN_PATH_PREFIX'] || base_config['path_prefix'] || ''
-  base_config['bind_to'] = ENV['BIND_TO'] || base_config['bind_to'] || '0.0.0.0'
-  base_config['allow_origin'] = ENV['ALLOW_ORIGIN'] || base_config['allow_origin'] || '*'
-  base_config['app_env'] = ENV['APP_ENV'] || base_config['app_env'] || 'debug'
-  base_config['accept_audience'] =
-    ENV['OMEJDN_JWT_AUD_OVERRIDE'] || base_config['accept_audience'] || base_config['host']
-  Config.base_config = base_config
-end
-
-def create_admin
-  # Initialize admin user if given in ENV
-  return unless ENV['OMEJDN_ADMIN']
-
-  admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
-  p "Setting admin username `#{admin_name}' and password `#{admin_pw}'" if debug
-  admin = User.find_by_id(admin_name)
-  if admin.nil?
-    admin = User.new
-    admin.username = admin_name
-    admin.attributes = [{ 'key' => 'omejdn', 'value' => 'admin' },
-                        { 'key' => 'name', 'value' => 'Admin' }]
-    admin.password = BCrypt::Password.create(admin_pw)
-    User.add_user(admin, Config.base_config['user_backend_default'])
-  else
-    admin.password = BCrypt::Password.create(admin_pw)
-    User.update_user(admin)
+def apply_env(config, conf_key, fallback)
+  conf_parts = conf_key.split('.')
+  env_value = ENV["OMEJDN_#{conf_parts.join('__').upcase}"]
+  conf_key = conf_parts.pop
+  conf_parts.each do |part|
+    config[part] ||= {}
+    config = config[part]
   end
+  env_value = env_value.to_i if begin
+    Integer(env_value)
+  rescue StandardError
+    false
+  end
+  env_value = false if env_value == 'false'
+  env_value = true if env_value == 'true'
+  config[conf_key] = env_value || config[conf_key] || fallback
 end
-adjust_config unless ENV['OMEJDN_IGNORE_ENV'] # We need this to not overwrite the config during tests
-create_admin  unless ENV['OMEJDN_IGNORE_ENV']
 
 configure do
+  # account for environment overrides
+  config = Config.base_config
+  apply_env(config, 'issuer',           'https://localhost:4567')
+  apply_env(config, 'front_url',        config['issuer'])
+  apply_env(config, 'bind_to',          '0.0.0.0:4567')
+  apply_env(config, 'allow_origin',     '*')
+  apply_env(config, 'app_env',          'debug')
+  apply_env(config, 'openid',           false)
+  apply_env(config, 'default_audience', '')
+  apply_env(config, 'accept_audience',  config['issuer'])
+  %w[access_token id_token].each do |token|
+    apply_env(config, "#{token}.expiration", 3600)
+    apply_env(config, "#{token}.algorithm",  'RS256')
+  end
+  has_user_db_configured = config.dig('plugins', 'user_db') && !config.dig('plugins', 'user_db').empty?
+  if ENV['OMEJDN_ADMIN'] && !has_user_db_configured
+    # Try to enable yaml plugin, to have at least one user_db
+    config['plugins'] ||= {}
+    config['plugins']['user_db'] = { 'yaml' => nil }
+    has_user_db_configured = true
+  end
+  if config['openid'] && !has_user_db_configured
+    puts 'ERROR: No user_db plugin defined. Cannot serve OpenID functionality'
+    exit
+  end
+  apply_env(config, 'user_backend_default', config.dig('plugins', 'user_db').keys.first) if has_user_db_configured
+  Config.base_config = config
+
   # Easier debugging for local tests
   set :raise_errors, debug && !ENV['HOST']
   set :show_exceptions, debug && ENV['HOST']
+  bind_ip, bind_port = config['bind_to'].split(':')
+  set :bind, bind_ip
+  set :port, bind_port if bind_port
+  enable :sessions
+  set :sessions, secure: (config['front_url'].start_with? 'https://')
+  set :session_store, Rack::Session::Pool
+
+  set :allow_origin, config['allow_origin']
+  set :allow_methods, 'GET,HEAD,POST,PUT,DELETE'
+  set :allow_headers, 'content-type,if-modified-since, authorization'
+  set :expose_headers, 'location,link'
+  set :allow_credentials, true
 end
 
-set :bind, Config.base_config['bind_to']
-enable :sessions
-set :sessions, secure: (Config.base_config['host'].start_with? 'https://')
-set :session_store, Rack::Session::Pool
-
-set :allow_origin, Config.base_config['allow_origin']
-set :allow_methods, 'GET,HEAD,POST,PUT,DELETE'
-set :allow_headers, 'content-type,if-modified-since, authorization'
-set :expose_headers, 'location,link'
-set :allow_credentials, true
-
-# A User session dummy class. We probably want to use
-# a KV-store at some point
+# Stores User Sessions. We probably want to use a KV-store at some point
 class UserSession
   @user_session = {}
   def self.get
@@ -107,31 +113,16 @@ class UserSession
   end
 end
 
-# The format of this cache data structure is:
-#
-# {
-#   <authorization code> => {
-#                             :user => User,
-#                             :nonce => <oauth nonce> (optional)
-#                             :scopes => Requested scopes
-#                             :resources => Requested resources
-#                             :claims => claim parameter
-#                             :pkce => Code challenge
-#                             :pkce_method => Code challenge method
-#                           },
-#   <authorization code #1> => {...},
-#   ...
-# }
-# A User session dummy class. We probably want to use
-# a KV-store at some point
-class RequestCache
+# Stores Authorization Code Metadata inbetween authorization and token retrieval
+# Contains: user, nonce, scopes, resources, claims, pkce challenge and method
+class AuthorizationCache
   @request_cache = {}
   def self.get
     @request_cache
   end
 end
 
-# A cache for Pushed Authorization Requests
+# Stores Pushed Authorization Request Objects inbetween request push and authorization
 class PARCache
   @cache = {}
   def self.get
@@ -177,12 +168,12 @@ post '/token' do
   when 'client_credentials'
     client = OAuthHelper.identify_client params, authenticate: true
     scopes = client.filter_scopes(params[:scope]&.split) || []
-    resources = [Config.base_config.dig('token', 'audience')] if resources.empty?
+    resources = [Config.base_config['default_audience']] if resources.empty?
     req_claims = JSON.parse(params[:claims] || '{}')
-    raise OAuthError, 'invalid_target' unless client.resources_allowed? resources
+    raise OAuthError.new 'invalid_target', "Access denied to: #{resources}" unless client.resources_allowed? resources
   when 'authorization_code'
-    cache = RequestCache.get[params[:code]]
-    raise OAuthError, 'invalid_code' if cache.nil?
+    cache = AuthorizationCache.get[params[:code]]
+    raise OAuthError.new 'invalid_code', 'The Authorization code was not recognized' if cache.nil?
 
     OAuthHelper.validate_pkce(cache[:pkce], params[:code_verifier], cache[:pkce_method]) unless cache[:pkce].nil?
     client = OAuthHelper.identify_client params, authenticate: false
@@ -191,26 +182,26 @@ post '/token' do
     resources = cache[:resources] if resources.empty?
     req_claims = cache[:claims] || {}
     req_claims = JSON.parse params[:claims] if params[:claims]
-    raise OAuthError, 'invalid_scope'  unless (scopes - cache[:scopes]).empty?
-    raise OAuthError, 'invalid_target' unless (resources - cache[:resources]).empty?
+    raise OAuthError.new 'invalid_scope', 'Ungranted scopes requested' unless (scopes - cache[:scopes]).empty?
+    raise OAuthError.new 'invalid_target', "No access to: #{resources}" unless (resources - cache[:resources]).empty?
     raise OAuthError, 'invalid_request' if cache[:redirect_uri] && cache[:redirect_uri] != params[:redirect_uri]
   else
     raise OAuthError.new 'unsupported_grant_type', "Given: #{params[:grant_type]}"
   end
-  raise OAuthError, 'access_denied' if scopes.empty?
+  raise OAuthError.new 'access_denied', 'No scopes granted' if scopes.empty?
 
-  resources << ("#{Config.base_config['host']}/userinfo") if openid?(scopes)
-  resources << ("#{Config.base_config['host']}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
+  front_url = Config.base_config['front_url']
+  resources << ("#{front_url}/userinfo") if openid?(scopes)
+  resources << ("#{front_url}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
 
   OAuthHelper.adapt_requested_claims req_claims
 
   user = cache&.dig(:user)
   nonce = cache&.dig(:nonce)
-  id_token = TokenHelper.build_id_token client, user, scopes, req_claims, nonce if openid?(scopes)
-  # RFC 9068
-  access_token = TokenHelper.build_access_token client, user, scopes, req_claims, resources
+  id_token = Token.id_token client, user, scopes, req_claims, nonce if openid?(scopes)
+  access_token = Token.access_token client, user, scopes, req_claims, resources
   # Delete the authorization code as it is single use
-  RequestCache.get.delete(params[:code])
+  AuthorizationCache.get.delete(params[:code])
   halt 200, (OAuthHelper.token_response access_token, scopes, id_token)
 rescue OAuthError => e
   halt 400, e.to_s
@@ -243,9 +234,9 @@ def next_task(completed_task = nil)
     session[:tasks].uniq!
     next_task
   when AuthorizationTask::LOGIN
-    redirect to("#{my_path}/login")
+    redirect to("#{Config.base_config['front_url']}/login")
   when AuthorizationTask::CONSENT
-    redirect to("#{my_path}/consent")
+    redirect to("#{Config.base_config['front_url']}/consent")
   when AuthorizationTask::ISSUE
     # Only issue code once
     session[:tasks].delete(task)
@@ -254,7 +245,7 @@ def next_task(completed_task = nil)
   # The user has jumped into some stage without an initial /authorize call
   # For now, redirect to /login
   p "Undefined task: #{task}. Redirecting to /login"
-  redirect to("#{my_path}/login")
+  redirect to("#{Config.base_config['front_url']}/login")
 end
 
 def handle_auth_error(error)
@@ -265,13 +256,13 @@ def handle_auth_error(error)
   query << "state=#{session.dig(:url_params, :state)}" unless session.dig(:url_params, :state).nil?
   query << "error=#{error.type}"
   query << "error_description=#{error.description}"
-  query << "iss=#{Config.base_config.dig('token', 'issuer')}"
+  query << "iss=#{Config.base_config['issuer']}"
   redirect to "#{response_url}?#{query.join '&'}"
 end
 
 # Pushed Authorization Requests
 post '/par' do
-  raise OAuthError, 'invalid_request' if params.key(:request_uri) # Not allowed here
+  raise OAuthError.new 'invalid_request', 'Request URI not supported here' if params.key(:request_uri)
 
   client = OAuthHelper.identify_client params, authenticate: false
   OAuthHelper.prepare_params params, client
@@ -297,7 +288,7 @@ get '/authorize' do
   session[:url_params] = params # Save parameters
 
   # We require specifying the scope
-  raise OAuthError, 'invalid_scope' unless params[:scope]
+  raise OAuthError.new 'invalid_scope', 'No scopes specified' unless params[:scope]
 
   unless params[:response_type] == 'code'
     raise OAuthError.new 'unsupported_response_type', "Given: #{params[:response_type]}"
@@ -352,10 +343,10 @@ get '/consent' do
   end
 
   user = UserSession.get[session[:user]]
-  raise OAuthError, 'invalid_user' if user.nil?
+  raise OAuthError.new 'invalid_user', 'User session invalid' if user.nil?
 
   client = Client.find_by_id session.dig(:url_params, 'client_id')
-  raise OAuthError, 'invalid_client' if client.nil?
+  raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
 
   scope_mapping = Config.scope_mapping_config
   session[:scopes] = client.filter_scopes(session.dig(:url_params, :scope).split)
@@ -373,14 +364,14 @@ get '/consent' do
   p "Granted scopes: #{session[:scopes]}"
   p "The user seems to be #{user.username}" if debug
 
-  session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config.dig('token', 'audience')].flatten
-  raise OAuthError, 'invalid_target' unless client.resources_allowed? session[:resources]
+  session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config['default_audience']].flatten
+  raise OAuthError.new 'invalid_target', 'Resources not granted' unless client.resources_allowed? session[:resources]
 
   # Seems to be in order
   return haml :authorization_page, locals: {
     user: user,
     client: client,
-    host: my_path,
+    host: Config.base_config['front_url'],
     scopes: session[:scopes],
     scope_description: Config.scope_description_config
   }
@@ -414,11 +405,11 @@ def issue_code
     cache[:pkce_method] = url_params[:code_challenge_method]
   end
   code = OAuthHelper.new_authz_code
-  RequestCache.get[code] = cache
+  AuthorizationCache.get[code] = cache
   response_params = {
     code: code,
     state: url_params[:state],
-    iss: Config.base_config.dig('token', 'issuer')
+    iss: Config.base_config['issuer']
   }
   auth_response session.delete(:redirect_uri_verified), url_params[:response_mode], response_params
 end
@@ -437,22 +428,16 @@ end
 ########## USERINFO ##################
 
 before '/userinfo' do
-  @user = nil
   return if request.env['REQUEST_METHOD'] == 'OPTIONS'
 
   jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
-  halt 401 if jwt.nil? || jwt.empty?
-  begin
-    key = Server.load_skey['sk']
-    @token = (JWT.decode jwt, key.public_key, true, { algorithm: Config.base_config.dig('token', 'algorithm') })[0]
-    @client = Client.find_by_id @token['client_id']
-    @user = User.find_by_id(@token['sub'])
-    halt 403 unless [*@token['aud']].include?("#{Config.base_config['host']}/userinfo")
-  rescue StandardError => e
-    p e if debug
-    @user = nil
-  end
+  @token = Token.decode jwt, '/userinfo'
+  @client = Client.find_by_id @token['client_id']
+  @user = User.find_by_id(@token['sub'])
   halt 401 if @user.nil?
+rescue StandardError => e
+  p e if debug
+  halt 401
 end
 
 get '/userinfo' do
@@ -464,13 +449,13 @@ end
 
 get '/logout' do
   session[:user] = nil
-  redirect_uri = params['post_logout_redirect_uri'] || "#{my_path}/login"
+  redirect_uri = params['post_logout_redirect_uri'] || "#{Config.base_config['front_url']}/login"
   redirect to(redirect_uri)
 end
 
 post '/logout' do
   session[:user] = nil
-  redirect_uri = params['post_logout_redirect_uri'] || "#{my_path}/login"
+  redirect_uri = params['post_logout_redirect_uri'] || "#{Config.base_config['front_url']}/login"
   redirect to(redirect_uri)
 end
 
@@ -491,16 +476,16 @@ get '/login' do
   no_password_login = Config.base_config['no_password_login'] || false
   return haml :login, locals: {
     no_password_login: no_password_login,
-    host: my_path,
+    host: Config.base_config['front_url'],
     providers: providers
   }
 end
 
 post '/login' do
   user = User.find_by_id(params[:username])
-  redirect to("#{my_path}/login?error=\"Not a valid user.\"") if user.nil?
-  redirect to("#{my_path}/login?error=\"Credentials incorrect\"") unless User.verify_credential(user,
-                                                                                                params[:password])
+  unless user&.verify_password(params[:password])
+    redirect to("#{Config.base_config['front_url']}/login?error=\"Credentials incorrect\"")
+  end
   nonce = rand(2**512)
   user.auth_time = Time.new.to_i
   UserSession.get[nonce] = user
@@ -548,309 +533,6 @@ get '/oauth_cb' do
   next_task AuthorizationTask::LOGIN
 end
 
-########## User Selfservice ##########
-
-after '/api/v1/*' do
-  headers['Content-Type'] = 'application/json'
-end
-
-before '/api/v1/*' do
-  return if request.env['REQUEST_METHOD'] == 'OPTIONS'
-
-  begin
-    jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
-    halt 401 if jwt.nil? || jwt.empty?
-    token = JWT.decode(jwt, Server.load_skey['sk'].public_key, true,
-                       { algorithm: Config.base_config.dig('token', 'algorithm') })[0]
-    halt 403 unless [*token['aud']].include?("#{Config.base_config['host']}/api")
-    @scopes = token['scope'].split
-    @user_is_admin  = (@scopes.include? 'omejdn:admin')
-    @user_may_write = (@scopes.include? 'omejdn:write') || @user_is_admin
-    @user_may_read  = (@scopes.include? 'omejdn:read')  || @user_may_write
-    @user = User.find_by_id token['sub']
-    @client = Client.find_by_id token['client_id']
-  rescue StandardError => e
-    p e if debug
-    halt 401
-  end
-end
-
-before '/api/v1/user*' do
-  @selfservice_config = Config.base_config['user_selfservice']
-  halt 403 unless !@selfservice_config.nil? && @selfservice_config['enabled']
-  halt 403 unless request.env['REQUEST_METHOD'] == 'GET' ? @user_may_read : @user_may_write
-  halt 401 if @user.nil?
-end
-
-get '/api/v1/user' do
-  halt 200, { 'username' => @user.username, 'attributes' => @user.attributes }.to_json
-end
-
-put '/api/v1/user' do
-  editable = @selfservice_config['editable_attributes'] || []
-  updated_user = User.new
-  updated_user.username = @user.username
-  updated_user.attributes = []
-  JSON.parse(request.body.read)['attributes'].each do |e|
-    updated_user.attributes << e if editable.include? e['key']
-  end
-  User.update_user updated_user
-  halt 204
-end
-
-delete '/api/v1/user' do
-  halt 403 unless @selfservice_config['allow_deletion']
-  User.delete_user(@user.username)
-  halt 204
-end
-
-put '/api/v1/user/password' do
-  halt 403 unless @selfservice_config['allow_password_change']
-  json = (JSON.parse request.body.read)
-  current_password = json['currentPassword']
-  new_password = json['newPassword']
-  unless User.verify_credential(@user, current_password)
-    halt 403, { 'passwordChange' => 'not successfull, password incorrect' }
-  end
-  User.change_password(@user, new_password)
-  halt 204
-end
-
-get '/api/v1/user/provider' do
-  # TODO: We probably do not want to send out the entire provider including secrets
-  # to any user with API access
-  halt 404 if @user.extern.nil?
-  providers = Config.oauth_provider_config
-  providers.each do |provider|
-    next unless provider['name'] == @user.extern
-
-    return JSON.generate provider
-  end
-  halt 404
-end
-
-########## ADMIN API ##################
-
-before '/api/v1/config/*' do
-  halt 403 unless @user_is_admin
-  halt 401 if @client.nil? && @user.nil?
-end
-
-# Users
-get '/api/v1/config/users' do
-  halt 200, JSON.generate(User.all_users)
-end
-
-post '/api/v1/config/users' do
-  json = JSON.parse request.body.read
-  user = User.from_json(json)
-  User.add_user(user, json['userBackend'] || Config.base_config['user_backend_default'])
-  halt 201
-end
-
-get '/api/v1/config/users/:username' do
-  user = User.find_by_id params['username']
-  halt 404 if user.nil?
-  halt 200, { 'username' => user.username, 'password' => user.password, 'attributes' => user.attributes }.to_json
-end
-
-put '/api/v1/config/users/:username' do
-  user = User.find_by_id params['username']
-  halt 404 if user.nil?
-  updated_user = User.from_json(JSON.parse(request.body.read))
-  updated_user.username = user.username
-  oauth_providers = Config.oauth_provider_config
-  User.update_user(updated_user, oauth_providers)
-  halt 204
-end
-
-delete '/api/v1/config/users/:username' do
-  user_found = User.delete_user(params['username'])
-  halt 404 unless user_found
-  halt 204
-end
-
-put '/api/v1/config/users/:username/password' do
-  user = User.find_by_id params['username']
-  halt 404 if user.nil?
-  json = (JSON.parse request.body.read)
-  User.change_password(user, json['newPassword'])
-  halt 204
-end
-
-# Clients
-get '/api/v1/config/clients' do
-  JSON.generate Config.client_config
-end
-
-put '/api/v1/config/clients' do
-  clients = []
-  JSON.parse(request.body.read).each do |c|
-    client = Client.new
-    client.client_id = c['client_id']
-    client.name = c['name']
-    client.attributes = c['attributes']
-    client.allowed_scopes = c['allowed_scopes']
-    client.redirect_uri = c['redirect_uri']
-    client.allowed_resources = c['allowed_resources']
-    clients << client
-  end
-  Config.client_config = clients
-  halt 204
-end
-
-post '/api/v1/config/clients' do
-  client = Client.from_json(JSON.parse(request.body.read))
-  clients = Client.load_clients
-  clients << client
-  Config.client_config = clients
-  halt 201
-end
-
-get '/api/v1/config/clients/:client_id' do
-  client = Client.find_by_id params['client_id']
-  halt 404 if client.nil?
-  halt 200, client.to_dict.to_json
-end
-
-put '/api/v1/config/clients/:client_id' do
-  json = JSON.parse(request.body.read)
-  clients = Client.load_clients
-  clients.each do |stored_client|
-    next if stored_client.client_id != params['client_id']
-
-    stored_client.name = json['name'] unless json['name'].nil?
-    stored_client.attributes = json['attributes'] unless json['attributes'].nil?
-    stored_client.allowed_scopes = json['allowed_scopes'] unless json['allowed_scopes'].nil?
-    stored_client.redirect_uri = json['redirect_uri'] unless json['redirect_uri'].nil?
-    Config.client_config = clients
-    halt 204
-  end
-  halt 404
-end
-
-delete '/api/v1/config/clients/:client_id' do
-  clients = Client.load_clients
-  clients.each do |stored_client|
-    next unless stored_client.client_id.eql?(params['client_id'])
-
-    clients.delete(stored_client)
-    Config.client_config = clients
-    halt 204
-  end
-  halt 404
-end
-
-# Client Keys
-get '/api/v1/config/clients/:client_id/keys' do
-  client = Client.find_by_id params['client_id']
-  halt 404 if client.nil?
-  certificate = client.certificate
-  halt 404 if certificate.nil?
-  halt 200, JSON.generate({ 'certificate' => client.certificate.to_s })
-end
-
-put '/api/v1/config/clients/:client_id/keys' do
-  client = Client.find_by_id params['client_id']
-  halt 404 if client.nil?
-  client.certificate = JSON.parse(request.body.read)['certificate']
-  halt 204
-end
-
-post '/api/v1/config/clients/:client_id/keys' do
-  client = Client.find_by_id params['client_id']
-  halt 404 if client.nil?
-  client.certificate = JSON.parse(request.body.read)['certificate']
-  halt 201
-end
-
-delete '/api/v1/config/clients/:client_id/keys' do
-  client = Client.find_by_id params['client_id']
-  halt 404 if client.nil?
-  client.certificate = nil
-  halt 204
-end
-
-# Config files
-get '/api/v1/config/omejdn' do
-  halt 200, JSON.generate(Config.base_config)
-end
-
-put '/api/v1/config/omejdn' do
-  Config.base_config = JSON.parse request.body.read
-  halt 204
-end
-
-get '/api/v1/config/user_backend' do
-  halt 200, JSON.generate(Config.user_backend_config)
-end
-
-put '/api/v1/config/user_backend' do
-  Config.user_backend_config = JSON.parse request.body.read
-  halt 204
-end
-
-get '/api/v1/config/webfinger' do
-  halt 200, JSON.generate(Config.webfinger_config)
-end
-
-put '/api/v1/config/webfinger' do
-  Config.webfinger_config = JSON.parse request.body.read
-  halt 204
-end
-
-get '/api/v1/config/oauth_providers' do
-  halt 200, JSON.generate(Config.oauth_provider_config)
-end
-
-put '/api/v1/config/oauth_providers' do
-  Config.oauth_provider_config = JSON.parse request.body.read
-  halt 204
-end
-
-get '/api/v1/config/oauth_providers/:provider' do
-  providers = Config.oauth_provider_config
-  providers.each do |provider|
-    next unless provider['name'] == params['provider']
-
-    return JSON.generate provider
-  end
-  halt 404
-end
-
-post '/api/v1/config/oauth_providers/:provider' do
-  new_provider = JSON.parse request.body.read
-  providers = Config.oauth_provider_config
-  providers.push(new_provider)
-  Config.oauth_provider_config = providers
-  halt 201
-end
-
-put '/api/v1/config/oauth_providers/:provider' do
-  updated_provider = JSON.parse request.body.read
-  providers = Config.oauth_provider_config
-  providers.each do |provider|
-    next unless provider['name'] == updated_provider['name']
-
-    providers[providers.index(provider)] = updated_provider
-    Config.oauth_provider_config = providers
-    halt 200
-  end
-  halt 404
-end
-
-delete '/api/v1/config/oauth_providers/:provider' do
-  providers = Config.oauth_provider_config
-  providers.each do |provider|
-    next unless provider['name'] == params['provider']
-
-    providers.delete(provider)
-    Config.oauth_provider_config = providers
-    halt 200
-  end
-  halt 404
-end
-
 ########## WELL-KNOWN ENDPOINTS ##################
 
 before '/.well-known*' do
@@ -860,11 +542,11 @@ before '/.well-known*' do
 end
 
 get '/.well-known/jwks.json' do
-  OAuthHelper.generate_jwks.to_json
+  Keys.generate_jwks.to_json
 end
 
 get '/.well-known/(oauth-authorization-server|openid-configuration)' do
-  JSON.generate OAuthHelper.configuration_metadata(Config.base_config['host'], my_path)
+  OAuthHelper.configuration_metadata(Config.base_config['issuer'], Config.base_config['front_url']).to_json
 end
 
 get '/.well-known/webfinger' do
@@ -884,7 +566,7 @@ get '/.well-known/webfinger' do
         links: [
           {
             rel: 'http://openid.net/specs/connect/1.0/issuer',
-            href: my_path
+            href: Config.base_config['issuer']
           }
         ]
       }
@@ -897,4 +579,23 @@ get '/about' do
   headers['Content-Type'] = 'application/json'
   return JSON.generate({ 'version' => version,
                          'license' => OMEJDN_LICENSE })
+end
+
+# Load all Plugins
+PluginLoader.initialize
+
+# Initialize admin user if given in ENV
+if ENV['OMEJDN_ADMIN']
+  admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
+  admin = User.find_by_id(admin_name)
+  if admin
+    admin.update_password(admin_pw)
+  else
+    admin = User.from_dict({
+                             'username' => admin_name,
+                             'attributes' => [{ 'key' => 'omejdn', 'value' => 'admin' }],
+                             'password' => admin_pw
+                           })
+    User.add_user(admin, Config.base_config['user_backend_default'])
+  end
 end

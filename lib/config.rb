@@ -3,9 +3,7 @@
 require 'yaml'
 OMEJDN_CONFIG_DIR            = 'config'
 OMEJDN_BASE_CONFIG_FILE      = "#{OMEJDN_CONFIG_DIR}/omejdn.yml"
-OMEJDN_USER_CONFIG_FILE      = "#{OMEJDN_CONFIG_DIR}/users.yml"
 OMEJDN_CLIENT_CONFIG_FILE    = "#{OMEJDN_CONFIG_DIR}/clients.yml"
-OMEJDN_USER_BACKEND_CONFIG   = "#{OMEJDN_CONFIG_DIR}/user_backend.yml"
 OMEJDN_OAUTH_PROVIDER_CONFIG = "#{OMEJDN_CONFIG_DIR}/oauth_providers.yml"
 SCOPE_DESCRIPTION_CONFIG     = "#{OMEJDN_CONFIG_DIR}/scope_description.yml"
 SCOPE_MAPPING_CONFIG         = "#{OMEJDN_CONFIG_DIR}/scope_mapping.yml"
@@ -20,7 +18,7 @@ class Config
   end
 
   def self.read_config(file, fallback)
-    YAML.safe_load (File.read file), fallback: fallback, filename: file
+    (YAML.safe_load (File.read file), fallback: fallback, filename: file) || fallback
   end
 
   def self.client_config
@@ -42,14 +40,6 @@ class Config
       c['expiration'] = c['expiration'].to_i
     end
     write_config OMEJDN_BASE_CONFIG_FILE, config.to_yaml
-  end
-
-  def self.user_backend_config
-    read_config OMEJDN_USER_BACKEND_CONFIG, {}
-  end
-
-  def self.user_backend_config=(config)
-    write_config OMEJDN_USER_BACKEND_CONFIG, config.to_yaml
   end
 
   def self.oauth_provider_config

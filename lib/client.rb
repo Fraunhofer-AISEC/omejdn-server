@@ -41,18 +41,18 @@ class Client
     clients
   end
 
-  def self.from_json(json)
+  def self.from_dict(json)
     client = Client.new
     client.apply_values(json)
     client
   end
 
   # Decodes a JWT and optionally finds the issuing client
-  def self.decode_jwt(jwt, client = nil)
+  def self.decode_jwt(jwt, verify_aud, client = nil)
     jwt_dec, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
 
-    return nil if jwt['sub'] && jwt_dec['sub'] != jwt_dec['iss']
-    return nil unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
+    raise 'Not self-issued' if jwt['sub'] && jwt_dec['sub'] != jwt_dec['iss']
+    raise 'Algorithm unsupported' unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
 
     client_id = jwt_dec['iss'] || jwt_dec['sub'] || jwt_dec['client_id']
     client ||= find_by_id client_id
@@ -61,15 +61,15 @@ class Client
 
     aud = Config.base_config['accept_audience']
     jwt_dec, = JWT.decode jwt, client.certificate&.public_key, true,
-                          { nbf_leeway: 30, aud: aud, verify_aud: true, algorithm: jwt_hdr['alg'] }
+                          { nbf_leeway: 30, aud: aud, verify_aud: verify_aud, algorithm: jwt_hdr['alg'] }
     [jwt_dec, client]
   rescue StandardError => e
     puts "Error decoding JWT #{jwt}: #{e}"
-    nil
+    raise OAuthError.new 'invalid_client', "Error decoding JWT: #{e}"
   end
 
   def to_dict
-    result = {
+    {
       'client_id' => @client_id,
       'name' => @name,
       'redirect_uri' => @redirect_uri,
@@ -77,8 +77,7 @@ class Client
       'allowed_scopes' => @allowed_scopes,
       'allowed_resources' => @allowed_resources,
       'attributes' => @attributes
-    }
-    result.compact!
+    }.compact
   end
 
   def filter_scopes(scopes)
@@ -109,7 +108,7 @@ class Client
   end
 
   def certificate_file
-    "keys/#{Base64.urlsafe_encode64(@client_id)}.cert"
+    "keys/clients/#{Base64.urlsafe_encode64(@client_id)}.cert"
   end
 
   def certificate
@@ -131,5 +130,9 @@ class Client
       return
     end
     File.write(filename, new_cert)
+  end
+
+  def ==(other)
+    client_id == other.client_id
   end
 end

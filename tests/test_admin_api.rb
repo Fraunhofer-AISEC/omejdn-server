@@ -4,7 +4,7 @@ require 'rack/test'
 require 'webrick/https'
 require_relative 'config_testsetup'
 require_relative '../omejdn'
-require_relative '../lib/token_helper'
+require_relative '../lib/token'
 
 class AdminApiTest < Test::Unit::TestCase
   include Rack::Test::Methods
@@ -17,8 +17,8 @@ class AdminApiTest < Test::Unit::TestCase
     TestSetup.setup
     
     client = Client.find_by_id 'testClient'
-    @token = TokenHelper.build_access_token client, nil, ['omejdn:admin'], {}, TestSetup.config['host']+"/api"
-    @insufficient_token = TokenHelper.build_access_token client, nil, ['omejdn:write'], {}, "test"
+    @token = Token.access_token client, nil, ['omejdn:admin'], {}, TestSetup.config['front_url']+"/api"
+    @insufficient_token = Token.access_token client, nil, ['omejdn:write'], {}, "test"
     @testCertificate = File.read './tests/test_resources/testClient.pem'
   end
 
@@ -29,7 +29,7 @@ class AdminApiTest < Test::Unit::TestCase
   def test_require_admin_scope
     get '/api/v1/config/users', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@insufficient_token}" }
     # p last_response
-    assert last_response.forbidden?
+    assert last_response.unauthorized?
   end
 
   def test_get_users
@@ -52,7 +52,8 @@ class AdminApiTest < Test::Unit::TestCase
       'attributes' => [
         { 'key' => 'exampleKey2', 'value' => 'exampleValue2' }
       ],
-      'password' => 'somepw'
+      'password' => 'somepw',
+      'backend' => 'yaml'
     }
     post '/api/v1/config/users', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     # p last_response
@@ -73,7 +74,8 @@ class AdminApiTest < Test::Unit::TestCase
       'attributes' => [
         { 'key' => 'exampleKey', 'value' => 'exampleValue2' }
       ],
-      'password' => 'secure'
+      'password' => 'secure',
+      'backend' => 'yaml'
     }
     put '/api/v1/config/users/testUser', user.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?

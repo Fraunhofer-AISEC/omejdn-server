@@ -1,68 +1,80 @@
 ---
-# The Omejdn host
-host: http://localhost:4567
-# A base path
-path_prefix: ''
-# Which address to bind to
-bind_to: 0.0.0.0
-# Allow Origin Header field
-allow_origin: "*"
+## Welcome to Omejdn.
+##
+## Please have a look at the documentation first, if you have any questions.
+## This is the main configuration file.
+## Once you start Omejdn for the first time, the comments here will disappear
+## and all non-specified values will be filled in with their default values.
+## Omejdn is aware of any changes to this file and will always use the new configuration.
 
-# Set this to `production` to disable debug output
-app_env: debug
+## Omejdn's Issuer Identifier.
+## Please ensure that, assuming the issuer id is https://example.org/some/path,
+## Omejdn's /.well-known/oauth-authorization-server endpoint is reachable as
+## https://example.org/.well-known/oauth-authorization-server/some/path (per RFC 8414).
+## To support dynamic OpenID clients, the same endpoint should be available as
+## https://example.org/.well-known/openid-configuration/some/path and
+## https://example.org/some/path/.well-known/openid-configuration for backwards compatibility.
+#issuer: https://localhost:4567
 
-# Enable OpenID funtionality
-openid: true
+## The URL where Omejdn's endpoints are mounted, in case it differs from `issuer`
+#front_url: https://localhost:4567
 
-# Overwrite the aud claim value to accept in client's bearer tokens (defaults to host)
-#accept_audience:
+## IP and (optionally) port to bind to
+## Changes only apply after a restart
+#bind_to: 0.0.0.0:4567
 
-# Token signing keys, certificates and default values
-# jwks_additions may be used to specify additional certificates and keys to be published in the JWKS
-token:
-  expiration: 3600
-  signing_key: omejdn_priv.pem
-  jwks_additions:
-  - omejdn_priv.pem.cert
-  algorithm: RS256
-  audience: TestServer
-  issuer: http://localhost:4567
-id_token:
-  expiration: 3600
-  signing_key: omejdn_priv.pem
-  jwks_additions:
-  - omejdn_priv.pem.cert
-  algorithm: RS256
-  issuer: http://localhost:4567
+## CORS allow origin response value
+## Changes only apply after a restart
+#allow_origin: "*"
 
-# Enabled user backends (can be configured in user_backend.yml)
-user_backend:
-- yaml
-# Default user backend
-user_backend_default: yaml
+## Application Environment. Set to production to supress debug output
+#app_env: debug
 
-# User Selfservice API
-user_selfservice:
-  enabled: true
-  allow_deletion: true
-  allow_password_change: true
-  editable_attributes:
-    - name
-    - family_name
-    - given_name
-    - middle_name
-    - nickname
-    - preferred_username
-    - profile
-    - picture
-    - website
-    - gender
-    - birthdate
-    - zoneinfo
-    - locale
-    - updated_at
-    - email
-    - email_verified
-    - address
-    - phone_number
-    - phone_number_verified
+## Enable OpenID functionality (requires at least one user_db plugin)
+#openid: false
+
+## The default user_db plugin to use
+#user_backend_default: 'yaml'
+
+## Default `aud` value in tokens
+#default_audience: ''
+
+## Accept different values as `aud`
+#accept_audience: https://localhost:4567
+
+## Set expiration time and algorithm for each token
+## Does not affect already issued tokens
+#access_token:
+#  expiration: 3600
+#  algorithm: RS256
+#id_token:
+#  expiration: 3600
+#  algorithm: RS256
+
+## Plugins enable additional functionality.
+## See the respective plugin for configuration options.
+## Loading and unloading of plugins requires a restart
+#plugins:
+#  user_db:
+#    yaml:
+#      location: config/users.yml
+#    sqlite:
+#      location: config/users.db
+#    ldap:
+#      host: localhost
+#      port: 636
+#      base_dn: ''
+#      uid_key: dn
+#  api:
+#    admin_v1:
+#    user_selfservice_v1:
+#      allow_deletion: true
+#      allow_password_change: true
+#      editable_attributes:
+#        - email
+#        - address
+#        - phone_number
+#  claim_mapper:
+#    attribute:
+#      skip_access_token: false
+#      skip_id_token: false

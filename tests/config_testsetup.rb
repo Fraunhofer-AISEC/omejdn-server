@@ -1,22 +1,31 @@
 # frozen_string_literal: true
 
 # Always load this BEFORE omejdn.rb
-ENV['OMEJDN_IGNORE_ENV'] = "true"
 
+require 'yaml'
 
 class TestSetup
 
+  def self.backup
+    @backup_clients = File.read './config/clients.yml' rescue nil
+    @backup_omejdn  = File.read './config/omejdn.yml'  rescue nil
+    File.open('./config/users_test.yml', 'w')   { |file| file.write(users.to_yaml) }
+    File.open('./config/clients.yml', 'w') { |file| file.write(clients.to_yaml) }
+    File.open('./config/omejdn.yml', 'w')  { |file| file.write(config.to_yaml) }
+  end
+
   def self.setup
-    @backup_users   = File.read './config/users.yml'
-    @backup_clients = File.read './config/clients.yml'
-    @backup_omejdn  = File.read './config/omejdn.yml'
-    File.open('./config/users.yml', 'w')   { |file| file.write(users.to_yaml) }
+    File.open('./keys/omejdn/omejdn_test.cert', 'w') do |file|
+      file.write (File.read './tests/test_resources/omejdn_test.cert')
+    end
+    File.open('./config/users_test.yml', 'w')   { |file| file.write(users.to_yaml) }
     File.open('./config/clients.yml', 'w') { |file| file.write(clients.to_yaml) }
     File.open('./config/omejdn.yml', 'w')  { |file| file.write(config.to_yaml) }
   end
 
   def self.teardown
-    File.open('./config/users.yml', 'w')   { |file| file.write(@backup_users) }
+    File.delete './config/users_test.yml'
+    File.delete './keys/omejdn/omejdn_test.cert'
     File.open('./config/clients.yml', 'w') { |file| file.write(@backup_clients) }
     File.open('./config/omejdn.yml', 'w')  { |file| file.write(@backup_omejdn) }
   end
@@ -32,14 +41,16 @@ class TestSetup
         { 'key' => 'asdfasf', 'value' => 'asdfasf' },
         { 'key' => 'exampleKey', 'value' => 'exampleValue' }
       ],
-      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC' # "mypassword"
+      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC', # "mypassword"
+      'backend' => 'yaml'
     },
     {
       'username' => 'testUser2',
       'attributes' => [
         { 'key' => 'omejdn', 'value' => 'write' }
       ],
-      'password' => '$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi'
+      'password' => '$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi',
+      'backend' => 'yaml'
     },
     {
       'username' => 'dynamic_claims',
@@ -47,7 +58,8 @@ class TestSetup
         { 'key' => 'omejdn', 'value' => 'write' },
         { 'key' => 'dynattribute', 'dynamic' => true }
       ],
-      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC'
+      'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC',
+      'backend' => 'yaml'
     }]
   end
 
@@ -79,38 +91,44 @@ class TestSetup
 
   def self.config
     {
-      'host' => 'http://localhost:4567',
-      'bind_to' => '0.0.0.0',
-      'path_prefix' => '',
+      'issuer' => 'http://localhost:4567',
+      'front_url' => 'http://localhost:4567',
+      'bind_to' => '0.0.0.0:4567',
+      'allow_origin' => '*',
       'app_env' => 'test',
       'openid' => true,
-      'token' => {
+      'default_audience' => 'TestServer',
+      'accept_audience' => 'http://localhost:4567',
+      'user_backend_default' => 'yaml',
+      'access_token' => {
         'expiration' => 3600,
-        'signing_key' => 'tests/test_resources/omejdn_test.pem',
-        'jwks_additions' => [
-          'tests/test_resources/omejdn_test.cert'
-        ],
         'algorithm' => 'RS256',
-        'audience' => 'TestServer',
-        'issuer' => 'http://localhost:4567'
       },
       'id_token' => {
         'expiration' => 3600,
-        'signing_key' => 'tests/test_resources/omejdn_test.pem',
-        'jwks_additions' => [
-          'tests/test_resources/omejdn_test.cert'
-        ],
         'algorithm' => 'RS256',
-        'issuer' => 'http://localhost:4567'
       },
-      'user_backend' => ['yaml'],
-      'user_backend_default' => 'yaml',
-      'user_selfservice' => {
-        'enabled' => true,
-        'allow_deletion' => true,
-        'allow_password_change' => true,
-        'editable_attributes' => ['name']
+      'plugins' => {
+        'user_db' => {
+          'yaml' => {
+            'location' => 'config/users_test.yml'
+          }
+        },
+        'api' => {
+          'admin_v1' => nil,
+          'user_selfservice_v1' => {
+            'allow_deletion' => true,
+            'allow_password_change' => true,
+            'editable_attributes' => ['name']
+          }
+        },
+        'claim_mapper' => {
+          'attribute' => nil
+        }
       }
     }
   end
 end
+
+# Backup all Config Files
+TestSetup.backup

@@ -25,7 +25,7 @@ class JWKSTest < Test::Unit::TestCase
     assert last_response.ok?
     jwks = JSON.parse last_response.body
     assert_equal 1, jwks.length
-    jwk = jwks['keys'][0]
+    assert jwk = jwks['keys'].select{|k| k[:kid] = 'jexs4cfi5p3NUziLELGwTV7r9gZsLcTBnFp-m4vu0aw'}.first
     assert_equal "RSA", jwk['kty']
     assert_equal "sig", jwk['use']
     assert_equal 2, jwk['x5c'].length

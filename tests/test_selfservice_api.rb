@@ -4,7 +4,7 @@ require 'rack/test'
 require 'webrick/https'
 require_relative 'config_testsetup'
 require_relative '../omejdn'
-require_relative '../lib/token_helper'
+require_relative '../lib/token'
 
 class SelfServiceApiTest < Test::Unit::TestCase
   include Rack::Test::Methods
@@ -17,9 +17,9 @@ class SelfServiceApiTest < Test::Unit::TestCase
     TestSetup.setup
     user = User.find_by_id 'testUser'
     client = Client.find_by_id 'testClient'
-    @write_token   = TokenHelper.build_access_token client, user, ['omejdn:write'], {}, TestSetup.config['host']+"/api"
-    @read_token    = TokenHelper.build_access_token client, user, ['omejdn:read'],  {}, TestSetup.config['host']+"/api"
-    @useless_token = TokenHelper.build_access_token client, user, [],               {}, TestSetup.config['host']+"/api"
+    @write_token   = Token.access_token client, user, ['omejdn:write'], {}, TestSetup.config['front_url']+"/api"
+    @read_token    = Token.access_token client, user, ['omejdn:read'],  {}, TestSetup.config['front_url']+"/api"
+    @useless_token = Token.access_token client, user, [],               {}, TestSetup.config['front_url']+"/api"
   end
 
   def teardown
@@ -48,6 +48,7 @@ class SelfServiceApiTest < Test::Unit::TestCase
     assert last_response.ok?
     expected = TestSetup.users[0]
     expected.delete('password')
+    expected.delete('backend')
     assert_equal expected, JSON.parse(last_response.body)
   end
 

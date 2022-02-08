@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require_relative './config'
-require_relative './token_helper'
 require 'json'
 require 'set'
 require 'securerandom'
@@ -31,14 +30,14 @@ class OAuthHelper
     client = nil
     if params[:client_assertion_type] # RFC 7521, Section 4.2
       if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
-        _, client = Client.decode_jwt params[:client_assertion]
+        _, client = Client.decode_jwt params[:client_assertion], true
       end
-      raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
+      raise OAuthError.new 'invalid_client', 'Client assertion not accepted' if client.nil?
 
       return client
     end
 
-    raise OAuthError.new 'invalid_client', 'Client unknown' if authenticate
+    raise OAuthError.new 'invalid_client', 'Client not authenticated' if authenticate
 
     client = Client.find_by_id params[:client_id]
     raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
@@ -66,7 +65,7 @@ class OAuthHelper
     # On the other hand, we require https!
     jwt, params = nil
     if url_params.key? :request_uri
-      raise OAuthError, 'invalid_request' if url_params.key? :request
+      raise OAuthError.new 'invalid_request', 'request{,_uri}, pick one.' if url_params.key? :request
 
       if url_params[:request_uri].start_with? 'urn:ietf:params:oauth:request_uri:'
         # Retrieve token from Pushed Authorization Request Cache
@@ -82,7 +81,7 @@ class OAuthHelper
     end
 
     if jwt
-      params, = Client.decode_jwt jwt, client
+      params, = Client.decode_jwt jwt, false, client
       raise OAuthError, 'invalid_client' unless params['client_id'] == url_params[:client_id]
     end
 
@@ -98,7 +97,7 @@ class OAuthHelper
     response = {}
     response['access_token'] = access_token
     response['id_token'] = id_token unless id_token.nil?
-    response['expires_in'] = Config.base_config.dig('token', 'expiration')
+    response['expires_in'] = Config.base_config.dig('access_token', 'expiration')
     response['token_type'] = 'bearer'
     response['scope'] = scopes.join ' '
     JSON.generate response
@@ -106,9 +105,46 @@ class OAuthHelper
 
   def self.userinfo(client, user, token)
     req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
-    userinfo = TokenHelper.map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
+    userinfo = map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
     userinfo['sub'] = user.username
     userinfo
+  end
+
+  def self.add_jwt_claim(jwt_body, key, value)
+    # Address is handled differently. For reasons...
+    if %w[street_address postal_code locality region country].include?(key)
+      jwt_body['address'] ||= {}
+      jwt_body['address'][key] = value
+      return
+    end
+    jwt_body[key] = value
+  end
+
+  def self.map_claims_to_userinfo(attrs, claims, client, scopes)
+    new_payload = {}
+    claims ||= {}
+
+    # Add attribute if it was requested indirectly through OIDC
+    # scope and scope is allowed for client.
+    allowed_scoped_attrs = client.allowed_scoped_attributes(scopes)
+    attrs.select { |a| allowed_scoped_attrs.include?(a['key']) }
+         .each { |a| add_jwt_claim(new_payload, a['key'], a['value']) }
+    return new_payload if claims.empty?
+
+    # Add attribute if it was specifically requested through OIDC
+    # claims parameter.
+    attrs.each do |attr|
+      next unless (name = claims[attr['key']])
+
+      if    attr['dynamic'] && name['value']
+        add_jwt_claim(new_payload, attr['key'], name['value'])
+      elsif attr['dynamic'] && name['values']
+        add_jwt_claim(new_payload, attr['key'], name.dig('values', 0))
+      elsif attr['value']
+        add_jwt_claim(new_payload, attr['key'], attr['value'])
+      end
+    end
+    new_payload
   end
 
   def self.supported_scopes
@@ -127,28 +163,6 @@ class OAuthHelper
     digest << code_verifier
     expected_challenge = digest.base64digest.gsub('+', '-').gsub('/', '_').gsub('=', '')
     raise OAuthError.new 'invalid_request', 'Code verifier mismatch' unless expected_challenge == code_challenge
-  end
-
-  def self.generate_jwks
-    jwks = JSON::JWK::Set.new
-    %w[token id_token].each do |type|
-      # Load the signing key
-      key_material = [Server.load_skey(type)]
-      key_material += Server.load_pkey(type)
-      key_material.each do |k|
-        # Internally, this creates a KID following RFC 7638 using SHA256
-        # Only works with RSA, EC-Keys, and symmetric keys though.
-        # Further key types will require upstream changes
-        jwk = JSON::JWK.new(k['pk'])
-        jwk[:use] = 'sig'
-        if k['certs']
-          jwk[:x5c] = Server.gen_x5c(k['certs'])
-          jwk[:x5t] = Server.gen_x5t(k['certs'])
-        end
-        jwks << jwk
-      end
-    end
-    { keys: jwks.uniq { |k| k['kid'] } }
   end
 
   def self.configuration_metadata_oidc_discovery(base_config, _host, path)
@@ -178,7 +192,7 @@ class OAuthHelper
 
   def self.configuration_metadata_rfc8414(base_config, host, path)
     metadata = {}
-    metadata['issuer'] = base_config.dig('token', 'issuer')
+    metadata['issuer'] = base_config['issuer']
     metadata['authorization_endpoint'] = "#{path}/authorize"
     metadata['token_endpoint'] = "#{path}/token"
     metadata['jwks_uri'] = "#{host}/.well-known/jwks.json"
@@ -243,9 +257,8 @@ class OAuthHelper
   def self.sign_metadata(metadata)
     to_sign = metadata.merge
     to_sign['iss'] = to_sign['issuer']
-    signing_material = Server.load_skey('token')
-    kid = JSON::JWK.new(signing_material['pk'])[:kid]
-    JWT.encode to_sign, signing_material['sk'], 'RS256', { kid: kid }
+    key_pair = Keys.load_skey
+    JWT.encode to_sign, key_pair['sk'], 'RS256', { kid: key_pair['kid'] }
   end
 
   def self.adapt_requested_claims(req_claims)
