@@ -18,9 +18,12 @@ before '/api/v1/user*' do
   user_may_read  = !(scopes & ['omejdn:admin', 'omejdn:write', 'omejdn:read']).empty?
   halt 403 unless request.env['REQUEST_METHOD'] == 'GET' ? user_may_read : user_may_write
   @user = User.find_by_id token['sub']
-  @selfservice_config = Config.base_config.dig('plugins', 'api', 'user_selfservice_v1')
+  @selfservice_config = Config.base_config.dig('plugins', 'api', 'user_selfservice_v1') || {
+    'editable_attributes' => [],
+    'allow_deletion' => false,
+    'allow_password_change' => false
+  }
   halt 401 if @user.nil?
-  halt 403 if @selfservice_config.nil?
 rescue StandardError => e
   p e if debug
   halt 401
