@@ -51,7 +51,7 @@ class Token
       'exp' => now + base_config.dig('id_token', 'expiration'),
       'auth_time' => user.auth_time,
       'nonce' => nonce
-    }.compact!
+    }.compact
     PluginLoader.load_plugins('claim_mapper').each do |mapper|
       token.merge!(mapper.map_to_id_token(client, user, scopes, claims['id_token']))
     end
