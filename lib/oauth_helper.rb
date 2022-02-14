@@ -24,25 +24,26 @@ end
 
 # Helper functions for OAuth related tasks
 class OAuthHelper
-  # Identifies a client from the request parameters and optionally enforces authentication
+  # Identifies a client from the request parameters and enforces authentication
   # This function may not assume the existence of any parameter that could be within a request object
-  def self.identify_client(params, authenticate: true)
-    client = nil
-    if params[:client_assertion_type] # RFC 7521, Section 4.2
-      if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
-        _, client = Client.decode_jwt params[:client_assertion], true
-      end
-      raise OAuthError.new 'invalid_client', 'Client assertion not accepted' if client.nil?
-
-      return client
+  def self.authenticate_client(params)
+    # Determine the client
+    client_id = params[:client_id]
+    if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
+      client_id = JWT.decode(params[:client_assertion], nil, false).dig(0, 'sub') # Decode without verify
     end
-
-    raise OAuthError.new 'invalid_client', 'Client not authenticated' if authenticate
-
-    client = Client.find_by_id params[:client_id]
+    client = Client.find_by_id client_id
     raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
 
-    client
+    # Apply the correct authentication method
+    case client.metadata['token_endpoint_auth_method']
+    when 'private_key_jwt'
+      raise OAuthError.new 'invalid_client', 'No Client Assertion Found' unless params[:client_assertion]
+      return client if client.decode_jwt params[:client_assertion], true
+    when 'none'
+      return client
+    end
+    raise OAuthError.new 'invalid_client', 'auth_method not supported'
   end
 
   def self.retrieve_request_uri(request_uri, client)
@@ -81,7 +82,7 @@ class OAuthHelper
     end
 
     if jwt
-      params, = Client.decode_jwt jwt, false, client
+      params = client.decode_jwt jwt, false
       raise OAuthError, 'invalid_client' unless params['client_id'] == url_params[:client_id]
     end
 

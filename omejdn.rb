@@ -163,10 +163,11 @@ end
 # Handle token request
 post '/token' do
   resources = [*params[:resource]]
+  client = OAuthHelper.authenticate_client params
+  raise OAuthError.new 'invalid_request', 'Grant type not allowed' unless client.grant_type_allowed? params[:grant_type]
 
   case params[:grant_type]
   when 'client_credentials'
-    client = OAuthHelper.identify_client params, authenticate: true
     scopes = client.filter_scopes(params[:scope]&.split) || []
     resources = [Config.base_config['default_audience']] if resources.empty?
     req_claims = JSON.parse(params[:claims] || '{}')
@@ -176,7 +177,6 @@ post '/token' do
     raise OAuthError.new 'invalid_code', 'The Authorization code was not recognized' if cache.nil?
 
     OAuthHelper.validate_pkce(cache[:pkce], params[:code_verifier], cache[:pkce_method]) unless cache[:pkce].nil?
-    client = OAuthHelper.identify_client params, authenticate: false
     scopes = client.filter_scopes(params[:scope]&.split)
     scopes = cache[:scopes] || [] if scopes.empty?
     resources = cache[:resources] if resources.empty?
@@ -264,7 +264,7 @@ end
 post '/par' do
   raise OAuthError.new 'invalid_request', 'Request URI not supported here' if params.key(:request_uri)
 
-  client = OAuthHelper.identify_client params, authenticate: false
+  client = OAuthHelper.authenticate_client params
   OAuthHelper.prepare_params params, client
 
   uri = "urn:ietf:params:oauth:request_uri:#{SecureRandom.uuid}"
@@ -279,7 +279,9 @@ end
 get '/authorize' do
   # Initial sanity checks and request object resolution
   session[:redirect_uri_verified] = nil # Use this for redirection in error cases
-  client = OAuthHelper.identify_client params, authenticate: false
+  client = Client.find_by_id params[:client_id]
+  raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
+
   # Used for error messages, might be overwritten by request objects
   session[:redirect_uri_verified] = client.verify_redirect_uri params[:redirect_uri], true if params[:redirect_uri]
   OAuthHelper.prepare_params params, client

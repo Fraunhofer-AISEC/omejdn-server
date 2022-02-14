@@ -1,26 +1,32 @@
 ---
 - client_id: exampleClient
+
+  # Opaque or to be shown
   client_name: This is an example Client name
   client_uri: http://localhost:4200/about
   logo_uri: http://localhost:4200/logo.png
   tos_uri: http://localhost:4200/tos
   policy_uri: http://localhost:4200/privacy
-  jwks_uri: http://localhost:4200/jwks.json
   software_id: IDK
   software_version: "1.2.3"
-  redirect_uris:
-  - http://localhost:4200/cb
-  token_endpoint_auth_method: private_key_jwt
+  contacts:
+  - someperson@localhost:4200
+
+  # TODO
+  jwks_uri: http://localhost:4200/jwks.json
+  response_types:
+  - code
+
+  # Done
   grant_types:
   - authorization_code
   - client_credentials
-  response_types:
-  - code
+  redirect_uris:
+  - http://localhost:4200/cb
+  token_endpoint_auth_method: private_key_jwt
   scope:
   - omejdn:write
   - openid
-  contacts:
-  - someperson@localhost:4200
   resource:
   - http://example.org
   attributes: []
@@ -32,3 +38,10 @@
   scope:
   - profile
   - openid
+
+- client_id: idsClient
+  grant_types: client_credentials
+  token_endpoint_auth_method: private_key_jwt
+  scope: idsc:IDS_CONNECTOR_ATTRIBUTES_ALL
+  attributes:
+  - key: 

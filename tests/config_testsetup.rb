@@ -65,21 +65,25 @@ class TestSetup
 
   def self.clients
     [{
-      'client_id' => 'testClient',
+      'client_id' => 'confidentialClient',
       'client_name' => 'omejdn admin ui',
       'scope' => ['omejdn:write', 'openid', 'email'],
       'redirect_uris' => 'http://localhost:4200',
+      'token_endpoint_auth_method' => 'private_key_jwt',
+      'grant_types' => ['authorization_code','client_credentials'],
       'attributes' => []
-    },
-     {
-       'client_id' => 'testClient2',
-       'client_name' => 'omejdn admin ui',
-       'scope' => ['omejdn:write'],
-       'redirect_uris' => 'http://localhost:4200',
-       'attributes' => [],
-       'resource' => ['http://example.org','http://localhost:4567/api']
+     },{
+      'client_id' => 'publicClient',
+      'token_endpoint_auth_method' => 'none',
+      'grant_types' => ['authorization_code','client_credentials'],
+      'scope' => ['omejdn:write'],
+      'redirect_uris' => 'http://localhost:4200',
+      'attributes' => [],
+      'resource' => ['http://example.org','http://localhost:4567/api']
      },{
       'client_id' => 'dynamic_claims',
+      'token_endpoint_auth_method' => 'none',
+      'grant_types' => ['authorization_code','client_credentials'],
       'client_name' => 'omejdn admin ui',
       'scope' => ['omejdn:write'],
       'redirect_uris' => 'http://localhost:4200',

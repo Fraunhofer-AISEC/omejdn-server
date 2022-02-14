@@ -43,22 +43,17 @@ class Client
     client
   end
 
-  # Decodes a JWT and optionally finds the issuing client
-  def self.decode_jwt(jwt, verify_aud, client = nil)
-    jwt_dec, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
-
-    raise 'Not self-issued' if jwt['sub'] && jwt_dec['sub'] != jwt_dec['iss']
-    raise 'Algorithm unsupported' unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
-
-    client_id = jwt_dec['iss'] || jwt_dec['sub'] || jwt_dec['client_id']
-    client ||= find_by_id client_id
-
-    raise 'Client does not exist' if client.nil?
-
+  # Decodes a JWT
+  def decode_jwt(jwt, verify_aud)
+    _, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
     aud = Config.base_config['accept_audience']
-    jwt_dec, = JWT.decode jwt, client.certificate&.public_key, true,
+    jwt_dec, = JWT.decode jwt, certificate&.public_key, true,
                           { nbf_leeway: 30, aud: aud, verify_aud: verify_aud, algorithm: jwt_hdr['alg'] }
-    [jwt_dec, client]
+
+    raise 'Not self-issued' if jwt_dec['sub'] && jwt_dec['sub'] != jwt_dec['iss']
+    raise 'Wrong Client ID in JWT' if jwt_dec['sub'] && jwt_dec['sub'] != @client_id
+
+    jwt_dec
   rescue StandardError => e
     puts "Error decoding JWT #{jwt}: #{e}"
     raise OAuthError.new 'invalid_client', "Error decoding JWT: #{e}"
@@ -71,11 +66,15 @@ class Client
   end
 
   def filter_scopes(scopes)
-    (scopes || []) & @metadata['scope']
+    (scopes || []) & [*@metadata['scope']]
   end
 
   def allowed_scoped_attributes(scopes)
     filter_scopes(scopes).map { |s| Config.scope_mapping_config[s] }.compact.flatten.uniq
+  end
+
+  def grant_type_allowed?(grant_type)
+    [*(@metadata['grant_types'] || ['authorization_code'])].include? grant_type
   end
 
   def resources_allowed?(resources)
