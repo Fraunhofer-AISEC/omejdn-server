@@ -44,7 +44,7 @@ class Token
     now = Time.new.to_i
     token = {
       'aud' => client.client_id,
-      'iss' => base_config.dig('id_token', 'issuer'),
+      'iss' => base_config['issuer'],
       'sub' => user.username,
       'nbf' => now,
       'iat' => now,
