@@ -2,7 +2,7 @@
 <center>
 %div
   %img{:src => "img/logo.jpg", :class => "logo"}
-%h1 Authorization requested by #{locals[:client].name}.
+%h1 Authorization requested by #{locals[:client].metadata['client_name'] || locals[:client].metadata['client_id']}.
 %div
   %span Currently logged in as 
   %b #{locals[:user].username}

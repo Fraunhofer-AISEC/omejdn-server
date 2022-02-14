@@ -1,9 +1,8 @@
 # frozen_string_literal: true
 
-# OAuth client helper class
+# OAuth Client
 class Client
-  attr_accessor :client_id, :redirect_uri, :name,
-                :allowed_scopes, :attributes, :allowed_resources, :request_uri
+  attr_accessor :client_id, :metadata, :attributes
 
   def self.find_by_id(client_id)
     load_clients.each do |client|
@@ -13,26 +12,23 @@ class Client
   end
 
   def apply_values(ccnf)
-    @client_id = ccnf['client_id']
-    @redirect_uri = ccnf['redirect_uri']
-    @request_uri = ccnf['request_uri']
-    @name = ccnf['name']
-    @attributes = ccnf['attributes']
-    @allowed_scopes = ccnf['allowed_scopes']
-    @allowed_resources = ccnf['allowed_resources']
+    @client_id = ccnf.delete('client_id')
+    @attributes = ccnf.delete('attributes') || []
+    @metadata = ccnf
   end
 
   def self.load_clients
     needs_save = false
     clients = Config.client_config.map do |ccnf|
+      import = ccnf.delete('import_certfile')
       client = Client.new
       client.apply_values(ccnf)
-      if ccnf['import_certfile']
+      if import
         begin
-          client.certificate = OpenSSL::X509::Certificate.new File.read ccnf['import_certfile']
+          client.certificate = OpenSSL::X509::Certificate.new File.read import
           needs_save = true
         rescue StandardError => e
-          p "Unable to load key ``#{ccnf['import_certfile']}'': #{e}"
+          p "Unable to load key ``#{import}'': #{e}"
         end
       end
       client
@@ -69,19 +65,13 @@ class Client
   end
 
   def to_dict
-    {
-      'client_id' => @client_id,
-      'name' => @name,
-      'redirect_uri' => @redirect_uri,
-      'request_uri' => @request_uri,
-      'allowed_scopes' => @allowed_scopes,
-      'allowed_resources' => @allowed_resources,
-      'attributes' => @attributes
-    }.compact
+    result = { 'client_id' => @client_id }.merge(@metadata)
+    result['attributes'] = @attributes
+    result.compact
   end
 
   def filter_scopes(scopes)
-    (scopes || []) & allowed_scopes
+    (scopes || []) & @metadata['scope']
   end
 
   def allowed_scoped_attributes(scopes)
@@ -89,20 +79,20 @@ class Client
   end
 
   def resources_allowed?(resources)
-    @allowed_resources.nil? || (resources - @allowed_resources).empty?
+    @metadata['resource'].nil? || (resources - [*@metadata['resource']]).empty?
   end
 
   def request_uri_allowed?(uri)
-    [*@request_uri].include? uri
+    [*@metadata['request_uris']].include? uri
   end
 
   # This function ensures a URI is allowed to be used by a client
   def verify_redirect_uri(uri, require_existence)
-    raise OAuthError, 'invalid_request' if !uri && (require_existence || [*@redirect_uri].length != 1)
+    raise OAuthError, 'invalid_request' if !uri && (require_existence || [*@metadata['redirect_uris']].length != 1)
 
-    uri ||= [*@redirect_uri][0]
+    uri ||= [*@metadata['redirect_uris']][0]
     escaped_redir = CGI.unescape(uri)&.gsub('%20', '+')
-    raise OAuthError, 'invalid_request' unless ([*@redirect_uri] + ['localhost']).include? escaped_redir
+    raise OAuthError, 'invalid_request' unless ([*@metadata['redirect_uris']] + ['localhost']).include? escaped_redir
 
     uri
   end

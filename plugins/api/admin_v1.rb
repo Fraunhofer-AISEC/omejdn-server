@@ -68,18 +68,11 @@ get '/api/v1/config/clients' do
 end
 
 put '/api/v1/config/clients' do
-  clients = []
-  JSON.parse(request.body.read).each do |c|
+  Config.client_config = JSON.parse(request.body.read).map do |c|
     client = Client.new
-    client.client_id = c['client_id']
-    client.name = c['name']
-    client.attributes = c['attributes']
-    client.allowed_scopes = c['allowed_scopes']
-    client.redirect_uri = c['redirect_uri']
-    client.allowed_resources = c['allowed_resources']
-    clients << client
+    client.apply_values(c)
+    client
   end
-  Config.client_config = clients
   halt 204
 end
 
@@ -103,10 +96,8 @@ put '/api/v1/config/clients/:client_id' do
   clients.each do |stored_client|
     next if stored_client.client_id != params['client_id']
 
-    stored_client.name = json['name'] unless json['name'].nil?
-    stored_client.attributes = json['attributes'] unless json['attributes'].nil?
-    stored_client.allowed_scopes = json['allowed_scopes'] unless json['allowed_scopes'].nil?
-    stored_client.redirect_uri = json['redirect_uri'] unless json['redirect_uri'].nil?
+    stored_client.attributes = json.delete('attributes') unless json['attributes'].nil?
+    stored_client.metadata.merge!(json)
     Config.client_config = clients
     halt 204
   end

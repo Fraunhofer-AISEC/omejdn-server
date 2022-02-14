@@ -1,18 +1,34 @@
 ---
-# Clients can be added like this. The client_id must be unique
 - client_id: exampleClient
-  # The client's name
-  name: This is an example Client name
-  # A client may request these scopes for access tokens
-  allowed_scopes:
+  client_name: This is an example Client name
+  client_uri: http://localhost:4200/about
+  logo_uri: http://localhost:4200/logo.png
+  tos_uri: http://localhost:4200/tos
+  policy_uri: http://localhost:4200/privacy
+  jwks_uri: http://localhost:4200/jwks.json
+  software_id: IDK
+  software_version: "1.2.3"
+  redirect_uris:
+  - http://localhost:4200/cb
+  token_endpoint_auth_method: private_key_jwt
+  grant_types:
+  - authorization_code
+  - client_credentials
+  response_types:
+  - code
+  scope:
   - omejdn:write
   - openid
-  # By default, a client may request access to any resource (RFC8707),
-  # Provided it has the required scope.
-  # You may specify allowed resources explicitly here
-  allowed_resources:
+  contacts:
+  - someperson@localhost:4200
+  resource:
   - http://example.org
-  # A redirect URI
-  redirect_uri: http://localhost:4200
-  # Attributes
   attributes: []
+
+- client_id: minimalClient
+  redirect_uris:
+  - http://localhost:4200/cb
+  token_endpoint_auth_method: none
+  scope:
+  - profile
+  - openid

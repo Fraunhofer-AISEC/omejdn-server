@@ -66,23 +66,23 @@ class TestSetup
   def self.clients
     [{
       'client_id' => 'testClient',
-      'name' => 'omejdn admin ui',
-      'allowed_scopes' => ['omejdn:write', 'openid', 'email'],
-      'redirect_uri' => 'http://localhost:4200',
+      'client_name' => 'omejdn admin ui',
+      'scope' => ['omejdn:write', 'openid', 'email'],
+      'redirect_uris' => 'http://localhost:4200',
       'attributes' => []
     },
      {
        'client_id' => 'testClient2',
-       'name' => 'omejdn admin ui',
-       'allowed_scopes' => ['omejdn:write'],
-       'redirect_uri' => 'http://localhost:4200',
+       'client_name' => 'omejdn admin ui',
+       'scope' => ['omejdn:write'],
+       'redirect_uris' => 'http://localhost:4200',
        'attributes' => [],
-       'allowed_resources' => ['http://example.org','http://localhost:4567/api']
+       'resource' => ['http://example.org','http://localhost:4567/api']
      },{
       'client_id' => 'dynamic_claims',
-      'name' => 'omejdn admin ui',
-      'allowed_scopes' => ['omejdn:write'],
-      'redirect_uri' => 'http://localhost:4200',
+      'client_name' => 'omejdn admin ui',
+      'scope' => ['omejdn:write'],
+      'redirect_uris' => 'http://localhost:4200',
       'attributes' => [
         { 'key' => 'dynattribute', 'dynamic' => true }
       ]

@@ -168,7 +168,7 @@ class OAuth2Test < Test::Unit::TestCase
     get  ('/authorize?response_type=code'+
           '&scope='+scopes.join(' ')+
           '&client_id='+client.client_id+
-          '&redirect_uri='+client.redirect_uri+
+          '&redirect_uri='+client.metadata['redirect_uris']+
           '&state=testState'+query_additions), {}, {}
     # p last_response
     good_so_far = last_response.redirect?
@@ -192,7 +192,7 @@ class OAuth2Test < Test::Unit::TestCase
     assert good_so_far if should_work
     # p last_response
     header_hash = CGI.parse(last_response.original_headers['Location'])
-    assert code=header_hash[client.redirect_uri+'?code'].first
+    assert code=header_hash[client.metadata['redirect_uris']+'?code'].first
     # p code
     assert_equal 'testState', header_hash['state'].first
     assert_equal TestSetup.config['issuer'], header_hash['iss'].first
@@ -202,7 +202,7 @@ class OAuth2Test < Test::Unit::TestCase
     '&code='+code+
     '&client_id='+client.client_id+
     '&scope='+scopes.join(' ')+query_additions+
-    '&redirect_uri='+client.redirect_uri
+    '&redirect_uri='+client.metadata['redirect_uris']
     post ('/token?'+query), {}, {}
     good_so_far &= last_response.ok?
     assert good_so_far == should_work
@@ -282,7 +282,7 @@ class OAuth2Test < Test::Unit::TestCase
     payload = {
       'response_type' => 'code',
       'client_id' => @client.client_id,
-      'redirect_uri' => @client.redirect_uri,
+      'redirect_uri' => @client.metadata['redirect_uris'],
       'state' => 'testState',
       'scope' => 'omejdn:write'
     }
@@ -298,7 +298,7 @@ class OAuth2Test < Test::Unit::TestCase
     payload = {
       'response_type' => 'code',
       'client_id' => @client.client_id,
-      'redirect_uri' => @client.redirect_uri,
+      'redirect_uri' => @client.metadata['redirect_uris'],
       'state' => 'testState',
       'scope' => 'omejdn:write'
     }
