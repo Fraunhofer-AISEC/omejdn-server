@@ -163,7 +163,7 @@ end
 # Handle token request
 post '/token' do
   resources = [*params[:resource]]
-  client = OAuthHelper.authenticate_client params
+  client = OAuthHelper.authenticate_client params, env.fetch('HTTP_AUTHORIZATION', '')
   raise OAuthError.new 'invalid_request', 'Grant type not allowed' unless client.grant_type_allowed? params[:grant_type]
 
   case params[:grant_type]
@@ -202,7 +202,13 @@ post '/token' do
   access_token = Token.access_token client, user, scopes, req_claims, resources
   # Delete the authorization code as it is single use
   AuthorizationCache.get.delete(params[:code])
-  halt 200, (OAuthHelper.token_response access_token, scopes, id_token)
+  halt 200, JSON.generate({
+    'access_token' => access_token,
+    'id_token' => id_token,
+    'expires_in' => Config.base_config.dig('access_token', 'expiration'),
+    'token_type' => 'bearer',
+    'scope' => (scopes.join ' ')
+  }.compact)
 rescue OAuthError => e
   halt 400, e.to_s
 end
@@ -264,7 +270,7 @@ end
 post '/par' do
   raise OAuthError.new 'invalid_request', 'Request URI not supported here' if params.key(:request_uri)
 
-  client = OAuthHelper.authenticate_client params
+  client = OAuthHelper.authenticate_client params, env.fetch('HTTP_AUTHORIZATION', '')
   OAuthHelper.prepare_params params, client
 
   uri = "urn:ietf:params:oauth:request_uri:#{SecureRandom.uuid}"
@@ -285,7 +291,7 @@ get '/authorize' do
   # Used for error messages, might be overwritten by request objects
   session[:redirect_uri_verified] = client.verify_redirect_uri params[:redirect_uri], true if params[:redirect_uri]
   OAuthHelper.prepare_params params, client
-  uri = client.verify_redirect_uri params[:redirect_uri], openid?(params[:scope].split) # For real this time
+  uri = client.verify_redirect_uri params[:redirect_uri], openid?((params[:scope] || '').split) # For real this time
   session[:redirect_uri_verified] = uri
   session[:url_params] = params # Save parameters
 
@@ -405,7 +411,7 @@ def issue_code
     cache[:pkce] = url_params[:code_challenge]
     cache[:pkce_method] = url_params[:code_challenge_method]
   end
-  code = OAuthHelper.new_authz_code
+  code = Base64.urlsafe_encode64(rand(2**512).to_s)
   AuthorizationCache.get[code] = cache
   response_params = {
     code: code,
@@ -443,7 +449,10 @@ end
 
 get '/userinfo' do
   headers['Content-Type'] = 'application/json'
-  JSON.generate OAuthHelper.userinfo(@client, @user, @token)
+  req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
+  userinfo = OAuthHelper.map_claims_to_userinfo(@user.attributes, req_claims, @client, @token['scope'].split)
+  userinfo['sub'] = @user.username
+  JSON.generate userinfo
 end
 
 ########## LOGIN/LOGOUT ##################

@@ -7,7 +7,8 @@ require 'securerandom'
 require 'base64'
 require 'digest'
 
-# The OAuth Exception class
+# Represents the error responses to be returned in OAuth Flows
+# See https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#extensions-error
 class OAuthError < RuntimeError
   attr_reader :type, :description
 
@@ -26,8 +27,8 @@ end
 class OAuthHelper
   # Identifies a client from the request parameters and enforces authentication
   # This function may not assume the existence of any parameter that could be within a request object
-  def self.authenticate_client(params)
-    # Determine the client
+  def self.authenticate_client(params, auth_header)
+    # Determine the client, usually from the client_id parameter
     client_id = params[:client_id]
     if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
       client_id = JWT.decode(params[:client_assertion], nil, false).dig(0, 'sub') # Decode without verify
@@ -36,14 +37,24 @@ class OAuthHelper
     raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
 
     # Apply the correct authentication method
-    case client.metadata['token_endpoint_auth_method']
-    when 'private_key_jwt'
-      raise OAuthError.new 'invalid_client', 'No Client Assertion Found' unless params[:client_assertion]
-      return client if client.decode_jwt params[:client_assertion], true
-    when 'none'
-      return client
-    end
-    raise OAuthError.new 'invalid_client', 'auth_method not supported'
+    # See https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method
+    auth_method = client.metadata['token_endpoint_auth_method'] || 'client_secret_basic'
+    access = (case auth_method
+              when 'client_secret_basic'
+                p auth_header
+                auth_header.slice(6..-1) == Base64.encode64("#{client_id}:#{client.metadata['client_secret']}")
+              when 'client_secret_post'
+                params[:client_secret] == client.metadata['client_secret']
+              when 'private_key_jwt'
+                client.decode_jwt params[:client_assertion], true
+              when 'none'
+                true
+              else
+                raise OAuthError.new 'invalid_client', 'auth_method not supported'
+              end)
+    raise OAuthError.new 'invalid_client', 'Client authentication failed' unless access
+
+    client
   end
 
   def self.retrieve_request_uri(request_uri, client)
@@ -94,23 +105,6 @@ class OAuthHelper
     url_params
   end
 
-  def self.token_response(access_token, scopes, id_token)
-    response = {}
-    response['access_token'] = access_token
-    response['id_token'] = id_token unless id_token.nil?
-    response['expires_in'] = Config.base_config.dig('access_token', 'expiration')
-    response['token_type'] = 'bearer'
-    response['scope'] = scopes.join ' '
-    JSON.generate response
-  end
-
-  def self.userinfo(client, user, token)
-    req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
-    userinfo = map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
-    userinfo['sub'] = user.username
-    userinfo
-  end
-
   def self.add_jwt_claim(jwt_body, key, value)
     # Address is handled differently. For reasons...
     if %w[street_address postal_code locality region country].include?(key)
@@ -146,14 +140,6 @@ class OAuthHelper
       end
     end
     new_payload
-  end
-
-  def self.supported_scopes
-    Config.scope_mapping_config.map { |m| m[0] }
-  end
-
-  def self.new_authz_code
-    Base64.urlsafe_encode64(rand(2**512).to_s)
   end
 
   def self.validate_pkce(code_challenge, code_verifier, method)
@@ -198,7 +184,7 @@ class OAuthHelper
     metadata['token_endpoint'] = "#{path}/token"
     metadata['jwks_uri'] = "#{host}/.well-known/jwks.json"
     # metadata["registration_endpoint"] = "#{host}/FIXME"
-    metadata['scopes_supported'] = OAuthHelper.supported_scopes
+    metadata['scopes_supported'] = Config.scope_mapping_config.map { |m| m[0] }
     metadata['response_types_supported'] = ['code']
     metadata['response_modes_supported'] = %w[query fragment form_post]
     metadata['grant_types_supported'] = %w[authorization_code client_credentials]

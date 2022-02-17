@@ -65,15 +65,37 @@ class TestSetup
 
   def self.clients
     [{
-      'client_id' => 'confidentialClient',
-      'client_name' => 'omejdn admin ui',
+      'client_id' => 'client_secret_basic_client',
+      'client_secret' => 'basic_secret',
+      'token_endpoint_auth_method' => 'client_secret_basic',
+      'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write', 'openid', 'email'],
       'redirect_uris' => 'http://localhost:4200',
+      'attributes' => []
+     },{
+      'client_id' => 'client_secret_post_client',
+      'client_secret' => 'post_secret',
+      'token_endpoint_auth_method' => 'client_secret_post',
+      'grant_types' => ['authorization_code','client_credentials'],
+      'scope' => ['omejdn:write', 'openid', 'email'],
+      'redirect_uris' => 'http://localhost:4200',
+      'attributes' => []
+     },{
+      'client_id' => 'private_key_jwt_client',
       'token_endpoint_auth_method' => 'private_key_jwt',
       'grant_types' => ['authorization_code','client_credentials'],
+      'scope' => ['omejdn:write', 'openid', 'email'],
+      'redirect_uris' => 'http://localhost:4200',
       'attributes' => []
      },{
       'client_id' => 'publicClient',
+      'token_endpoint_auth_method' => 'none',
+      'grant_types' => ['authorization_code','client_credentials'],
+      'scope' => ['omejdn:write'],
+      'redirect_uris' => 'http://localhost:4200',
+      'attributes' => []
+     },{
+      'client_id' => 'resourceClient',
       'token_endpoint_auth_method' => 'none',
       'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write'],
