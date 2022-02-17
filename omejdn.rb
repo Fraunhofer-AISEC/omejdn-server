@@ -373,7 +373,6 @@ get '/consent' do
   return haml :authorization_page, locals: {
     user: user,
     client: client,
-    host: Config.base_config['front_url'],
     scopes: session[:scopes],
     scope_description: Config.scope_description_config
   }

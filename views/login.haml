@@ -1,7 +1,6 @@
 %link{:type => "text/css", :rel => "stylesheet", :href => "css/main.css"}
 <center>
-%h1
-  %img{:src => "img/logo.jpg", :class => "logo"}
+%img{:src => "img/logo.jpg", :class => "logo"}
 %div{:hidden => locals[:no_password_login]}
   %h2 Password login:
   %form{:username => "username", :password => "password", :action => "#{locals[:host]}/login", :method => "post"}

@@ -1,24 +1,48 @@
 %link{:type => "text/css", :rel => "stylesheet", :href => "css/main.css"}
-<center>
-%div
-  %img{:src => "img/logo.jpg", :class => "logo"}
-%h1 Authorization requested by #{locals[:client].metadata['client_name'] || locals[:client].metadata['client_id']}.
-%div
+
+%div{ :class => "header"}
   %span Currently logged in as 
   %b #{locals[:user].username}
-  %a{:href => "#{locals[:host]}/logout", :class => "button"} Change...
-%form{:action => "#{locals[:host]}/consent", :method => "post"}
+  %a{:href => "logout", :class => "button"} Change...
+
+<center>
+%h1 Authorization Request
+
+%div{ :class => "logo_block" }
+  %div{ :class => "logo_box" }
+    %img{:src => "img/logo.jpg", :class => "logo"}
+  - if locals[:client].metadata['logo_uri']
+    %b{ :class => "logo_arrow"} ⇒
+    %div{ :class => "logo_box" }
+      %img{:src => "#{locals[:client].metadata['logo_uri']}", :class => "logo"}
+
+%h2
+  - if locals[:client].metadata['client_uri']
+    %a{ :href => locals[:client].metadata['client_uri'] } #{locals[:client].metadata['client_name'] || locals[:client].metadata['client_id']}
+  - else
+    "#{locals[:client].metadata['client_name'] || locals[:client].metadata['client_id']}"
+  is asking for the following Permissions:
+
+%div{:class => "parent"}
+  %ul.scopes
+    - (locals[:scopes]).each do |scope|
+      %li{:hidden => scope == "openid", :class => "scope" }
+        - if !locals[:scope_description][scope].nil?
+          = locals[:scope_description] [scope]
+        - else
+          = scope
+
+- if !(locals[:client].metadata.keys & ['tos_uri','policy_uri']).empty?
+  %div
+    %h4 More information about the requesting party:
+  - if locals[:client].metadata['tos_uri']
+    %a{ :href => locals[:client].metadata['tos_uri']} Terms of Service
+  - if locals[:client].metadata['policy_uri']
+    %a{ :href => locals[:client].metadata['policy_uri']} Privacy Policy
+
+%form{:action => "#", :method => "post"}
   %fieldset
-    %br
-    %h3 Requested scopes:
-    %div{:class => "parent"}
-      %ul.scopes
-        - (locals[:scopes]).each do |scope|
-          %li{:hidden => scope == "openid", :class => "scope" }
-            - if !locals[:scope_description][scope].nil?
-              = locals[:scope_description] [scope]
-            - else
-              = scope
-    %br
+    %h3 If you would like to grant this request, click here:
     %input{:type => "submit", :value => "Authorize", :class => "button"}
+
 </center>
