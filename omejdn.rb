@@ -174,7 +174,7 @@ post '/token' do
     raise OAuthError.new 'invalid_target', "Access denied to: #{resources}" unless client.resources_allowed? resources
   when 'authorization_code'
     cache = AuthorizationCache.get[params[:code]]
-    raise OAuthError.new 'invalid_code', 'The Authorization code was not recognized' if cache.nil?
+    raise OAuthError.new 'invalid_grant', 'The Authorization code was not recognized' if cache.nil?
 
     OAuthHelper.validate_pkce(cache[:pkce], params[:code_verifier], cache[:pkce_method]) unless cache[:pkce].nil?
     scopes = client.filter_scopes(params[:scope]&.split)
@@ -332,7 +332,7 @@ get '/authorize' do
     end
   end
   if params[:max_age] && session[:user] &&
-     (Time.new.to_i - UserSession.get[session[:user]].auth_time) > params[:max_age]
+     (Time.new.to_i - UserSession.get[session[:user]].auth_time) > params[:max_age].to_i
     session[:tasks] << AuthorizationTask::LOGIN
   end
 
@@ -402,7 +402,7 @@ def issue_code
   cache[:resources] = session[:resources]
   cache[:nonce] = url_params[:nonce]
   cache[:redirect_uri] = session[:redirect_uri_verified]
-  cache[:claims] = JSON.parse session.dig(:url_params, 'claims') || '{}'
+  cache[:claims] = JSON.parse url_params.dig('claims') || '{}'
   unless url_params[:code_challenge].nil?
     unless url_params[:code_challenge_method] == 'S256'
       raise OAuthError.new 'invalid_request', 'Transform algorithm not supported'
@@ -449,7 +449,15 @@ end
 
 get '/userinfo' do
   headers['Content-Type'] = 'application/json'
-  req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
+  req_claims = @token.dig('omejdn_reserved', 'userinfo_req_claims')
+  userinfo = OAuthHelper.map_claims_to_userinfo(@user.attributes, req_claims, @client, @token['scope'].split)
+  userinfo['sub'] = @user.username
+  JSON.generate userinfo
+end
+
+post '/userinfo' do
+  headers['Content-Type'] = 'application/json'
+  req_claims = @token.dig('omejdn_reserved', 'userinfo_req_claims')
   userinfo = OAuthHelper.map_claims_to_userinfo(@user.attributes, req_claims, @client, @token['scope'].split)
   userinfo['sub'] = @user.username
   JSON.generate userinfo

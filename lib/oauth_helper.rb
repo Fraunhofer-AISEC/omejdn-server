@@ -28,8 +28,9 @@ class OAuthHelper
   # Identifies a client from the request parameters and enforces authentication
   # This function may not assume the existence of any parameter that could be within a request object
   def self.authenticate_client(params, auth_header)
-    # Determine the client, usually from the client_id parameter
+    # Determine the client, trusting it will use the correct method to tell us
     client_id = params[:client_id]
+    client_id, client_secret = Base64.decode64(auth_header.slice(6..-1)).split(':',2) if auth_header
     if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
       client_id = JWT.decode(params[:client_assertion], nil, false).dig(0, 'sub') # Decode without verify
     end
@@ -107,7 +108,7 @@ class OAuthHelper
 
   def self.add_jwt_claim(jwt_body, key, value)
     # Address is handled differently. For reasons...
-    if %w[street_address postal_code locality region country].include?(key)
+    if %w[street_address postal_code locality region country formatted].include?(key)
       jwt_body['address'] ||= {}
       jwt_body['address'][key] = value
       return
@@ -156,8 +157,8 @@ class OAuthHelper
     metadata = {}
     metadata['userinfo_endpoint'] = "#{path}/userinfo"
     metadata['acr_values_supported'] = []
-    metadata['subject_types_supported'] = 'public'
-    metadata['id_token_signing_alg_values_supported'] = base_config.dig('id_token', 'algorithm')
+    metadata['subject_types_supported'] = ['public']
+    metadata['id_token_signing_alg_values_supported'] = [base_config.dig('id_token', 'algorithm')]
     metadata['id_token_encryption_alg_values_supported'] = ['none']
     metadata['id_token_encryption_enc_values_supported'] = ['none']
     metadata['userinfo_signing_alg_values_supported'] = ['none']
