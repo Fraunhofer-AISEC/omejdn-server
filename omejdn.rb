@@ -402,7 +402,7 @@ def issue_code
   cache[:resources] = session[:resources]
   cache[:nonce] = url_params[:nonce]
   cache[:redirect_uri] = session[:redirect_uri_verified]
-  cache[:claims] = JSON.parse url_params.dig('claims') || '{}'
+  cache[:claims] = JSON.parse url_params['claims'] || '{}'
   unless url_params[:code_challenge].nil?
     unless url_params[:code_challenge_method] == 'S256'
       raise OAuthError.new 'invalid_request', 'Transform algorithm not supported'
