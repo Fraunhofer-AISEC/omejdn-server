@@ -30,7 +30,7 @@ class OAuthHelper
   def self.authenticate_client(params, auth_header)
     # Determine the client, trusting it will use the correct method to tell us
     client_id = params[:client_id]
-    client_id, client_secret = Base64.decode64(auth_header.slice(6..-1)).split(':',2) if auth_header
+    client_id, client_secret = Base64.decode64(auth_header.slice(6..-1)).split(':',2) if auth_header.start_with? 'Basic'
     if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
       client_id = JWT.decode(params[:client_assertion], nil, false).dig(0, 'sub') # Decode without verify
     end
@@ -42,8 +42,7 @@ class OAuthHelper
     auth_method = client.metadata['token_endpoint_auth_method'] || 'client_secret_basic'
     access = (case auth_method
               when 'client_secret_basic'
-                p auth_header
-                auth_header.slice(6..-1) == Base64.encode64("#{client_id}:#{client.metadata['client_secret']}")
+                client_secret == client.metadata['client_secret']
               when 'client_secret_post'
                 params[:client_secret] == client.metadata['client_secret']
               when 'private_key_jwt'
@@ -158,7 +157,7 @@ class OAuthHelper
     metadata['userinfo_endpoint'] = "#{path}/userinfo"
     metadata['acr_values_supported'] = []
     metadata['subject_types_supported'] = ['public']
-    metadata['id_token_signing_alg_values_supported'] = [base_config.dig('id_token', 'algorithm')]
+    metadata['id_token_signing_alg_values_supported'] = [*base_config.dig('id_token', 'algorithm')]
     metadata['id_token_encryption_alg_values_supported'] = ['none']
     metadata['id_token_encryption_enc_values_supported'] = ['none']
     metadata['userinfo_signing_alg_values_supported'] = ['none']
