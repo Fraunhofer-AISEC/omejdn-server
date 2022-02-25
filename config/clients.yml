@@ -32,8 +32,7 @@
   attributes: []
 
 - client_id: minimalClient
-  redirect_uris:
-  - http://localhost:4200/cb
+  redirect_uris: http://localhost:4200/cb
   token_endpoint_auth_method: none
   scope:
   - profile

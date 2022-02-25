@@ -188,7 +188,7 @@ class OAuthHelper
     metadata['response_types_supported'] = ['code']
     metadata['response_modes_supported'] = %w[query fragment form_post]
     metadata['grant_types_supported'] = %w[authorization_code client_credentials]
-    metadata['token_endpoint_auth_methods_supported'] = %w[none private_key_jwt]
+    metadata['token_endpoint_auth_methods_supported'] = %w[none client_secret_basic client_secret_post private_key_jwt]
     metadata['token_endpoint_auth_signing_alg_values_supported'] = %w[RS256 RS512 ES256 ES512]
     metadata['service_documentation'] = 'https://github.com/Fraunhofer-AISEC/omejdn-server/wiki'
     metadata['ui_locales_supported'] = []
