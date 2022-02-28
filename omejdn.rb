@@ -203,11 +203,11 @@ post '/token' do
   # Delete the authorization code as it is single use
   AuthorizationCache.get.delete(params[:code])
   halt 200, JSON.generate({
-    'access_token' => access_token,
-    'id_token' => id_token,
-    'expires_in' => Config.base_config.dig('access_token', 'expiration'),
-    'token_type' => 'bearer',
-    'scope' => (scopes.join ' ')
+    access_token: access_token,
+    id_token: id_token,
+    expires_in: Config.base_config.dig('access_token', 'expiration'),
+    token_type: 'bearer',
+    scope: (scopes.join ' ')
   }.compact)
 rescue OAuthError => e
   halt 400, e.to_s
@@ -252,18 +252,6 @@ def next_task(completed_task = nil)
   # For now, redirect to /login
   p "Undefined task: #{task}. Redirecting to /login"
   redirect to("#{Config.base_config['front_url']}/login")
-end
-
-def handle_auth_error(error)
-  # Try to determine the response_url to send the error to.
-  response_url = session[:redirect_uri_verified]
-  halt 400, error.to_s if response_url.nil?
-  query = []
-  query << "state=#{session.dig(:url_params, :state)}" unless session.dig(:url_params, :state).nil?
-  query << "error=#{error.type}"
-  query << "error_description=#{error.description}"
-  query << "iss=#{Config.base_config['issuer']}"
-  redirect to "#{response_url}?#{query.join '&'}"
 end
 
 # Pushed Authorization Requests
@@ -341,7 +329,7 @@ get '/authorize' do
   session[:tasks].sort!.uniq!
   next_task
 rescue OAuthError => e
-  handle_auth_error e
+  auth_response session[:redirect_uri_verified], session[:url_params], e.to_h
 end
 
 get '/consent' do
@@ -383,7 +371,7 @@ get '/consent' do
     scope_description: Config.scope_description_config
   }
 rescue OAuthError => e
-  handle_auth_error e
+  auth_response session[:redirect_uri_verified], session[:url_params], e.to_h
 end
 
 post '/consent' do
@@ -391,40 +379,38 @@ post '/consent' do
   session[:consent][session.dig(:url_params, :client_id)] = session[:scopes]
   next_task AuthorizationTask::CONSENT
 rescue OAuthError => e
-  handle_auth_error e
+  auth_response session[:redirect_uri_verified], session[:url_params], e.to_h
 end
 
 def issue_code
   url_params = session.delete(:url_params)
-  cache = {}
-  cache[:user] = UserSession.get[session[:user]]
-  cache[:scopes] = session[:scopes]
-  cache[:resources] = session[:resources]
-  cache[:nonce] = url_params[:nonce]
-  cache[:redirect_uri] = session[:redirect_uri_verified]
-  cache[:claims] = JSON.parse url_params['claims'] || '{}'
-  unless url_params[:code_challenge].nil?
-    unless url_params[:code_challenge_method] == 'S256'
-      raise OAuthError.new 'invalid_request', 'Transform algorithm not supported'
-    end
-
-    cache[:pkce] = url_params[:code_challenge]
-    cache[:pkce_method] = url_params[:code_challenge_method]
+  if !url_params[:code_challenge].nil? && url_params[:code_challenge_method] != 'S256'
+    raise OAuthError.new 'invalid_request', 'Transform algorithm not supported'
   end
+
   code = Base64.urlsafe_encode64(rand(2**512).to_s)
-  AuthorizationCache.get[code] = cache
-  response_params = {
-    code: code,
-    state: url_params[:state],
-    iss: Config.base_config['issuer']
+  AuthorizationCache.get[code] = {
+    user: UserSession.get[session[:user]],
+    scopes: session[:scopes],
+    resources: session[:resources],
+    nonce: url_params[:nonce],
+    redirect_uri: session[:redirect_uri_verified],
+    claims: JSON.parse(url_params['claims'] || '{}'),
+    pkce: url_params[:code_challenge],
+    pkce_method: url_params[:code_challenge_method]
   }
-  auth_response session.delete(:redirect_uri_verified), url_params[:response_mode], response_params
+  auth_response session.delete(:redirect_uri_verified), url_params, { code: code }
 end
 
-def auth_response(redirect_uri, response_mode, response_params)
-  case response_mode
+def auth_response(redirect_uri, url_params, response_params)
+  response_params = {
+    iss: Config.base_config['issuer'],
+    state: url_params[:state]
+  }.merge(response_params).compact
+  halt 400, error.to_json if redirect_uri.nil?
+  case url_params[:response_mode]
   when 'form_post'
-    halt 200, (haml :submitted, locals: response_params.merge({ redirect_uri: redirect_uri }))
+    halt 200, (haml :form_post_response, locals: { redirect_uri: redirect_uri, params: response_params })
   when 'fragment'
     redirect to("#{redirect_uri}##{URI.encode_www_form response_params}")
   else # 'query' and unsupported types
@@ -510,7 +496,7 @@ post '/login' do
   session[:user] = nonce
   next_task AuthorizationTask::LOGIN
 rescue OAuthError => e
-  handle_auth_error e
+  auth_response session[:redirect_uri_verified], session[:url_params], e.to_h
 end
 
 # FIXME

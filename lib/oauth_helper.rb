@@ -18,8 +18,12 @@ class OAuthError < RuntimeError
     @description = description
   end
 
+  def to_h
+    { 'error' => @type, 'error_description' => @description }.compact
+  end
+
   def to_s
-    { 'error' => @type, 'error_description' => @description }.to_json
+    to_h.to_json
   end
 end
 

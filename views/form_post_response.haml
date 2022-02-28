@@ -1,0 +1,5 @@
+%body{:onload => 'javascript:document.forms[0].submit()'}
+  %form{:action => "#{locals[:redirect_uri]}", :method => "post"}
+    %fieldset
+      - (locals[:params]).each do |key,value|
+        %input{:type => "hidden", :name => "#{key}", :value => "#{value}"}

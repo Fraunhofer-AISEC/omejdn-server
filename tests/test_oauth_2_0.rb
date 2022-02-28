@@ -211,11 +211,11 @@ class OAuth2Test < Test::Unit::TestCase
     return nil unless last_response.redirect?
 
     # extract code
-    header_hash = CGI.parse(last_response.original_headers['Location'])
-    code=header_hash[client.metadata['redirect_uris']+'?code'].first
+    response_params = URI.decode_www_form(URI(last_response.original_headers['Location']).query).to_h
+    code=response_params['code']
     return nil unless code
-    assert_equal state, header_hash['state'].first
-    assert_equal TestSetup.config['issuer'], header_hash['iss'].first
+    assert_equal state, response_params['state']
+    assert_equal TestSetup.config['issuer'], response_params['iss']
 
     code
   end
