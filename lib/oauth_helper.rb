@@ -188,7 +188,7 @@ class OAuthHelper
     metadata['issuer'] = base_config['issuer']
     metadata['authorization_endpoint'] = "#{path}/authorize"
     metadata['token_endpoint'] = "#{path}/token"
-    metadata['jwks_uri'] = "#{host}/.well-known/jwks.json"
+    metadata['jwks_uri'] = "#{path}/jwks.json"
     # metadata["registration_endpoint"] = "#{host}/FIXME"
     metadata['scopes_supported'] = Config.scope_mapping_config.map { |m| m[0] }
     metadata['response_types_supported'] = ['code']

@@ -547,14 +547,10 @@ end
 
 ########## WELL-KNOWN ENDPOINTS ##################
 
-before '/.well-known*' do
+before '/(.well-known*|jwks.json)' do
   headers['Content-Type'] = 'application/json'
   headers['Cache-Control'] = "public, max-age=#{60 * 60 * 24}, must-revalidate"
   headers.delete('Pragma')
-end
-
-get '/.well-known/jwks.json' do
-  Keys.generate_jwks.to_json
 end
 
 get '/.well-known/(oauth-authorization-server|openid-configuration)' do
@@ -562,35 +558,26 @@ get '/.well-known/(oauth-authorization-server|openid-configuration)' do
 end
 
 get '/.well-known/webfinger' do
-  halt 400 if params[:resource].nil?
-
-  res = CGI.unescape(params[:resource].gsub('%20', '+'))
+  res = CGI.unescape((params[:resource] || '').gsub('%20', '+'))
   halt 400 unless res.start_with? 'acct:'
+  halt 404 if Config.webfinger_config.filter { |h| res.end_with? h }.empty?
+  halt 200, JSON.generate({
+                            subject: res,
+                            properties: {},
+                            links: [{
+                              rel: 'http://openid.net/specs/connect/1.0/issuer',
+                              href: Config.base_config['issuer']
+                            }]
+                          })
+end
 
-  email = res[5..-1]
-  Config.webfinger_config.each do |wfhost, _|
-    next unless email.end_with? "@#{wfhost}"
-
-    return JSON.generate(
-      {
-        subject: "acct:#{email}",
-        properties: {},
-        links: [
-          {
-            rel: 'http://openid.net/specs/connect/1.0/issuer',
-            href: Config.base_config['issuer']
-          }
-        ]
-      }
-    )
-  end
-  halt 404
+get '/jwks.json' do
+  Keys.generate_jwks.to_json
 end
 
 get '/about' do
   headers['Content-Type'] = 'application/json'
-  return JSON.generate({ 'version' => version,
-                         'license' => OMEJDN_LICENSE })
+  return JSON.generate({ 'version' => version, 'license' => OMEJDN_LICENSE })
 end
 
 # Load all Plugins
