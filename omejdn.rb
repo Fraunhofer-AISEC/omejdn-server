@@ -178,12 +178,12 @@ post '/token' do
 
     OAuthHelper.validate_pkce(cache[:pkce], params[:code_verifier], cache[:pkce_method]) unless cache[:pkce].nil?
     scopes = client.filter_scopes(params[:scope]&.split)
-    scopes = cache[:scopes] || [] if scopes.empty?
-    resources = cache[:resources] if resources.empty?
+    scopes = cache[:scope] || [] if scopes.empty?
+    resources = cache[:resource] if resources.empty?
     req_claims = cache[:claims] || {}
     req_claims = JSON.parse params[:claims] if params[:claims]
-    raise OAuthError.new 'invalid_scope', 'Ungranted scopes requested' unless (scopes - cache[:scopes]).empty?
-    raise OAuthError.new 'invalid_target', "No access to: #{resources}" unless (resources - cache[:resources]).empty?
+    raise OAuthError.new 'invalid_scope', 'Ungranted scopes requested' unless (scopes - cache[:scope]).empty?
+    raise OAuthError.new 'invalid_target', "No access to: #{resources}" unless (resources - cache[:resource]).empty?
     raise OAuthError, 'invalid_request' if cache[:redirect_uri] && cache[:redirect_uri] != params[:redirect_uri]
   else
     raise OAuthError.new 'unsupported_grant_type', "Given: #{params[:grant_type]}"
@@ -202,7 +202,7 @@ post '/token' do
   access_token = Token.access_token client, user, scopes, req_claims, resources
   # Delete the authorization code as it is single use
   AuthorizationCache.get.delete(params[:code])
-  halt 200, JSON.generate({
+  halt 200, { 'Content-Type' => 'application/json' }, JSON.generate({
     access_token: access_token,
     id_token: id_token,
     expires_in: Config.base_config.dig('access_token', 'expiration'),
@@ -230,14 +230,16 @@ end
 # Redirect to the current task.
 # completed_task will be removed from the list
 def next_task(completed_task = nil)
-  session[:tasks] ||= []
-  session[:tasks].delete(completed_task) unless completed_task.nil?
-  task = session[:tasks].first
-  case task
+  auth = AuthorizationCache.get[session[:current_auth]]
+  tasklist = auth[:tasks]
+  tasklist ||= []
+  tasklist.delete(completed_task) unless completed_task.nil?
+  tasklist.sort!.uniq!
+  case tasklist.first
   when AuthorizationTask::ACCOUNT_SELECT
     # FIXME: Provide a way to choose the current account without requiring another login
-    session[:tasks][0] = AuthorizationTask::LOGIN
-    session[:tasks].uniq!
+    tasklist[0] = AuthorizationTask::LOGIN
+    tasklist.uniq!
     next_task
   when AuthorizationTask::LOGIN
     redirect to("#{Config.base_config['front_url']}/login")
@@ -245,8 +247,8 @@ def next_task(completed_task = nil)
     redirect to("#{Config.base_config['front_url']}/consent")
   when AuthorizationTask::ISSUE
     # Only issue code once
-    session[:tasks].delete(task)
-    issue_code
+    tasklist.shift
+    auth_response auth, { code: session[:current_auth] }
   end
   # The user has jumped into some stage without an initial /authorize call
   # For now, redirect to /login
@@ -272,33 +274,51 @@ end
 # Handle authorization request
 get '/authorize' do
   # Initial sanity checks and request object resolution
-  session[:redirect_uri_verified] = nil # Use this for redirection in error cases
   client = Client.find_by_id params[:client_id]
   raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
 
+  # Generate new authorization code and aggregate data about the request
+  # Any inputs to members not starting in req_ are sufficiently sanitized
+  session[:current_auth] = SecureRandom.uuid
+  AuthorizationCache.get[session[:current_auth]] = cache = {
+    client_id: client.client_id, # The requesting client
+    tasks: [] # Tasks the user has to perform
+  }
+
   # Used for error messages, might be overwritten by request objects
-  session[:redirect_uri_verified] = client.verify_redirect_uri params[:redirect_uri], true if params[:redirect_uri]
+  cache[:redirect_uri] = client.verify_redirect_uri params[:redirect_uri], true if params[:redirect_uri]
   OAuthHelper.prepare_params params, client
   uri = client.verify_redirect_uri params[:redirect_uri], openid?((params[:scope] || '').split) # For real this time
-  session[:redirect_uri_verified] = uri
-  session[:url_params] = params # Save parameters
 
-  # We require specifying the scope
-  raise OAuthError.new 'invalid_scope', 'No scopes specified' unless params[:scope]
-
-  unless params[:response_type] == 'code'
-    raise OAuthError.new 'unsupported_response_type', "Given: #{params[:response_type]}"
+  raise OAuthError.new 'invalid_scope', 'No scope specified' unless params[:scope] # We require specifying the scope
+  raise OAuthError.new 'unsupported_response_type', 'Only code supported' unless params[:response_type] == 'code'
+  if !params[:code_challenge].nil? && params[:code_challenge_method] != 'S256'
+    raise OAuthError.new 'invalid_request', 'Transform algorithm not supported'
   end
 
-  # Tasks the user has to perform
-  session[:tasks] = []
+  cache.merge!({
+                 redirect_uri: uri,
+                 nonce: params[:nonce], # The client's OIDC nonce
+                 response_mode: params[:response_mode], # The response mode to use
+                 state: params[:state], # Client state
+                 pkce: params[:code_challenge],
+                 pkce_method: params[:code_challenge_method],
+                 req_scope: params[:scope].split,
+                 req_claims: JSON.parse(params[:claims] || '{}'),
+                 req_resource: params['resource']
+               })
 
   # We first define a minimum set of acceptable tasks
-  # Require Login
-  session[:tasks] << AuthorizationTask::LOGIN if session[:user].nil?
-  # If consent is not yet given to the client, demand it
-  unless (params[:scope].split - (session.dig(:consent, client.client_id) || [])).empty?
-    session[:tasks] << AuthorizationTask::CONSENT
+  if session[:user].nil? # User not yet logged in
+    cache[:tasks] << AuthorizationTask::LOGIN
+    cache[:tasks] << AuthorizationTask::CONSENT
+  else
+    user = UserSession.get[session[:user]]
+    update_auth_scope cache, user, client
+    # If consent is not yet given to the client, demand it
+    unless (cache[:scope] - (session.dig(:consent, client.client_id) || [])).empty?
+      cache[:tasks] << AuthorizationTask::CONSENT
+    end
   end
 
   # The client may request some tasks on his own
@@ -307,48 +327,37 @@ get '/authorize' do
   params[:prompt]&.split&.each do |task|
     case task
     when 'none'
-      raise OAuthError, 'account_selection_required' if session[:tasks].include? AuthorizationTask::ACCOUNT_SELECT
-      raise OAuthError, 'login_required'             if session[:tasks].include? AuthorizationTask::LOGIN
-      raise OAuthError, 'consent_required'           if session[:tasks].include? AuthorizationTask::CONSENT
+      raise OAuthError, 'account_selection_required' if cache[:tasks].include? AuthorizationTask::ACCOUNT_SELECT
+      raise OAuthError, 'login_required'             if cache[:tasks].include? AuthorizationTask::LOGIN
+      raise OAuthError, 'consent_required'           if cache[:tasks].include? AuthorizationTask::CONSENT
       raise OAuthError.new 'invalid_request', "Invalid 'prompt' values: #{params[:prompt]}" if params[:prompt] != 'none'
     when 'login'
-      session[:tasks] << AuthorizationTask::LOGIN
+      cache[:tasks] << AuthorizationTask::LOGIN
     when 'consent'
-      session[:tasks] << AuthorizationTask::CONSENT
+      cache[:tasks] << AuthorizationTask::CONSENT
     when 'select_account'
-      session[:tasks] << AuthorizationTask::ACCOUNT_SELECT
+      cache[:tasks] << AuthorizationTask::ACCOUNT_SELECT
     end
   end
   if params[:max_age] && session[:user] &&
      (Time.new.to_i - UserSession.get[session[:user]].auth_time) > params[:max_age].to_i
-    session[:tasks] << AuthorizationTask::LOGIN
+    cache[:tasks] << AuthorizationTask::LOGIN
   end
 
   # Redirect the user to start the authentication flow
-  session[:tasks] << AuthorizationTask::ISSUE
-  session[:tasks].sort!.uniq!
+  cache[:tasks] << AuthorizationTask::ISSUE
   next_task
 rescue OAuthError => e
-  auth_response session[:redirect_uri_verified], session[:url_params], e.to_h
+  auth_response AuthorizationCache.get[session[:current_auth]], e.to_h
 end
 
-get '/consent' do
-  if session[:user].nil?
-    session[:tasks].unshift AuthorizationTask::LOGIN
-    next_task
-  end
-
-  user = UserSession.get[session[:user]]
-  raise OAuthError.new 'invalid_user', 'User session invalid' if user.nil?
-
-  client = Client.find_by_id session.dig(:url_params, 'client_id')
-  raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
-
+def update_auth_scope(auth, user, client)
+  # Find the right scopes
   scope_mapping = Config.scope_mapping_config
-  session[:scopes] = client.filter_scopes(session.dig(:url_params, :scope).split)
-  session[:scopes].select! do |s|
+  auth[:scope] = client.filter_scopes(auth[:req_scope])
+  auth[:scope].select! do |s|
     p "Checking scope #{s}"
-    if s.start_with? 'openid'
+    if s == 'openid'
       true
     elsif s.include? ':'
       key, value = s.split(':', 2)
@@ -357,64 +366,61 @@ get '/consent' do
       (scope_mapping[s] || []).any? { |claim| user.claim?(claim) }
     end
   end
-  p "Granted scopes: #{session[:scopes]}"
+  p "Granted scopes: #{auth[:scope]}"
   p "The user seems to be #{user.username}" if debug
 
-  session[:resources] = [session.dig(:url_params, 'resource') || Config.base_config['default_audience']].flatten
-  raise OAuthError.new 'invalid_target', 'Resources not granted' unless client.resources_allowed? session[:resources]
+  auth[:claims] = auth[:req_claims]
+  auth[:resource] = [auth[:req_resource] || Config.base_config['default_audience']].flatten
+  raise OAuthError.new 'invalid_target', 'Resources not granted' unless client.resources_allowed? auth[:resource]
+end
+
+get '/consent' do
+  auth = AuthorizationCache.get[session[:current_auth]]
+  if session[:user].nil?
+    auth[:tasks].unshift AuthorizationTask::LOGIN
+    next_task
+  end
+
+  user = UserSession.get[session[:user]]
+  raise OAuthError.new 'invalid_user', 'User session invalid' if user.nil?
+
+  client = Client.find_by_id auth[:client_id]
+  raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
 
   # Seems to be in order
   return haml :authorization_page, locals: {
     user: user,
     client: client,
-    scopes: session[:scopes],
+    scopes: auth[:scope],
     scope_description: Config.scope_description_config
   }
 rescue OAuthError => e
-  auth_response session[:redirect_uri_verified], session[:url_params], e.to_h
+  auth_response AuthorizationCache.get[session[:current_auth]], e.to_h
 end
 
 post '/consent' do
+  auth = AuthorizationCache.get[session[:current_auth]]
   session[:consent] ||= {}
-  session[:consent][session.dig(:url_params, :client_id)] = session[:scopes]
+  session[:consent][auth[:client_id]] = auth[:scope]
+  auth[:user] = UserSession.get[session[:user]]
   next_task AuthorizationTask::CONSENT
 rescue OAuthError => e
-  auth_response session[:redirect_uri_verified], session[:url_params], e.to_h
+  auth_response AuthorizationCache.get[session[:current_auth]], e.to_h
 end
 
-def issue_code
-  url_params = session.delete(:url_params)
-  if !url_params[:code_challenge].nil? && url_params[:code_challenge_method] != 'S256'
-    raise OAuthError.new 'invalid_request', 'Transform algorithm not supported'
-  end
-
-  code = Base64.urlsafe_encode64(rand(2**512).to_s)
-  AuthorizationCache.get[code] = {
-    user: UserSession.get[session[:user]],
-    scopes: session[:scopes],
-    resources: session[:resources],
-    nonce: url_params[:nonce],
-    redirect_uri: session[:redirect_uri_verified],
-    claims: JSON.parse(url_params['claims'] || '{}'),
-    pkce: url_params[:code_challenge],
-    pkce_method: url_params[:code_challenge_method]
-  }
-  auth_response session.delete(:redirect_uri_verified), url_params, { code: code }
-end
-
-def auth_response(redirect_uri, url_params, response_params)
+def auth_response(auth, response_params)
   response_params = {
     iss: Config.base_config['issuer'],
-    state: url_params[:state]
+    state: auth[:state]
   }.merge(response_params).compact
-  halt 400, error.to_json if redirect_uri.nil?
-  case url_params[:response_mode]
+  halt 400, error.to_json if auth[:redirect_uri].nil?
+  case auth[:response_mode]
   when 'form_post'
-    halt 200, (haml :form_post_response, locals: { redirect_uri: redirect_uri, params: response_params })
+    halt 200, (haml :form_post_response, locals: { redirect_uri: auth[:redirect_uri], params: response_params })
   when 'fragment'
-    redirect to("#{redirect_uri}##{URI.encode_www_form response_params}")
+    redirect to("#{auth[:redirect_uri]}##{URI.encode_www_form response_params}")
   else # 'query' and unsupported types
-    redirect to("#{redirect_uri}?#{URI.encode_www_form response_params}")
+    redirect to("#{auth[:redirect_uri]}?#{URI.encode_www_form response_params}")
   end
 end
 
@@ -490,13 +496,14 @@ post '/login' do
   unless user&.verify_password(params[:password])
     redirect to("#{Config.base_config['front_url']}/login?error=\"Credentials incorrect\"")
   end
-  nonce = rand(2**512)
   user.auth_time = Time.new.to_i
-  UserSession.get[nonce] = user
-  session[:user] = nonce
+  session[:user] = SecureRandom.uuid
+  UserSession.get[session[:user]] = user
+  auth = AuthorizationCache.get[session[:current_auth]]
+  update_auth_scope auth, user, (Client.find_by_id auth[:client_id])
   next_task AuthorizationTask::LOGIN
 rescue OAuthError => e
-  auth_response session[:redirect_uri_verified], session[:url_params], e.to_h
+  auth_response AuthorizationCache.get[session[:current_auth]], e.to_h
 end
 
 # FIXME
@@ -530,10 +537,11 @@ get '/oauth_cb' do
   end
   return 'Internal Error' if user.username.nil?
 
-  nonce = rand(2**512)
   user.auth_time = Time.new.to_i
-  UserSession.get[nonce] = user
-  session[:user] = nonce
+  session[:user] = SecureRandom.uuid
+  UserSession.get[session[:user]] = user
+  auth = AuthorizationCache.get[session[:current_auth]]
+  update_auth_scope auth, user, (Client.find_by_id auth[:client_id])
   next_task AuthorizationTask::LOGIN
 end
 

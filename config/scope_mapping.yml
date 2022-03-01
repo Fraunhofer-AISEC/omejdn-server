@@ -42,5 +42,3 @@ address:
 phone:
   - phone_number
   - phone_number_verified
-openid:
-  - openid
