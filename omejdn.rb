@@ -316,7 +316,9 @@ get '/authorize' do
     user = UserSession.get[session[:user]]
     update_auth_scope cache, user, client
     # If consent is not yet given to the client, demand it
-    unless (cache[:scope] - (session.dig(:consent, client.client_id) || [])).empty?
+    if (cache[:scope] - (session.dig(:consent, client.client_id) || [])).empty?
+      cache[:user] = user
+    else
       cache[:tasks] << AuthorizationTask::CONSENT
     end
   end
