@@ -26,11 +26,7 @@ jobs:
     - name: Unit tests
       run: |
         gem install --no-document test-unit rack-test webrick
-        bundle exec ruby tests/test_admin_api.rb
-        bundle exec ruby tests/test_selfservice_api.rb
-        bundle exec ruby tests/test_oauth_helper.rb
-        bundle exec ruby tests/test_oauth2.rb
-        bundle exec ruby tests/test_jwks.rb
+        scripts/test_all.sh
     - name: SBOM generation
       run: |
         gem install --no-document cyclonedx-ruby
