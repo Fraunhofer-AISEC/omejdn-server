@@ -413,7 +413,7 @@ def auth_response(auth, response_params)
     iss: Config.base_config['issuer'],
     state: auth[:state]
   }.merge(response_params).compact
-  halt 400, error.to_json if auth[:redirect_uri].nil?
+  halt 400, response_params.to_json if auth[:redirect_uri].nil?
   case auth[:response_mode]
   when 'form_post'
     halt 200, (haml :form_post_response, locals: { redirect_uri: auth[:redirect_uri], params: response_params })
@@ -430,42 +430,50 @@ before '/userinfo' do
   return if request.env['REQUEST_METHOD'] == 'OPTIONS'
 
   jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
-  @token = Token.decode jwt, '/userinfo'
-  @client = Client.find_by_id @token['client_id']
-  @user = User.find_by_id(@token['sub'])
-  halt 401 if @user.nil?
+  token = Token.decode jwt, '/userinfo'
+  client = Client.find_by_id token['client_id']
+  user = User.find_by_id(token['sub'])
+  halt 401 if user.nil?
+  req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
+  @userinfo = OAuthHelper.map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
+  @userinfo['sub'] = user.username
 rescue StandardError => e
   p e if debug
   halt 401
 end
 
 get '/userinfo' do
-  headers['Content-Type'] = 'application/json'
-  req_claims = @token.dig('omejdn_reserved', 'userinfo_req_claims')
-  userinfo = OAuthHelper.map_claims_to_userinfo(@user.attributes, req_claims, @client, @token['scope'].split)
-  userinfo['sub'] = @user.username
-  JSON.generate userinfo
+  halt 200, { 'Content-Type' => 'application/json' }, (JSON.generate @userinfo)
 end
-
 post '/userinfo' do
-  headers['Content-Type'] = 'application/json'
-  req_claims = @token.dig('omejdn_reserved', 'userinfo_req_claims')
-  userinfo = OAuthHelper.map_claims_to_userinfo(@user.attributes, req_claims, @client, @token['scope'].split)
-  userinfo['sub'] = @user.username
-  JSON.generate userinfo
+  halt 200, { 'Content-Type' => 'application/json' }, (JSON.generate @userinfo)
 end
 
 ########## LOGIN/LOGOUT ##################
 
-get '/logout' do
-  session[:user] = nil
-  redirect_uri = params['post_logout_redirect_uri'] || "#{Config.base_config['front_url']}/login"
-  redirect to(redirect_uri)
+# OpenID Connect RP-Initiated Logout 1.0
+before '/logout' do
+  @locals = { state: params[:state] }
+  id_token = Token.decode params[:id_token_hint]
+  client = Client.find_by_id id_token&.dig('aud')
+  uri = params[:post_logout_redirect_uri]
+  @locals[:redirect_uri] = uri if client&.verify_post_logout_redirect_uri uri
+  @locals[:user] = (User.find_by_id id_token&.dig('sub')) || UserSession.get[session[:user]]
+rescue StandardError
+  halt 400
 end
 
+get '/logout' do
+  return haml :logout, locals: @locals
+end
 post '/logout' do
-  session[:user] = nil
-  redirect_uri = params['post_logout_redirect_uri'] || "#{Config.base_config['front_url']}/login"
+  return haml :logout, locals: @locals
+end
+
+post '/logout/exec' do # Needs CORS protection
+  session.delete(:user) # TODO: log out the specified user only
+  redirect_uri = "#{Config.base_config['front_url']}/login"
+  redirect_uri = params[:redirect_uri] + (params[:state] || '') if params[:redirect_uri]
   redirect to(redirect_uri)
 end
 
@@ -554,7 +562,7 @@ before '/(.well-known*|jwks.json)' do
 end
 
 get '/.well-known/(oauth-authorization-server|openid-configuration)' do
-  OAuthHelper.configuration_metadata(Config.base_config['issuer'], Config.base_config['front_url']).to_json
+  OAuthHelper.configuration_metadata.to_json
 end
 
 get '/.well-known/webfinger' do

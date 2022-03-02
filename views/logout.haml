@@ -2,9 +2,11 @@
 <center>
 %div
   %img{:src => "img/logo.jpg", :class => "logo"}
-%form{:action => "#{locals[:host]}/logout", :method => "post"}
+%form{:action => "./logout/exec", :method => "post"}
   %fieldset
-    %h2 User has been successfully logged out
+    %h2 Are you sure you want to log out?
     %br
-    %input{:type => "submit", :value => "Back to website", :class => "button"}
+    - locals.each do |key,value|
+      %input{:type => "hidden", :name => "#{key}", :value => "#{value}"}
+    %input{:type => "submit", :value => "Log me out", :class => "button"}
 </center>

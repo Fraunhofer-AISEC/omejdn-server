@@ -21,7 +21,7 @@ class JWKSTest < Test::Unit::TestCase
   end
 
   def test_jwks
-    get '/.well-known/jwks.json'
+    get '/jwks.json'
     assert last_response.ok?
     jwks = JSON.parse last_response.body
     assert_equal 1, jwks.length

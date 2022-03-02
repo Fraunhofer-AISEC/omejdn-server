@@ -18,9 +18,9 @@
 
 %h2
   - if locals[:client].metadata['client_uri']
-    %a{ :href => locals[:client].metadata['client_uri'] } #{locals[:client].metadata['client_name'] || locals[:client].metadata['client_id']}
+    %a{ :href => locals[:client].metadata['client_uri'] } #{locals[:client].metadata['client_name'] || locals[:client].client_id}
   - else
-    "#{locals[:client].metadata['client_name'] || locals[:client].metadata['client_id']}"
+    "#{locals[:client].metadata['client_name'] || locals[:client].client_id}"
   is asking for the following Permissions:
 
 %div{:class => "parent"}

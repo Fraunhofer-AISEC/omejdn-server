@@ -96,6 +96,12 @@ class Client
     uri
   end
 
+  def verify_post_logout_redirect_uri(uri)
+    uri ||= [*@metadata['redirect_uris']][0]
+    escaped_redir = CGI.unescape(uri)&.gsub('%20', '+')
+    [*@metadata['post_logout_redirect_uris']].include? escaped_redir
+  end
+
   def certificate_file
     "keys/clients/#{Base64.urlsafe_encode64(@client_id)}.cert"
   end

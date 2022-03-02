@@ -84,7 +84,7 @@ class OAuth2Test < Test::Unit::TestCase
     assert_equal "bearer", response["token_type"]
     assert_equal "omejdn:write", response["scope"]
 
-    get '/.well-known/jwks.json'
+    get '/jwks.json'
     assert last_response.ok?
     server_keys = JSON::JWK::Set.new JSON.parse(last_response.body)
     jwt = JWT.decode(response['access_token'],nil,true, {

@@ -158,7 +158,7 @@ class OAuthHelper
     raise OAuthError.new 'invalid_request', 'Code verifier mismatch' unless expected_challenge == code_challenge
   end
 
-  def self.configuration_metadata_oidc_discovery(base_config, _host, path)
+  def self.configuration_metadata_oidc_discovery(base_config, path)
     metadata = {}
     metadata['userinfo_endpoint'] = "#{path}/userinfo"
     metadata['acr_values_supported'] = []
@@ -183,7 +183,7 @@ class OAuthHelper
     metadata
   end
 
-  def self.configuration_metadata_rfc8414(base_config, host, path)
+  def self.configuration_metadata_rfc8414(base_config, path)
     metadata = {}
     metadata['issuer'] = base_config['issuer']
     metadata['authorization_endpoint'] = "#{path}/authorize"
@@ -210,12 +210,13 @@ class OAuthHelper
     metadata
   end
 
-  def self.configuration_metadata(host, path)
+  def self.configuration_metadata
     base_config = Config.base_config
+    path = base_config['front_url']
     metadata = {}
 
     # RFC 8414 (also OpenID Connect Core for the most part)
-    metadata.merge!(configuration_metadata_rfc8414(base_config, host, path))
+    metadata.merge!(configuration_metadata_rfc8414(base_config, path))
 
     # RFC 8628
     # metadata['device_authorization_endpoint'] =
@@ -239,8 +240,11 @@ class OAuthHelper
     # RFC-ietf-oauth-iss-auth-resp-04
     metadata['authorization_response_iss_parameter_supported'] = true
 
+    # OpenID Connect RP-initiated Logout 1.0 - draft 01
+    metadata['end_session_endpoint'] = "#{path}/logout"
+
     # OpenID Connect Discovery 1.0
-    metadata.merge!(configuration_metadata_oidc_discovery(base_config, host, path))
+    metadata.merge!(configuration_metadata_oidc_discovery(base_config, path))
 
     # Signing as per RFC 8414
     metadata['signed_metadata'] = sign_metadata metadata
