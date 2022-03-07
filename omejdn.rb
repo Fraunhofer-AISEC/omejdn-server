@@ -62,7 +62,7 @@ end
 configure do
   # account for environment overrides
   config = Config.base_config
-  apply_env(config, 'issuer',           'https://localhost:4567')
+  apply_env(config, 'issuer',           'http://localhost:4567')
   apply_env(config, 'front_url',        config['issuer'])
   apply_env(config, 'bind_to',          '0.0.0.0:4567')
   apply_env(config, 'allow_origin',     '*')
