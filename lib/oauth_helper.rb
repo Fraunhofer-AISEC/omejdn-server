@@ -48,7 +48,7 @@ class OAuthHelper
     auth_method = client.metadata['token_endpoint_auth_method'] || 'client_secret_basic'
     access = (case auth_method
               when 'client_secret_basic'
-                client_secret == client.metadata['client_secret']
+                client_secret && client_secret == client.metadata['client_secret']
               when 'client_secret_post'
                 params[:client_secret] == client.metadata['client_secret']
               when 'private_key_jwt'
