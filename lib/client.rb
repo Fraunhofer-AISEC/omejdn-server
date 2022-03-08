@@ -102,6 +102,11 @@ class Client
     [*@metadata['post_logout_redirect_uris']].include? escaped_redir
   end
 
+  def claim?(searchkey, searchvalue = nil)
+    attribute = attributes.select { |a| a['key'] == searchkey }.first
+    !attribute.nil? && (searchvalue.nil? || attribute['value'] == searchvalue)
+  end
+
   def certificate_file
     "keys/clients/#{Base64.urlsafe_encode64(@client_id)}.cert"
   end

@@ -71,7 +71,7 @@ class TestSetup
       'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write', 'openid', 'email'],
       'redirect_uris' => 'http://localhost:4200',
-      'attributes' => []
+      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
      },{
       'client_id' => 'client_secret_post_client',
       'client_secret' => 'post_secret',
@@ -79,28 +79,28 @@ class TestSetup
       'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write', 'openid', 'email'],
       'redirect_uris' => 'http://localhost:4200',
-      'attributes' => []
+      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
      },{
       'client_id' => 'private_key_jwt_client',
       'token_endpoint_auth_method' => 'private_key_jwt',
       'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write', 'openid', 'email'],
       'redirect_uris' => 'http://localhost:4200',
-      'attributes' => []
+      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
      },{
       'client_id' => 'publicClient',
       'token_endpoint_auth_method' => 'none',
       'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write'],
       'redirect_uris' => 'http://localhost:4200',
-      'attributes' => []
+      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
      },{
       'client_id' => 'resourceClient',
       'token_endpoint_auth_method' => 'none',
       'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write'],
       'redirect_uris' => 'http://localhost:4200',
-      'attributes' => [],
+      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}],
       'resource' => ['http://example.org','http://localhost:4567/api']
      },{
       'client_id' => 'dynamic_claims',
@@ -110,7 +110,8 @@ class TestSetup
       'scope' => ['omejdn:write'],
       'redirect_uris' => 'http://localhost:4200',
       'attributes' => [
-        { 'key' => 'dynattribute', 'dynamic' => true }
+        { 'key' => 'dynattribute', 'dynamic' => true },
+        {'key'=> 'omejdn', 'value'=> 'write'}
       ]
     }]
   end

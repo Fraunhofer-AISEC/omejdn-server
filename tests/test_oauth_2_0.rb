@@ -102,7 +102,7 @@ class OAuth2Test < Test::Unit::TestCase
     assert response
     at = extract_access_token response
 
-    check_keys ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub'], at
+    check_keys ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub','omejdn'], at
     assert_equal 'omejdn:write', at['scope']
     assert_equal [TestSetup.config.dig('default_audience'), TestSetup.config['front_url']+'/api'], at['aud']
     assert_equal TestSetup.config.dig('issuer'), at['iss']

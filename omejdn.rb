@@ -168,7 +168,7 @@ post '/token' do
 
   case params[:grant_type]
   when 'client_credentials'
-    scopes = client.filter_scopes(params[:scope]&.split) || []
+    scopes = filter_scopes(client, client.filter_scopes(params[:scope]&.split) || [])
     resources = [Config.base_config['default_audience']] if resources.empty?
     req_claims = JSON.parse(params[:claims] || '{}')
     raise OAuthError.new 'invalid_target', "Access denied to: #{resources}" unless client.resources_allowed? resources
@@ -353,21 +353,23 @@ rescue OAuthError => e
   auth_response AuthorizationCache.get[session[:current_auth]], e.to_h
 end
 
-def update_auth_scope(auth, user, client)
-  # Find the right scopes
+def filter_scopes(resource_owner, scopes)
   scope_mapping = Config.scope_mapping_config
-  auth[:scope] = client.filter_scopes(auth[:req_scope])
-  auth[:scope].select! do |s|
-    p "Checking scope #{s}"
+  scopes.select do |s|
     if s == 'openid'
       true
     elsif s.include? ':'
       key, value = s.split(':', 2)
-      user.claim?(key, value)
+      resource_owner.claim?(key, value)
     else
-      (scope_mapping[s] || []).any? { |claim| user.claim?(claim) }
+      (scope_mapping[s] || []).any? { |claim| resource_owner.claim?(claim) }
     end
   end
+end
+
+def update_auth_scope(auth, user, client)
+  # Find the right scopes
+  auth[:scope] = filter_scopes(user, client.filter_scopes(auth[:req_scope]))
   p "Granted scopes: #{auth[:scope]}"
   p "The user seems to be #{user.username}" if debug
 

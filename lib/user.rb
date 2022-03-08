@@ -81,13 +81,7 @@ class User
 
   def claim?(searchkey, searchvalue = nil)
     attribute = attributes.select { |a| a['key'] == searchkey }.first
-    if attribute.nil?
-      false
-    elsif searchvalue.nil?
-      true
-    else
-      attribute['value'] == searchvalue
-    end
+    !attribute.nil? && (searchvalue.nil? || attribute['value'] == searchvalue)
   end
 
   # usernames are unique
