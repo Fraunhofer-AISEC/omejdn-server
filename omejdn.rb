@@ -168,8 +168,8 @@ post '/token' do
 
   case params[:grant_type]
   when 'client_credentials'
-    scopes = filter_scopes(client, client.filter_scopes(params[:scope]&.split) || [])
-    resources = [Config.base_config['default_audience']] if resources.empty?
+    scopes     = filter_scopes(client, client.filter_scopes(params[:scope]&.split) || [])
+    resources  = [Config.base_config['default_audience']] if resources.empty?
     req_claims = JSON.parse(params[:claims] || '{}')
     raise OAuthError.new 'invalid_target', "Access denied to: #{resources}" unless client.resources_allowed? resources
   when 'authorization_code'
@@ -177,12 +177,9 @@ post '/token' do
     raise OAuthError.new 'invalid_grant', 'The Authorization code was not recognized' if cache.nil?
 
     OAuthHelper.validate_pkce(cache[:pkce], params[:code_verifier], cache[:pkce_method]) unless cache[:pkce].nil?
-    scopes = client.filter_scopes(params[:scope]&.split)
-    scopes = cache[:scope] || [] if scopes.empty?
-    resources = cache[:resource] if resources.empty?
-    req_claims = cache[:claims] || {}
-    req_claims = JSON.parse params[:claims] if params[:claims]
-    raise OAuthError.new 'invalid_scope', 'Ungranted scopes requested' unless (scopes - cache[:scope]).empty?
+    scopes     = cache[:scope]    || []
+    resources  = cache[:resource] || [] if resources.empty?
+    req_claims = cache[:claims]   || {}
     raise OAuthError.new 'invalid_target', "No access to: #{resources}" unless (resources - cache[:resource]).empty?
     raise OAuthError, 'invalid_request' if cache[:redirect_uri] && cache[:redirect_uri] != params[:redirect_uri]
   else
@@ -264,9 +261,8 @@ post '/par' do
   OAuthHelper.prepare_params params, client
 
   uri = "urn:ietf:params:oauth:request_uri:#{SecureRandom.uuid}"
-  PARCache.get[uri] = params
-  headers['Content-Type'] = 'application/json'
-  halt 201, { 'request_uri' => uri, 'expires_in' => 60 }.to_json # TODO: Expiration
+  PARCache.get[uri] = params # TODO: Expiration
+  halt 201, { 'Content-Type' => 'application/json' }, { 'request_uri' => uri, 'expires_in' => 60 }.to_json
 rescue OAuthError => e
   halt 400, e.to_s
 end
