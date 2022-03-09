@@ -72,7 +72,6 @@ GEM
       rack-protection (= 2.1.0)
       sinatra (= 2.1.0)
       tilt (~> 2.0)
-    sinatra-cors (1.2.0)
     sqlite3 (1.4.2)
     temple (0.8.2)
     test-unit (3.5.3)
@@ -105,7 +104,6 @@ DEPENDENCIES
   sinatra
   sinatra-activerecord
   sinatra-contrib
-  sinatra-cors
   sqlite3
   test-unit
   thin
