@@ -64,7 +64,6 @@ configure do
   apply_env(config, 'issuer',           'http://localhost:4567')
   apply_env(config, 'front_url',        config['issuer'])
   apply_env(config, 'bind_to',          '0.0.0.0:4567')
-  apply_env(config, 'allow_origin',     '*')
   apply_env(config, 'app_env',          'debug')
   apply_env(config, 'openid',           false)
   apply_env(config, 'default_audience', '')

@@ -50,16 +50,6 @@ An IP address and optional port to bind to.
 
 _Default value: 0.0.0.0/4567_
 
-### CORS Allowed Origins
-
-```
-allow_origin: http://localhost:4200
-```
-
-A value for the Allow Origin Header.
-
-_Default value: '*'_
-
 ### Application Environment
 
 ```
