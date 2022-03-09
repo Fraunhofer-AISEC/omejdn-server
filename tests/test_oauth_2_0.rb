@@ -200,14 +200,14 @@ class OAuth2Test < Test::Unit::TestCase
     }
     get '/login', {}, {}
     return nil unless last_response.ok?
-    post '/login', params.compact, {}
+    post '/login/exec', params.compact, {}
     return nil unless last_response.redirect?
     return nil unless ["http://localhost:4567/consent"].include? last_response.original_headers['Location']
 
     # consent
     get '/consent', {}, {}
     return nil unless last_response.ok?
-    post '/consent', {}, {}
+    post '/consent/exec', {}, {}
     return nil unless last_response.redirect?
 
     # extract code

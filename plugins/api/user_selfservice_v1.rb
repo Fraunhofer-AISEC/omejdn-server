@@ -29,11 +29,11 @@ rescue StandardError => e
   halt 401
 end
 
-get '/api/v1/user' do
+endpoint '/api/v1/user', ['GET'], public_endpoint: true do
   halt 200, { 'username' => @user.username, 'attributes' => @user.attributes }.to_json
 end
 
-put '/api/v1/user' do
+endpoint '/api/v1/user', ['PUT'], public_endpoint: true do
   editable = @selfservice_config['editable_attributes'] || []
   updated_user = User.new
   updated_user.username = @user.username
@@ -45,13 +45,13 @@ put '/api/v1/user' do
   halt 204
 end
 
-delete '/api/v1/user' do
+endpoint '/api/v1/user', ['DELETE'], public_endpoint: true do
   halt 403 unless @selfservice_config['allow_deletion']
   User.delete_user(@user.username)
   halt 204
 end
 
-put '/api/v1/user/password' do
+endpoint '/api/v1/user/password', ['PUT'], public_endpoint: true do
   halt 403 unless @selfservice_config['allow_password_change']
   json = (JSON.parse request.body.read)
   current_password = json['currentPassword']
@@ -64,7 +64,7 @@ put '/api/v1/user/password' do
   halt 204
 end
 
-get '/api/v1/user/provider' do
+endpoint '/api/v1/user/provider', ['GET'], public_endpoint: true do
   # TODO: We probably do not want to send out the entire provider including secrets
   # to any user with API access
   halt 404 if @user.extern.nil?

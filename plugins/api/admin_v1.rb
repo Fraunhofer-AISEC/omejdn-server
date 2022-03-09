@@ -22,24 +22,24 @@ rescue StandardError => e
 end
 
 # Users
-get '/api/v1/config/users' do
+endpoint '/api/v1/config/users', ['GET'], public_endpoint: true do
   halt 200, JSON.generate(User.all_users.map(&:to_dict))
 end
 
-post '/api/v1/config/users' do
+endpoint '/api/v1/config/users', ['POST'], public_endpoint: true do
   json = JSON.parse request.body.read
   user = User.from_dict(json)
   User.add_user(user, json['userBackend'] || Config.base_config['user_backend_default'])
   halt 201
 end
 
-get '/api/v1/config/users/:username' do
+endpoint '/api/v1/config/users/:username', ['GET'], public_endpoint: true do
   user = User.find_by_id params['username']
   halt 404 if user.nil?
   halt 200, user.to_dict.to_json
 end
 
-put '/api/v1/config/users/:username' do
+endpoint '/api/v1/config/users/:username', ['PUT'], public_endpoint: true do
   user = User.find_by_id params['username']
   halt 404 if user.nil?
   updated_user = User.from_dict(JSON.parse(request.body.read))
@@ -48,13 +48,13 @@ put '/api/v1/config/users/:username' do
   halt 204
 end
 
-delete '/api/v1/config/users/:username' do
+endpoint '/api/v1/config/users/:username', ['DELETE'], public_endpoint: true do
   user_found = User.delete_user(params['username'])
   halt 404 unless user_found
   halt 204
 end
 
-put '/api/v1/config/users/:username/password' do
+endpoint '/api/v1/config/users/:username/password', ['PUT'], public_endpoint: true do
   user = User.find_by_id params['username']
   halt 404 if user.nil?
   json = (JSON.parse request.body.read)
@@ -63,11 +63,11 @@ put '/api/v1/config/users/:username/password' do
 end
 
 # Clients
-get '/api/v1/config/clients' do
+endpoint '/api/v1/config/clients', ['GET'], public_endpoint: true do
   JSON.generate Config.client_config
 end
 
-put '/api/v1/config/clients' do
+endpoint '/api/v1/config/clients', ['PUT'], public_endpoint: true do
   Config.client_config = JSON.parse(request.body.read).map do |c|
     client = Client.new
     client.apply_values(c)
@@ -76,7 +76,7 @@ put '/api/v1/config/clients' do
   halt 204
 end
 
-post '/api/v1/config/clients' do
+endpoint '/api/v1/config/clients', ['POST'], public_endpoint: true do
   client = Client.from_dict(JSON.parse(request.body.read))
   clients = Client.load_clients
   clients << client
@@ -84,13 +84,13 @@ post '/api/v1/config/clients' do
   halt 201
 end
 
-get '/api/v1/config/clients/:client_id' do
+endpoint '/api/v1/config/clients/:client_id', ['GET'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
   halt 200, client.to_dict.to_json
 end
 
-put '/api/v1/config/clients/:client_id' do
+endpoint '/api/v1/config/clients/:client_id', ['PUT'], public_endpoint: true do
   json = JSON.parse(request.body.read)
   clients = Client.load_clients
   clients.each do |stored_client|
@@ -104,7 +104,7 @@ put '/api/v1/config/clients/:client_id' do
   halt 404
 end
 
-delete '/api/v1/config/clients/:client_id' do
+endpoint '/api/v1/config/clients/:client_id', ['DELETE'], public_endpoint: true do
   clients = Client.load_clients
   clients.each do |stored_client|
     next unless stored_client.client_id.eql?(params['client_id'])
@@ -117,7 +117,7 @@ delete '/api/v1/config/clients/:client_id' do
 end
 
 # Client Keys
-get '/api/v1/config/clients/:client_id/keys' do
+endpoint '/api/v1/config/clients/:client_id/keys', ['GET'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
   certificate = client.certificate
@@ -125,21 +125,21 @@ get '/api/v1/config/clients/:client_id/keys' do
   halt 200, JSON.generate({ 'certificate' => client.certificate.to_s })
 end
 
-put '/api/v1/config/clients/:client_id/keys' do
+endpoint '/api/v1/config/clients/:client_id/keys', ['PUT'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
   client.certificate = JSON.parse(request.body.read)['certificate']
   halt 204
 end
 
-post '/api/v1/config/clients/:client_id/keys' do
+endpoint '/api/v1/config/clients/:client_id/keys', ['POST'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
   client.certificate = JSON.parse(request.body.read)['certificate']
   halt 201
 end
 
-delete '/api/v1/config/clients/:client_id/keys' do
+endpoint '/api/v1/config/clients/:client_id/keys', ['DELETE'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
   client.certificate = nil
@@ -147,20 +147,20 @@ delete '/api/v1/config/clients/:client_id/keys' do
 end
 
 # Config files
-get '/api/v1/config/omejdn' do
+endpoint '/api/v1/config/omejdn', ['GET'], public_endpoint: true do
   halt 200, JSON.generate(Config.base_config)
 end
 
-put '/api/v1/config/omejdn' do
+endpoint '/api/v1/config/omejdn', ['PUT'], public_endpoint: true do
   Config.base_config = JSON.parse request.body.read
   halt 204
 end
 
-get '/api/v1/config/user_backend' do
+endpoint '/api/v1/config/user_backend', ['GET'], public_endpoint: true do
   halt 200, JSON.generate(Config.base_config.dig('plugins', 'user_db') || {})
 end
 
-put '/api/v1/config/user_backend' do
+endpoint '/api/v1/config/user_backend', ['PUT'], public_endpoint: true do
   config = Config.base_config
   config['plugins'] ||= {}
   config['plugins']['user_db'] = JSON.parse request.body.read
@@ -168,25 +168,25 @@ put '/api/v1/config/user_backend' do
   halt 204
 end
 
-get '/api/v1/config/webfinger' do
+endpoint '/api/v1/config/webfinger', ['GET'], public_endpoint: true do
   halt 200, JSON.generate(Config.webfinger_config)
 end
 
-put '/api/v1/config/webfinger' do
+endpoint '/api/v1/config/webfinger', ['PUT'], public_endpoint: true do
   Config.webfinger_config = JSON.parse request.body.read
   halt 204
 end
 
-get '/api/v1/config/oauth_providers' do
+endpoint '/api/v1/config/oauth_providers', ['GET'], public_endpoint: true do
   halt 200, JSON.generate(Config.oauth_provider_config)
 end
 
-put '/api/v1/config/oauth_providers' do
+endpoint '/api/v1/config/oauth_providers', ['PUT'], public_endpoint: true do
   Config.oauth_provider_config = JSON.parse request.body.read
   halt 204
 end
 
-get '/api/v1/config/oauth_providers/:provider' do
+endpoint '/api/v1/config/oauth_providers/:provider', ['GET'], public_endpoint: true do
   providers = Config.oauth_provider_config
   providers.each do |provider|
     next unless provider['name'] == params['provider']
@@ -196,7 +196,7 @@ get '/api/v1/config/oauth_providers/:provider' do
   halt 404
 end
 
-post '/api/v1/config/oauth_providers/:provider' do
+endpoint '/api/v1/config/oauth_providers/:provider', ['POST'], public_endpoint: true do
   new_provider = JSON.parse request.body.read
   providers = Config.oauth_provider_config
   providers.push(new_provider)
@@ -204,7 +204,7 @@ post '/api/v1/config/oauth_providers/:provider' do
   halt 201
 end
 
-put '/api/v1/config/oauth_providers/:provider' do
+endpoint '/api/v1/config/oauth_providers/:provider', ['PUT'], public_endpoint: true do
   updated_provider = JSON.parse request.body.read
   providers = Config.oauth_provider_config
   providers.each do |provider|
@@ -217,7 +217,7 @@ put '/api/v1/config/oauth_providers/:provider' do
   halt 404
 end
 
-delete '/api/v1/config/oauth_providers/:provider' do
+endpoint '/api/v1/config/oauth_providers/:provider', ['DELETE'], public_endpoint: true do
   providers = Config.oauth_provider_config
   providers.each do |provider|
     next unless provider['name'] == params['provider']

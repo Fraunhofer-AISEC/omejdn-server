@@ -10,7 +10,6 @@ require 'rack'
 require 'cgi'
 require 'sinatra'
 require 'sinatra/cookies'
-# require 'sinatra/cors'
 require 'sinatra/activerecord'
 require 'securerandom'
 require 'json/jwt'
@@ -97,12 +96,6 @@ configure do
   enable :sessions
   set :sessions, secure: (config['front_url'].start_with? 'https://')
   set :session_store, Rack::Session::Pool
-
-  set :allow_origin, config['allow_origin']
-  set :allow_methods, 'GET,HEAD,POST,PUT,DELETE'
-  set :allow_headers, 'content-type,if-modified-since, authorization'
-  set :expose_headers, 'location,link'
-  set :allow_credentials, true
 end
 
 # Stores User Sessions. We probably want to use a KV-store at some point
@@ -130,38 +123,53 @@ class PARCache
   end
 end
 
-before do
-  # We define global cache control headers here
-  # They may be overwritten where necessary
-  headers['Pragma'] = 'no-cache'
-  headers['Cache-Control'] = 'no-store'
-  headers['Access-Control-Allow-Origin'] = Config.base_config['allow_origin']
-  headers['Access-Control-Allow-Headers'] = 'content-type,if-modified-since, authorization'
-  if request.env['REQUEST_METHOD'] == 'OPTIONS'
-    options = (%w[HEAD GET POST PUT DELETE].reject do |verb|
-      settings.routes[verb].select { |r, _c, _b| request.path_info == '*' || !r.match(request.path_info).nil? }.empty?
-    end)
-    halt 404 if options.empty?
-    headers['Allow'] = options.join(',')
-    headers['Access-Control-Allow-Methods'] = options.join(',')
-    headers['Content-Type'] ||= 'text/html'
-    halt 200, options.join(',')
+# Stores Regex for public endpoints
+class PublicEndpoints
+  @public_endpoints = []
+  def self.get
+    @public_endpoints
   end
-  # Sinatra does not parse multiple values to params as arrays.
-  # This line fixes this
-  params.merge!(CGI.parse(request.query_string).transform_values { |v| v.length == 1 ? v[0] : v })
+end
 
-  return if request.get_header('HTTP_ORIGIN').nil?
-  unless request.get_header('HTTP_ORIGIN').start_with?('chrome-extension://') ||
-         request.get_header('HTTP_ORIGIN').start_with?('moz-extension://')
-    return
+# Define endpoints using this to support fine-grained CORS
+def endpoint(endpoint, methods, public_endpoint: false, &block)
+  PublicEndpoints.get << (Regexp.new endpoint) if public_endpoint
+  [*methods].each do |verb|
+    get    endpoint, {}, &block if verb == 'GET' # Takes care of 'HEAD'
+    post   endpoint, {}, &block if verb == 'POST'
+    put    endpoint, {}, &block if verb == 'PUT'
+    delete endpoint, {}, &block if verb == 'DELETE'
+  end
+end
+
+before do
+  # Sinatra does not parse multiple values to params as arrays. This line fixes this
+  params.merge!(CGI.parse(request.query_string).transform_values { |v| v.length == 1 ? v[0] : v })
+end
+
+after do
+  # Caching (overwrite where necessary)
+  headers['Pragma'] ||= 'no-cache'
+  headers['Cache-Control'] ||= 'no-store'
+
+  # Cross Origin Resource Sharing
+  if request.env.key? 'HTTP_ORIGIN' # CORS Request
+    public_endpoint = PublicEndpoints.get.any? { |e| !e.match(request.path_info).nil? }
+    headers['Access-Control-Allow-Origin'] = public_endpoint ? '*' : Config.base_config['front_url']
+    # response.headers['Access-Control-Allow-Credentials'] = true # For some reason this throws an error
+    if request.env['REQUEST_METHOD'] == 'OPTIONS' # CORS Preflight Request
+      headers['Access-Control-Allow-Headers'] = request.env['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']
+      headers['Access-Control-Allow-Methods'] = request.env['HTTP_ACCESS_CONTROL_REQUEST_METHODS']
+      headers['Allow']                        = request.env['HTTP_ACCESS_CONTROL_REQUEST_METHODS']
+      halt 204
+    end
   end
 end
 
 ########## TOKEN ISSUANCE ##################
 
 # Handle token request
-post '/token' do
+endpoint '/token', ['POST'], public_endpoint: true do
   resources = [*params[:resource]]
   client = OAuthHelper.authenticate_client params, env.fetch('HTTP_AUTHORIZATION', '')
   raise OAuthError.new 'invalid_request', 'Grant type not allowed' unless client.grant_type_allowed? params[:grant_type]
@@ -199,13 +207,13 @@ post '/token' do
   access_token = Token.access_token client, user, scopes, req_claims, resources
   # Delete the authorization code as it is single use
   AuthorizationCache.get.delete(params[:code])
-  halt 200, { 'Content-Type' => 'application/json' }, JSON.generate({
+  halt 200, { 'Content-Type' => 'application/json' }, {
     access_token: access_token,
     id_token: id_token,
     expires_in: Config.base_config.dig('access_token', 'expiration'),
     token_type: 'bearer',
     scope: (scopes.join ' ')
-  }.compact)
+  }.compact.to_json
 rescue OAuthError => e
   halt 400, e.to_s
 end
@@ -254,7 +262,7 @@ def next_task(completed_task = nil)
 end
 
 # Pushed Authorization Requests
-post '/par' do
+endpoint '/par', ['POST'], public_endpoint: true do
   raise OAuthError.new 'invalid_request', 'Request URI not supported here' if params.key(:request_uri)
 
   client = OAuthHelper.authenticate_client params, env.fetch('HTTP_AUTHORIZATION', '')
@@ -268,7 +276,7 @@ rescue OAuthError => e
 end
 
 # Handle authorization request
-get '/authorize' do
+endpoint '/authorize', ['GET'], public_endpoint: true do
   # Initial sanity checks and request object resolution
   client = Client.find_by_id params[:client_id]
   raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
@@ -374,7 +382,7 @@ def update_auth_scope(auth, user, client)
   raise OAuthError.new 'invalid_target', 'Resources not granted' unless client.resources_allowed? auth[:resource]
 end
 
-get '/consent' do
+endpoint '/consent', ['GET'] do
   auth = AuthorizationCache.get[session[:current_auth]]
   if session[:user].nil?
     auth[:tasks].unshift AuthorizationTask::LOGIN
@@ -398,7 +406,7 @@ rescue OAuthError => e
   auth_response AuthorizationCache.get[session[:current_auth]], e.to_h
 end
 
-post '/consent' do
+endpoint '/consent/exec', ['POST'] do
   auth = AuthorizationCache.get[session[:current_auth]]
   session[:consent] ||= {}
   session[:consent][auth[:client_id]] = auth[:scope]
@@ -442,11 +450,8 @@ rescue StandardError => e
   halt 401
 end
 
-get '/userinfo' do
-  halt 200, { 'Content-Type' => 'application/json' }, (JSON.generate @userinfo)
-end
-post '/userinfo' do
-  halt 200, { 'Content-Type' => 'application/json' }, (JSON.generate @userinfo)
+endpoint '/userinfo', ['GET', 'POST'], public_endpoint: true do
+  halt 200, { 'Content-Type' => 'application/json' }, @userinfo.to_json
 end
 
 ########## LOGIN/LOGOUT ##################
@@ -463,14 +468,11 @@ rescue StandardError
   halt 400
 end
 
-get '/logout' do
-  return haml :logout, locals: @locals
-end
-post '/logout' do
+endpoint '/logout', ['GET', 'POST'], public_endpoint: true do
   return haml :logout, locals: @locals
 end
 
-post '/logout/exec' do # Needs CORS protection
+endpoint '/logout/exec', ['POST'] do
   session.delete(:user) # TODO: log out the specified user only
   redirect_uri = "#{Config.base_config['front_url']}/login"
   redirect_uri = params[:redirect_uri] + (params[:state] || '') if params[:redirect_uri]
@@ -479,7 +481,7 @@ end
 
 # FIXME
 # This should use a more generic way to select the OP to use
-get '/login' do
+endpoint '/login', ['GET'], public_endpoint: true do
   config = Config.oauth_provider_config
   providers = []
   unless config == false
@@ -499,7 +501,7 @@ get '/login' do
   }
 end
 
-post '/login' do
+endpoint '/login/exec', ['POST'] do
   user = User.find_by_id(params[:username])
   unless user&.verify_password(params[:password])
     redirect to("#{Config.base_config['front_url']}/login?error=\"Credentials incorrect\"")
@@ -516,7 +518,7 @@ end
 
 # FIXME
 # This should also be more generic and use the correct OP
-get '/oauth_cb' do
+endpoint '/oauth_cb', ['GET'], public_endpoint: true do
   code = params[:code]
   at = nil
   oauth_providers = Config.oauth_provider_config
@@ -556,36 +558,34 @@ end
 ########## WELL-KNOWN ENDPOINTS ##################
 
 before '/(.well-known*|jwks.json)' do
-  headers['Content-Type'] = 'application/json'
   headers['Cache-Control'] = "public, max-age=#{60 * 60 * 24}, must-revalidate"
   headers.delete('Pragma')
 end
 
-get '/.well-known/(oauth-authorization-server|openid-configuration)' do
-  OAuthHelper.configuration_metadata.to_json
+endpoint '/.well-known/(oauth-authorization-server|openid-configuration)', ['GET'], public_endpoint: true do
+  halt 200, { 'Content-Type' => 'application/json' }, OAuthHelper.configuration_metadata.to_json
 end
 
-get '/.well-known/webfinger' do
+endpoint '/.well-known/webfinger', ['GET'], public_endpoint: true do
   res = CGI.unescape((params[:resource] || '').gsub('%20', '+'))
   halt 400 unless res.start_with? 'acct:'
   halt 404 if Config.webfinger_config.filter { |h| res.end_with? h }.empty?
-  halt 200, JSON.generate({
-                            subject: res,
-                            properties: {},
-                            links: [{
-                              rel: 'http://openid.net/specs/connect/1.0/issuer',
-                              href: Config.base_config['issuer']
-                            }]
-                          })
+  halt 200, { 'Content-Type' => 'application/json' }, {
+    subject: res,
+    properties: {},
+    links: [{
+      rel: 'http://openid.net/specs/connect/1.0/issuer',
+      href: Config.base_config['issuer']
+    }]
+  }.to_json
 end
 
-get '/jwks.json' do
-  Keys.generate_jwks.to_json
+endpoint '/jwks.json', ['GET'], public_endpoint: true do
+  halt 200, { 'Content-Type' => 'application/json' }, Keys.generate_jwks.to_json
 end
 
-get '/about' do
-  headers['Content-Type'] = 'application/json'
-  return JSON.generate({ 'version' => version, 'license' => OMEJDN_LICENSE })
+endpoint '/about', ['GET'], public_endpoint: true do
+  halt 200, { 'Content-Type' => 'application/json' }, { 'version' => version, 'license' => OMEJDN_LICENSE }.to_json
 end
 
 # Load all Plugins

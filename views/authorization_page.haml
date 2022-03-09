@@ -40,7 +40,7 @@
   - if locals[:client].metadata['policy_uri']
     %a{ :href => locals[:client].metadata['policy_uri']} Privacy Policy
 
-%form{:action => "#", :method => "post"}
+%form{:action => "#{locals[:host]}/consent/exec", :method => "post"}
   %fieldset
     %h3 If you would like to grant this request, click here:
     %input{:type => "submit", :value => "Authorize", :class => "button"}
