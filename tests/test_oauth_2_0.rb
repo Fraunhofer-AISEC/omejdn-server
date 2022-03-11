@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 require 'test/unit'
 require 'rack/test'
-require 'webrick/https'
 require_relative 'config_testsetup'
 require_relative '../omejdn'
 require_relative '../lib/token'
@@ -86,10 +85,10 @@ class OAuth2Test < Test::Unit::TestCase
 
     get '/jwks.json'
     assert last_response.ok?
-    server_keys = JSON::JWK::Set.new JSON.parse(last_response.body)
+    server_keys = JSON.parse(last_response.body)
     jwt = JWT.decode(response['access_token'],nil,true, {
       algorithms: [TestSetup.config.dig('access_token','algorithm')],
-      jwks: {'keys'=>server_keys}})
+      jwks: server_keys})
     check_keys ['typ','kid','alg'], jwt[1]
     assert_equal 'at+jwt', jwt.dig(1,'typ')
     assert_equal TestSetup.config.dig('access_token','algorithm'), jwt.dig(1,'alg')

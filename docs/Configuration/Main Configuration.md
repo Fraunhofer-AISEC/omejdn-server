@@ -53,13 +53,13 @@ _Default value: 0.0.0.0/4567_
 ### Application Environment
 
 ```
-app_env: debug
+environment: debug
 ```
 Specifies the level of verbosity for Omejdn.
 Can take the following values:
 
 - `production` Do not output debug information
-- `debug` Be more verbose
+- `development` Be more verbose
 - `test` For testing purposes
 
 _Default value: debug_

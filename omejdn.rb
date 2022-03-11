@@ -4,17 +4,20 @@
 $stdout.sync = true
 $stderr.sync = true
 
+# About
+OMEJDN_LICENSE = 'Apache2.0'
+OMEJDN_VERSION = File.file?('.version') ? File.read('.version').chomp : 'unknown'
+
+puts "Starting Omejdn version #{OMEJDN_VERSION}"
+puts '========================================='
+
 require 'rubygems'
 require 'bundler/setup'
-require 'rack'
-require 'cgi'
 require 'sinatra'
 require 'sinatra/cookies'
-require 'sinatra/activerecord'
+require 'rack'
+require 'cgi'
 require 'securerandom'
-require 'json/jwt'
-require 'webrick'
-require 'webrick/https'
 require 'net/http'
 
 require_relative './lib/client'
@@ -24,71 +27,25 @@ require_relative './lib/token'
 require_relative './lib/oauth_helper'
 require_relative './lib/plugins'
 
-OMEJDN_LICENSE = 'Apache2.0'
-
-def version
-  return File.read('.version').chomp if File.file? '.version'
-
-  'unknown'
-end
-
-def debug
-  Config.base_config['app_env'] != 'production'
-end
-
-def openid?(scopes)
-  Config.base_config['openid'] && (scopes.include? 'openid')
-end
-
-def apply_env(config, conf_key, fallback)
-  conf_parts = conf_key.split('.')
-  env_value = ENV["OMEJDN_#{conf_parts.join('__').upcase}"]
-  conf_key = conf_parts.pop
-  conf_parts.each do |part|
-    config[part] ||= {}
-    config = config[part]
-  end
-  env_value = env_value.to_i if begin
-    Integer(env_value)
-  rescue StandardError
-    false
-  end
-  env_value = false if env_value == 'false'
-  env_value = true if env_value == 'true'
-  config[conf_key] = env_value || config[conf_key] || fallback
+# A global cache, capable of storing data between calls and sessions
+class Cache
+  class << self; attr_accessor :user_session, :authorization, :par, :public_endpoints end
+  # Stores User Sessions. We probably want to use a KV-store at some point
+  @user_session = {}
+  # Stores Authorization Code Metadata inbetween authorization and token retrieval
+  # Contains: user, nonce, scopes, resources, claims, pkce challenge and method
+  @authorization = {}
+  # Stores Pushed Authorization Request Objects inbetween request push and authorization
+  @par = {}
+  # Stores Regex for public endpoints
+  @public_endpoints = []
 end
 
 configure do
-  # account for environment overrides
-  config = Config.base_config
-  apply_env(config, 'issuer',           'http://localhost:4567')
-  apply_env(config, 'front_url',        config['issuer'])
-  apply_env(config, 'bind_to',          '0.0.0.0:4567')
-  apply_env(config, 'app_env',          'debug')
-  apply_env(config, 'openid',           false)
-  apply_env(config, 'default_audience', '')
-  apply_env(config, 'accept_audience',  config['issuer'])
-  %w[access_token id_token].each do |token|
-    apply_env(config, "#{token}.expiration", 3600)
-    apply_env(config, "#{token}.algorithm",  'RS256')
-  end
-  has_user_db_configured = config.dig('plugins', 'user_db') && !config.dig('plugins', 'user_db').empty?
-  if ENV['OMEJDN_ADMIN'] && !has_user_db_configured
-    # Try to enable yaml plugin, to have at least one user_db
-    config['plugins'] ||= {}
-    config['plugins']['user_db'] = { 'yaml' => nil }
-    has_user_db_configured = true
-  end
-  if config['openid'] && !has_user_db_configured
-    puts 'ERROR: No user_db plugin defined. Cannot serve OpenID functionality'
-    exit
-  end
-  apply_env(config, 'user_backend_default', config.dig('plugins', 'user_db').keys.first) if has_user_db_configured
-  Config.base_config = config
-
-  # Easier debugging for local tests
-  set :raise_errors, debug && !ENV['HOST']
-  set :show_exceptions, debug && ENV['HOST']
+  config = Config.setup
+  set :environment, (proc { Config.base_config['environment'].to_sym })
+  enable :dump_errors, :raise_errors, :quiet
+  disable :show_exceptions
   bind_ip, bind_port = config['bind_to'].split(':')
   set :bind, bind_ip
   set :port, bind_port if bind_port
@@ -97,42 +54,9 @@ configure do
   set :session_store, Rack::Session::Pool
 end
 
-# Stores User Sessions. We probably want to use a KV-store at some point
-class UserSession
-  @user_session = {}
-  def self.get
-    @user_session
-  end
-end
-
-# Stores Authorization Code Metadata inbetween authorization and token retrieval
-# Contains: user, nonce, scopes, resources, claims, pkce challenge and method
-class AuthorizationCache
-  @request_cache = {}
-  def self.get
-    @request_cache
-  end
-end
-
-# Stores Pushed Authorization Request Objects inbetween request push and authorization
-class PARCache
-  @cache = {}
-  def self.get
-    @cache
-  end
-end
-
-# Stores Regex for public endpoints
-class PublicEndpoints
-  @public_endpoints = []
-  def self.get
-    @public_endpoints
-  end
-end
-
 # Define endpoints using this to support fine-grained CORS
 def endpoint(endpoint, methods, public_endpoint: false, &block)
-  PublicEndpoints.get << (Regexp.new endpoint) if public_endpoint
+  Cache.public_endpoints << (Regexp.new endpoint) if public_endpoint
   [*methods].each do |verb|
     get    endpoint, {}, &block if verb == 'GET' # Takes care of 'HEAD'
     post   endpoint, {}, &block if verb == 'POST'
@@ -153,7 +77,7 @@ after do
 
   # Cross Origin Resource Sharing
   if request.env.key? 'HTTP_ORIGIN' # CORS Request
-    public_endpoint = PublicEndpoints.get.any? { |e| !e.match(request.path_info).nil? }
+    public_endpoint = Cache.public_endpoints.any? { |e| !e.match(request.path_info).nil? }
     headers['Access-Control-Allow-Origin'] = public_endpoint ? '*' : Config.base_config['front_url']
     # response.headers['Access-Control-Allow-Credentials'] = true # For some reason this throws an error
     if request.env['REQUEST_METHOD'] == 'OPTIONS' # CORS Preflight Request
@@ -163,6 +87,14 @@ after do
       halt 204
     end
   end
+end
+
+def debug
+  Config.base_config['environment'] != 'production'
+end
+
+def openid?(scopes)
+  Config.base_config['openid'] && (scopes.include? 'openid')
 end
 
 ########## TOKEN ISSUANCE ##################
@@ -180,7 +112,7 @@ endpoint '/token', ['POST'], public_endpoint: true do
     req_claims = JSON.parse(params[:claims] || '{}')
     raise OAuthError.new 'invalid_target', "Access denied to: #{resources}" unless client.resources_allowed? resources
   when 'authorization_code'
-    cache = AuthorizationCache.get[params[:code]]
+    cache = Cache.authorization[params[:code]]
     raise OAuthError.new 'invalid_grant', 'The Authorization code was not recognized' if cache.nil?
 
     OAuthHelper.validate_pkce(cache[:pkce], params[:code_verifier], cache[:pkce_method]) unless cache[:pkce].nil?
@@ -205,7 +137,7 @@ endpoint '/token', ['POST'], public_endpoint: true do
   id_token = Token.id_token client, user, scopes, req_claims, nonce if openid?(scopes)
   access_token = Token.access_token client, user, scopes, req_claims, resources
   # Delete the authorization code as it is single use
-  AuthorizationCache.get.delete(params[:code])
+  Cache.authorization.delete(params[:code])
   halt 200, { 'Content-Type' => 'application/json' }, {
     access_token: access_token,
     id_token: id_token,
@@ -215,10 +147,6 @@ endpoint '/token', ['POST'], public_endpoint: true do
   }.compact.to_json
 rescue OAuthError => e
   halt 400, e.to_s
-end
-
-after '/token' do
-  headers['Content-Type'] = 'application/json'
 end
 
 ########## AUTHORIZATION FLOW ##################
@@ -234,7 +162,7 @@ end
 # Redirect to the current task.
 # completed_task will be removed from the list
 def next_task(completed_task = nil)
-  auth = AuthorizationCache.get[session[:current_auth]]
+  auth = Cache.authorization[session[:current_auth]]
   tasklist = auth[:tasks]
   tasklist ||= []
   tasklist.delete(completed_task) unless completed_task.nil?
@@ -268,7 +196,7 @@ endpoint '/par', ['POST'], public_endpoint: true do
   OAuthHelper.prepare_params params, client
 
   uri = "urn:ietf:params:oauth:request_uri:#{SecureRandom.uuid}"
-  PARCache.get[uri] = params # TODO: Expiration
+  Cache.par[uri] = params # TODO: Expiration
   halt 201, { 'Content-Type' => 'application/json' }, { 'request_uri' => uri, 'expires_in' => 60 }.to_json
 rescue OAuthError => e
   halt 400, e.to_s
@@ -283,7 +211,7 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
   # Generate new authorization code and aggregate data about the request
   # Any inputs to members not starting in req_ are sufficiently sanitized
   session[:current_auth] = SecureRandom.uuid
-  AuthorizationCache.get[session[:current_auth]] = cache = {
+  Cache.authorization[session[:current_auth]] = cache = {
     client_id: client.client_id, # The requesting client
     tasks: [] # Tasks the user has to perform
   }
@@ -316,7 +244,7 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
     cache[:tasks] << AuthorizationTask::LOGIN
     cache[:tasks] << AuthorizationTask::CONSENT
   else
-    user = UserSession.get[session[:user]]
+    user = Cache.user_session[session[:user]]
     update_auth_scope cache, user, client
     # If consent is not yet given to the client, demand it
     if (cache[:scope] - (session.dig(:consent, client.client_id) || [])).empty?
@@ -345,7 +273,7 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
     end
   end
   if params[:max_age] && session[:user] &&
-     (Time.new.to_i - UserSession.get[session[:user]].auth_time) > params[:max_age].to_i
+     (Time.new.to_i - Cache.user_session[session[:user]].auth_time) > params[:max_age].to_i
     cache[:tasks] << AuthorizationTask::LOGIN
   end
 
@@ -353,7 +281,7 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
   cache[:tasks] << AuthorizationTask::ISSUE
   next_task
 rescue OAuthError => e
-  auth_response AuthorizationCache.get[session[:current_auth]], e.to_h
+  auth_response Cache.authorization[session[:current_auth]], e.to_h
 end
 
 def filter_scopes(resource_owner, scopes)
@@ -382,13 +310,13 @@ def update_auth_scope(auth, user, client)
 end
 
 endpoint '/consent', ['GET'] do
-  auth = AuthorizationCache.get[session[:current_auth]]
+  auth = Cache.authorization[session[:current_auth]]
   if session[:user].nil?
     auth[:tasks].unshift AuthorizationTask::LOGIN
     next_task
   end
 
-  user = UserSession.get[session[:user]]
+  user = Cache.user_session[session[:user]]
   raise OAuthError.new 'invalid_user', 'User session invalid' if user.nil?
 
   client = Client.find_by_id auth[:client_id]
@@ -402,17 +330,17 @@ endpoint '/consent', ['GET'] do
     scope_description: Config.scope_description_config
   }
 rescue OAuthError => e
-  auth_response AuthorizationCache.get[session[:current_auth]], e.to_h
+  auth_response Cache.authorization[session[:current_auth]], e.to_h
 end
 
 endpoint '/consent/exec', ['POST'] do
-  auth = AuthorizationCache.get[session[:current_auth]]
+  auth = Cache.authorization[session[:current_auth]]
   session[:consent] ||= {}
   session[:consent][auth[:client_id]] = auth[:scope]
-  auth[:user] = UserSession.get[session[:user]]
+  auth[:user] = Cache.user_session[session[:user]]
   next_task AuthorizationTask::CONSENT
 rescue OAuthError => e
-  auth_response AuthorizationCache.get[session[:current_auth]], e.to_h
+  auth_response Cache.authorization[session[:current_auth]], e.to_h
 end
 
 def auth_response(auth, response_params)
@@ -433,42 +361,33 @@ end
 
 ########## USERINFO ##################
 
-before '/userinfo' do
-  return if request.env['REQUEST_METHOD'] == 'OPTIONS'
-
-  jwt = env.fetch('HTTP_AUTHORIZATION', '').slice(7..-1)
-  token = Token.decode jwt, '/userinfo'
+endpoint '/userinfo', ['GET', 'POST'], public_endpoint: true do
+  token = Token.decode env.fetch('HTTP_AUTHORIZATION', '')&.slice(7..-1), '/userinfo'
   client = Client.find_by_id token['client_id']
   user = User.find_by_id(token['sub'])
   halt 401 if user.nil?
   req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
-  @userinfo = OAuthHelper.map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
-  @userinfo['sub'] = user.username
+  userinfo = OAuthHelper.map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
+  userinfo['sub'] = user.username
+  halt 200, { 'Content-Type' => 'application/json' }, userinfo.to_json
 rescue StandardError => e
   p e if debug
   halt 401
 end
 
-endpoint '/userinfo', ['GET', 'POST'], public_endpoint: true do
-  halt 200, { 'Content-Type' => 'application/json' }, @userinfo.to_json
-end
-
 ########## LOGIN/LOGOUT ##################
 
 # OpenID Connect RP-Initiated Logout 1.0
-before '/logout' do
-  @locals = { state: params[:state] }
+endpoint '/logout', ['GET', 'POST'], public_endpoint: true do
   id_token = Token.decode params[:id_token_hint]
   client = Client.find_by_id id_token&.dig('aud')
-  uri = params[:post_logout_redirect_uri]
-  @locals[:redirect_uri] = uri if client&.verify_post_logout_redirect_uri uri
-  @locals[:user] = (User.find_by_id id_token&.dig('sub')) || UserSession.get[session[:user]]
+  halt 200, (haml :logout, locals: {
+    state: params[:state],
+    redirect_uri: (client&.verify_post_logout_redirect_uri params[:post_logout_redirect_uri]),
+    user: ((User.find_by_id id_token&.dig('sub')) || Cache.user_session[session[:user]])
+  })
 rescue StandardError
   halt 400
-end
-
-endpoint '/logout', ['GET', 'POST'], public_endpoint: true do
-  return haml :logout, locals: @locals
 end
 
 endpoint '/logout/exec', ['POST'] do
@@ -480,24 +399,22 @@ end
 
 # FIXME
 # This should use a more generic way to select the OP to use
-endpoint '/login', ['GET'], public_endpoint: true do
-  config = Config.oauth_provider_config
-  providers = []
-  unless config == false
-    config&.each do |provider|
-      url = URI(provider['authorization_endpoint'])
-      params = { client_id: provider['client_id'], scope: provider['scopes'],
-                 redirect_uri: provider['redirect_uri'], response_type: provider['response_type'] }
-      url.query = URI.encode_www_form(params)
-      providers.push({ url: url.to_s, name: provider['name'], logo: provider['logo'] })
-    end
+endpoint '/login', ['GET'] do
+  providers = Config.oauth_provider_config&.map do |provider|
+    url = URI(provider['authorization_endpoint'])
+    url.query = URI.encode_www_form({
+                                      client_id: provider['client_id'],
+                                      scope: provider['scopes'],
+                                      redirect_uri: provider['redirect_uri'],
+                                      response_type: provider['response_type']
+                                    })
+    { url: url.to_s, name: provider['name'], logo: provider['logo'] }
   end
-  no_password_login = Config.base_config['no_password_login'] || false
-  return haml :login, locals: {
-    no_password_login: no_password_login,
+  halt 200, (haml :login, locals: {
+    no_password_login: (Config.base_config['no_password_login'] || false),
     host: Config.base_config['front_url'],
     providers: providers
-  }
+  })
 end
 
 endpoint '/login/exec', ['POST'] do
@@ -507,26 +424,25 @@ endpoint '/login/exec', ['POST'] do
   end
   user.auth_time = Time.new.to_i
   session[:user] = SecureRandom.uuid
-  UserSession.get[session[:user]] = user
-  auth = AuthorizationCache.get[session[:current_auth]]
+  Cache.user_session[session[:user]] = user
+  auth = Cache.authorization[session[:current_auth]]
   update_auth_scope auth, user, (Client.find_by_id auth[:client_id])
   next_task AuthorizationTask::LOGIN
 rescue OAuthError => e
-  auth_response AuthorizationCache.get[session[:current_auth]], e.to_h
+  auth_response Cache.authorization[session[:current_auth]], e.to_h
 end
 
 # FIXME
 # This should also be more generic and use the correct OP
 endpoint '/oauth_cb', ['GET'], public_endpoint: true do
-  code = params[:code]
-  at = nil
   oauth_providers = Config.oauth_provider_config
   provider = oauth_providers.select { |pv| pv['name'] == params[:provider] }.first
 
+  at = nil
   uri = URI(provider['token_endpoint'])
   Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
     req = Net::HTTP::Post.new(uri)
-    req.set_form_data('code' => code,
+    req.set_form_data('code' => params[:code],
                       'client_id' => provider['client_id'],
                       'client_secret' => provider['client_secret'],
                       'grant_type' => 'authorization_code',
@@ -548,8 +464,8 @@ endpoint '/oauth_cb', ['GET'], public_endpoint: true do
 
   user.auth_time = Time.new.to_i
   session[:user] = SecureRandom.uuid
-  UserSession.get[session[:user]] = user
-  auth = AuthorizationCache.get[session[:current_auth]]
+  Cache.user_session[session[:user]] = user
+  auth = Cache.authorization[session[:current_auth]]
   update_auth_scope auth, user, (Client.find_by_id auth[:client_id])
   next_task AuthorizationTask::LOGIN
 end
@@ -584,24 +500,12 @@ endpoint '/jwks.json', ['GET'], public_endpoint: true do
 end
 
 endpoint '/about', ['GET'], public_endpoint: true do
-  halt 200, { 'Content-Type' => 'application/json' }, { 'version' => version, 'license' => OMEJDN_LICENSE }.to_json
+  halt 200, { 'Content-Type' => 'application/json' }, {
+    'version' => OMEJDN_VERSION,
+    'license' => OMEJDN_LICENSE
+  }.to_json
 end
 
-# Load all Plugins
+# Load all Plugins and optionally create admin
 PluginLoader.initialize
-
-# Initialize admin user if given in ENV
-if ENV['OMEJDN_ADMIN']
-  admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
-  admin = User.find_by_id(admin_name)
-  if admin
-    admin.update_password(admin_pw)
-  else
-    admin = User.from_dict({
-                             'username' => admin_name,
-                             'attributes' => [{ 'key' => 'omejdn', 'value' => 'admin' }],
-                             'password' => admin_pw
-                           })
-    User.add_user(admin, Config.base_config['user_backend_default'])
-  end
-end
+Config.create_admin

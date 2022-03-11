@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'require_all'
-
 # Extend this by an appropriate function to load a Plugin
 class PluginLoader
   # Load all relevant files
@@ -9,7 +7,7 @@ class PluginLoader
     (Config.base_config['plugins'] || {}).each do |type, plugins|
       plugins.each do |name, _plugin_config|
         puts "Loading Plugin (#{type}): #{name}"
-        require_rel "../plugins/#{type}/#{name}"
+        require_relative "./../plugins/#{type}/#{name}"
       end
     end
   end

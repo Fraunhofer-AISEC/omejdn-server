@@ -36,7 +36,7 @@ The corresponding abstract class can be found in the file `_abstract.rb`.
 You might want to include it in your plugin like so:
 
 ```ruby
-require_rel './_abstract'
+require_relative './_abstract'
 ```
 
 Likewise, if your plugin depends on other plugins, you should require them.

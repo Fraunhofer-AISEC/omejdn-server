@@ -6,9 +6,6 @@ require_relative './client'
 require 'jwt'
 require 'base64'
 
-# Need this constant to encode subject the right way.
-ASN1_STRFLGS_ESC_MSB = 4
-
 # A helper for building JWT access tokens and ID tokens
 class Token
   # Builds a RFC 9068 JWT access token for client including scopes and attributes

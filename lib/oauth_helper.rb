@@ -3,7 +3,6 @@
 require_relative './config'
 require 'json'
 require 'set'
-require 'securerandom'
 require 'base64'
 require 'digest'
 
@@ -87,7 +86,7 @@ class OAuthHelper
 
       if url_params[:request_uri].start_with? 'urn:ietf:params:oauth:request_uri:'
         # Retrieve token from Pushed Authorization Request Cache
-        params = PARCache.get[url_params[:request_uri]]
+        params = Cache.par[url_params[:request_uri]]
       elsif url_params[:request_uri].start_with? 'https://'
         # Retrieve remote token
         jwt = retrieve_request_uri url_params[:request_uri], client

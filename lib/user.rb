@@ -1,13 +1,10 @@
 # frozen_string_literal: true
 
 require 'bcrypt'
-require 'sinatra/activerecord'
 require_relative './plugins'
 
 # Class representing a user from a DB
 class User
-  include BCrypt
-
   attr_accessor :username, :password, :attributes, :extern, :backend, :auth_time
 
   def verify_password(pass)

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 require 'test/unit'
 require 'rack/test'
-require 'webrick/https'
 require_relative 'config_testsetup'
 require_relative '../omejdn'
 require_relative '../lib/token'

@@ -121,7 +121,7 @@ class TestSetup
       'issuer' => 'http://localhost:4567',
       'front_url' => 'http://localhost:4567',
       'bind_to' => '0.0.0.0:4567',
-      'app_env' => 'test',
+      'environment' => 'test',
       'openid' => true,
       'default_audience' => 'TestServer',
       'accept_audience' => 'http://localhost:4567',

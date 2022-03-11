@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_rel './_abstract'
+require_relative './_abstract'
 
 # The DB backend for yaml files
 class YamlUserDb < UserDb
