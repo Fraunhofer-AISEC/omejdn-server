@@ -344,6 +344,7 @@ rescue OAuthError => e
 end
 
 def auth_response(auth, response_params)
+  auth ||= {}
   response_params = {
     iss: Config.base_config['issuer'],
     state: auth[:state]

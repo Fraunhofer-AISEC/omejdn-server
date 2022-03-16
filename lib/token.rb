@@ -4,7 +4,7 @@ require_relative './keys'
 require_relative './config'
 require_relative './client'
 require 'jwt'
-require 'base64'
+require 'securerandom'
 
 # A helper for building JWT access tokens and ID tokens
 class Token
@@ -21,7 +21,7 @@ class Token
       'sub' => user&.username || client.client_id,
       'nbf' => now,
       'iat' => now,
-      'jti' => Base64.urlsafe_encode64(rand(2**64).to_s),
+      'jti' => SecureRandom.uuid,
       'exp' => now + base_config.dig('access_token', 'expiration'),
       'client_id' => client.client_id
     }
