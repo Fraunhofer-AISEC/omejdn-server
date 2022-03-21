@@ -25,7 +25,7 @@ jobs:
         rubocop
     - name: Unit tests
       run: |
-        gem install --no-document test-unit rack-test webrick
+        gem install --no-document test-unit rack-test
         scripts/test_all.sh
     - name: SBOM generation
       run: |

@@ -138,6 +138,14 @@ post_logout_redirect_uris:
 
 A list of valid redirect URIs for a client to be used after logging out users.
 
+```
+request_uris:
+- https://example.org/request01
+- https://example.org/request02
+```
+
+A list of valid request URIs for a client to be used in authorization code flows.
+
 ## Authorization Scope
 
 ```

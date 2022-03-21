@@ -147,6 +147,7 @@ This server mostly implements the following standards (potentially via plugins):
   * [RFC 9068](https://datatracker.ietf.org/doc/rfc9068/) - JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens
   * [RFC 9101](https://datatracker.ietf.org/doc/rfc9101/) - The OAuth 2.0 Authorization Framework: JWT-Secured Authorization Request (JAR)
   * [RFC 9126](https://datatracker.ietf.org/doc/rfc9126/) - OAuth 2.0 Pushed Authorization Requests
+  * [RFC 9207](https://datatracker.ietf.org/doc/rfc9207/) - OAuth 2.0 Authorization Server Issuer Identification
 - OpenID Connect Protocol Suite
   * [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html)
   * [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html)
@@ -156,7 +157,7 @@ This server mostly implements the following standards (potentially via plugins):
 - Internet Drafts
   * [draft-spencer-oauth-claims-01](https://www.ietf.org/archive/id/draft-spencer-oauth-claims-01.txt)
   * [draft-ietf-oauth-security-topics-19](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics/)
-  * [draft-ietf-oauth-v2-1-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)
+  * [draft-ietf-oauth-v2-1-05](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)
 
 
 **NOTE**: Omejdn only implements *two* grant types:
