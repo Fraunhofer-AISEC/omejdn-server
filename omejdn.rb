@@ -146,7 +146,7 @@ endpoint '/token', ['POST'], public_endpoint: true do
     scope: (scopes.join ' ')
   }.compact.to_json
 rescue OAuthError => e
-  halt 400, e.to_s
+  halt 400, { 'Content-Type' => 'application/json' }, e.to_s
 end
 
 ########## AUTHORIZATION FLOW ##################
@@ -199,7 +199,7 @@ endpoint '/par', ['POST'], public_endpoint: true do
   Cache.par[uri] = params # TODO: Expiration
   halt 201, { 'Content-Type' => 'application/json' }, { 'request_uri' => uri, 'expires_in' => 60 }.to_json
 rescue OAuthError => e
-  halt 400, e.to_s
+  halt 400, { 'Content-Type' => 'application/json' }, e.to_s
 end
 
 # Handle authorization request
@@ -213,6 +213,9 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
   session[:current_auth] = SecureRandom.uuid
   Cache.authorization[session[:current_auth]] = cache = {
     client_id: client.client_id, # The requesting client
+    state: params[:state], # Client state
+    nonce: params[:nonce], # The client's OIDC nonce
+    response_mode: params[:response_mode], # The response mode to use
     tasks: [] # Tasks the user has to perform
   }
 
@@ -229,9 +232,6 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
 
   cache.merge!({
                  redirect_uri: uri,
-                 nonce: params[:nonce], # The client's OIDC nonce
-                 response_mode: params[:response_mode], # The response mode to use
-                 state: params[:state], # Client state
                  pkce: params[:code_challenge],
                  pkce_method: params[:code_challenge_method],
                  req_scope: params[:scope].split,
@@ -324,6 +324,7 @@ endpoint '/consent', ['GET'] do
 
   # Seems to be in order
   return haml :authorization_page, locals: {
+    host: Config.base_config['front_url'],
     user: user,
     client: client,
     scopes: auth[:scope],
@@ -427,6 +428,7 @@ endpoint '/login/exec', ['POST'] do
   session[:user] = SecureRandom.uuid
   Cache.user_session[session[:user]] = user
   auth = Cache.authorization[session[:current_auth]]
+  auth[:user] = user
   update_auth_scope auth, user, (Client.find_by_id auth[:client_id])
   next_task AuthorizationTask::LOGIN
 rescue OAuthError => e

@@ -190,6 +190,7 @@ class OAuthHelper
     metadata['jwks_uri'] = "#{path}/jwks.json"
     # metadata["registration_endpoint"] = "#{host}/FIXME"
     metadata['scopes_supported'] = Config.scope_mapping_config.map { |m| m[0] }
+    metadata['scopes_supported'] << 'openid' if Config.base_config['openid']
     metadata['response_types_supported'] = ['code']
     metadata['response_modes_supported'] = %w[query fragment form_post]
     metadata['grant_types_supported'] = %w[authorization_code client_credentials]
