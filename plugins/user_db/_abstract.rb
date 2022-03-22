@@ -1,11 +1,7 @@
 # frozen_string_literal: true
 
-require 'abstraction'
-
 # Abstract UserDb interface
 class UserDb
-  abstract
-
   def create_user(user)
     raise NotImplementedError
   end

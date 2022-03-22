@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require 'sqlite3'
-require_rel './_abstract'
+require_relative './_abstract'
 
 # The SQlite DB plugin for users
 class SqliteUserDb < UserDb

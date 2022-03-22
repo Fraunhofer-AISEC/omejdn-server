@@ -1,11 +1,7 @@
 # frozen_string_literal: true
 
-require 'abstraction'
-
 # Abstract ClaimMapper interface
 class ClaimMapper
-  abstract
-
   # Used to map additional claims into the access token
   def map_to_access_token(_client, _user, _scopes, _requested_claims, _resources)
     {}

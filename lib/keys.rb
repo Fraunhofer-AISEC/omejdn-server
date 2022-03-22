@@ -2,6 +2,7 @@
 
 require_relative './config'
 require 'openssl'
+require 'jwt'
 
 # Key and Certificate Management
 class Keys
@@ -41,25 +42,19 @@ class Keys
     setup_skey(filename) unless File.exist? filename
     sk = OpenSSL::PKey::RSA.new File.read(filename)
     pk = load_pkey.select { |c| c.dig('certs', 0) && (c.dig('certs', 0).check_private_key sk) }.first
-    kid = JSON::JWK.new(sk.public_key)[:kid]
+    kid = JWT::JWK.new(sk.public_key).export[:kid]
     (pk || {}).merge({ 'sk' => sk, 'pk' => sk.public_key, 'kid' => kid })
   end
 
   def self.generate_jwks
-    jwks = JSON::JWK::Set.new
-    # Load the signing key
-    load_pkey.each do |k|
-      # Internally, this creates a KID following RFC 7638 using SHA256
-      # Only works with RSA, EC-Keys, and symmetric keys though.
-      # Further key types will require upstream changes
-      jwk = JSON::JWK.new(k['pk'])
+    { keys: (load_pkey.map do |k|
+      jwk = JWT::JWK.new(k['pk']).export
       jwk[:use] = 'sig'
       if k['certs']
         jwk[:x5c] = gen_x5c(k['certs'])
         jwk[:x5t] = gen_x5t(k['certs'])
       end
-      jwks << jwk
-    end
-    { keys: jwks.uniq { |k| k['kid'] } }
+      jwk
+    end).uniq { |k| k[:kid] } }
   end
 end

@@ -2,23 +2,26 @@
 
 source 'https://rubygems.org'
 
-gem 'abstraction'
-gem 'bcrypt'
-gem 'haml'
-gem 'json'
-gem 'json-jwt'
-gem 'jwt'
-gem 'net-ldap'
-gem 'openssl'
-gem 'rack-test'
-gem 'require_all'
-gem 'rspec'
-gem 'scanf'
-gem 'sinatra'
-gem 'sinatra-activerecord'
-gem 'sinatra-contrib'
-gem 'sinatra-cors'
-gem 'sqlite3'
-gem 'test-unit'
-gem 'thin'
-gem 'webrick'
+# Necessary Gems for Core Omejdn
+group :omejdn do
+  gem 'bcrypt'
+  gem 'haml'
+  gem 'jwt'
+  gem 'openssl'
+  gem 'sinatra'
+  gem 'sinatra-contrib'
+  gem 'thin'
+end
+
+# Necessary Gems for Plugins
+group :plugins do
+  gem 'net-ldap'
+  gem 'sqlite3'
+end
+
+# Development only
+group :development do
+  gem 'rack-test'
+  gem 'rubocop'
+  gem 'test-unit'
+end

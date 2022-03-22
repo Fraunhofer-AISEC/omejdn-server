@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require_rel './_abstract'
-require_rel '../../lib/oauth_helper'
+require_relative './_abstract'
+require_relative '../../lib/oauth_helper'
 
 # Maps Userinfo Claims to the Access- and ID tokens
 # Includes any specifically requested claims as-is

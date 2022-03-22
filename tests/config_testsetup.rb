@@ -65,26 +65,53 @@ class TestSetup
 
   def self.clients
     [{
-      'client_id' => 'testClient',
-      'name' => 'omejdn admin ui',
-      'allowed_scopes' => ['omejdn:write', 'openid', 'email'],
-      'redirect_uri' => 'http://localhost:4200',
-      'attributes' => []
-    },
-     {
-       'client_id' => 'testClient2',
-       'name' => 'omejdn admin ui',
-       'allowed_scopes' => ['omejdn:write'],
-       'redirect_uri' => 'http://localhost:4200',
-       'attributes' => [],
-       'allowed_resources' => ['http://example.org','http://localhost:4567/api']
+      'client_id' => 'client_secret_basic_client',
+      'client_secret' => 'basic_secret',
+      'token_endpoint_auth_method' => 'client_secret_basic',
+      'grant_types' => ['authorization_code','client_credentials'],
+      'scope' => ['omejdn:write', 'openid', 'email'],
+      'redirect_uris' => 'http://localhost:4200',
+      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
+     },{
+      'client_id' => 'client_secret_post_client',
+      'client_secret' => 'post_secret',
+      'token_endpoint_auth_method' => 'client_secret_post',
+      'grant_types' => ['authorization_code','client_credentials'],
+      'scope' => ['omejdn:write', 'openid', 'email'],
+      'redirect_uris' => 'http://localhost:4200',
+      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
+     },{
+      'client_id' => 'private_key_jwt_client',
+      'token_endpoint_auth_method' => 'private_key_jwt',
+      'grant_types' => ['authorization_code','client_credentials'],
+      'scope' => ['omejdn:write', 'openid', 'email'],
+      'redirect_uris' => 'http://localhost:4200',
+      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
+     },{
+      'client_id' => 'publicClient',
+      'token_endpoint_auth_method' => 'none',
+      'grant_types' => ['authorization_code','client_credentials'],
+      'scope' => ['omejdn:write'],
+      'redirect_uris' => 'http://localhost:4200',
+      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
+     },{
+      'client_id' => 'resourceClient',
+      'token_endpoint_auth_method' => 'none',
+      'grant_types' => ['authorization_code','client_credentials'],
+      'scope' => ['omejdn:write'],
+      'redirect_uris' => 'http://localhost:4200',
+      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}],
+      'resource' => ['http://example.org','http://localhost:4567/api']
      },{
       'client_id' => 'dynamic_claims',
-      'name' => 'omejdn admin ui',
-      'allowed_scopes' => ['omejdn:write'],
-      'redirect_uri' => 'http://localhost:4200',
+      'token_endpoint_auth_method' => 'none',
+      'grant_types' => ['authorization_code','client_credentials'],
+      'client_name' => 'omejdn admin ui',
+      'scope' => ['omejdn:write'],
+      'redirect_uris' => 'http://localhost:4200',
       'attributes' => [
-        { 'key' => 'dynattribute', 'dynamic' => true }
+        { 'key' => 'dynattribute', 'dynamic' => true },
+        {'key'=> 'omejdn', 'value'=> 'write'}
       ]
     }]
   end
@@ -94,8 +121,7 @@ class TestSetup
       'issuer' => 'http://localhost:4567',
       'front_url' => 'http://localhost:4567',
       'bind_to' => '0.0.0.0:4567',
-      'allow_origin' => '*',
-      'app_env' => 'test',
+      'environment' => 'test',
       'openid' => true,
       'default_audience' => 'TestServer',
       'accept_audience' => 'http://localhost:4567',

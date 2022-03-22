@@ -5,6 +5,26 @@ fieldset {
   /*box-shadow: 0 1px 2px -1px rgba(0,0,0,.5);*/
 }
 
+body {
+  margin: 0;
+  background-color: #fff;
+  color: #000;
+}
+
+h1,h2,h3,h4,h5,h6 {
+  color: #000;
+}
+
+.header {
+  top: 0px;
+  left: 0px;
+  width: auto;
+  margin-left: 0;
+  margin-right: 0;
+  background: #6FA8DC;
+  padding: 20px;
+}
+
 form input {
   border: 1px solid #555;
   border-radius: 2em;
@@ -12,8 +32,40 @@ form input {
   padding: 0.3em;
 }
 
+a {
+  color: #216692;
+  text-decoration: none;
+}
+
 .logo {
-  width: 12em;
+  margin: auto;
+  vertical-align:middle;
+  max-height: 100%;
+  max-width: 100%;
+}
+
+.logo_box {
+  height: 16em;
+  width: 28em;
+  padding: 0;
+  border:1px solid black;
+  display: flex;
+  align-items:center;
+  justify-content: center;
+  background-color: #fff;
+}
+
+.logo_block {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+}
+
+.logo_arrow {
+  font-size: 12em;
+  font-weight: lighter;
+  margin: 0.15em;
 }
 
 .button {
@@ -65,7 +117,7 @@ hr {
   padding: 0;
 }
 
-ul.scopes {
+ul.scope {
   display: inline-block;
   text-align: left;
 }

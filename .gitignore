@@ -3,3 +3,4 @@
 !/keys/.gitkeep
 /config/*
 /omejdn_priv.*
+/.bundle

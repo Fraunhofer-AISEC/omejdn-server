@@ -3,7 +3,7 @@
 require 'socket'
 require 'net/ldap'
 require 'base64'
-require_rel './_abstract'
+require_relative './_abstract'
 
 # LDAP User DB backend
 class LdapUserDb < UserDb

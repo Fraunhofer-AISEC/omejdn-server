@@ -4,7 +4,7 @@
 
 ![Omejdn](public/img/logo.jpg)
 
-Omejdn is a minimal but extensible OAuth 2.0/OpenID connect server for ...
+Omejdn is a minimal but extensible OAuth 2.0/OpenID connect server used for ...
 
 1. IoT devices which use their private keys to request OAuth2 access tokens in order to access protected resources
 1. Websites or apps which retrieve user attributes
@@ -16,16 +16,16 @@ Some of Omejdn's core features include:
 
 * Database-free easy-to-read configuration files
 * Integration of existing LDAP directory services
-* Fully configurable through the Admin API Plugin (see API.md)
+* Fully configurable through the Admin API Plugin
 * A User Selfservice API Plugin
+* Standard Compliance (see below)
 
 
 **IMPORTANT**: Omejdn is meant to be a research sandbox in which we can
 (re)implement standard protocols and potentially extend and modify functionality
 under the hood to support research projects.
-It is **NOT** a production grade solution and should not be used as such.
-
-Before updating, please take a look at `release_notes.md` to see if an update requires manual intervention.
+Use at your own risk!
+At a minimum, take a look at the documentation for production setups.
 
 ---
 
@@ -44,6 +44,8 @@ Depending on your use case, you might want to at least configure the following o
 To start Omejdn, simply execute
 
 ```
+$ bundle config set --local with omejdn
+$ bundle config set --local without plugins development # Include these for more complex setups and development
 $ bundle install
 $ ruby omejdn.rb
 ```
@@ -54,9 +56,10 @@ as advertised at `/.well-known/oauth-authorization-server`.
 
 For testing purposes, a script for creating JWT Bearer Tokens for client authentication is located at `scripts/create_test_token.rb`.
 
-**NOTE**: Omejdn does not come with its own TLS server and needs to be run behind a reverse proxy in production setups.
-
 ## Configuration
+
+This section provides but a very brief overview of the possible configuration options.
+When in doubt, take a look at the documentation in `/docs`.
 
 ### Signing keys
 
@@ -67,31 +70,19 @@ You may place other keys and certificates in this folder to have the keys be adv
 
 ### Clients
 
-Clients are configured in `config/clients.yml`.
-Have a look at the file to see the format.
+Clients are configured in `config/clients.yml` using the client registration parameters.
+A minimal public client needs to have
 
-Confidential clients need to authenticate using a JWT bearer.
-This requires placing a non-expired certificate at `keys/clients/$(base64urlencode(CLIENT_ID)).cert`.
-To have keys be automatically be copied to the correct position, you may specify `import_certfile` for that client in the client configuration file.
-Only confidential clients may use the `client_credentials` grant.
-
-In order to generate your own key pair with a self-signed pulic key
-for testing, your can execute:
-
-    $ openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -keyout key.pem -out cert.pem
+- a unique `client_id`
+- a `token_endpoint_auth_method` with a value of `none`
+- at least one value listed under `redirect_uris`
+- at least one value listed under `scope`
 
 ### Users
 
 Users are configured using one or more *User Databases*, or `user_db` plugins.
-Which plugin you need to use depends on your setup, but here is a brief overview:
-
-* `yaml` reads users from a YAML file (`config/users.yml` by default).
-This plugin is useful for semi-static, small sets of users, such as Admin-accounts.
-The configuration format is described in the docs.
-
-* `sqlite` stores users and their attributes in a SQLite3 database. This is useful for larger local sets of users.
-
-* `ldap` Connect to an existing LDAP directory. You will know when to use this.
+Simple setups will probably use the `yaml` plugin, which reads `config/users.yml` by default. Each user has a username, password, and an array of attributes.
+For more complex setups take a look at the documentation.
 
 ### Scopes and Attributes
 
@@ -104,7 +95,7 @@ the `userinfo` endpoint response will also include this attribute.
 Have a look at the `attributes` claim mapper plugin.)
 
 Scopes are granted if the subject contains at least one such attribute.
-Scopes of the form `k:v` are granted if the user contains an attribute with key `k` and value `v`.
+Scopes of the form `k:v` are granted if the user contains an attribute with key `k` and value `v`. See the documentation for details.
 
 In `config/scope_description.yml` you can configure a short description string
 which is displayed to the user in an OpenID Connect flow upon requesting
@@ -121,7 +112,7 @@ There are some special scopes you may want to use:
 ### Plugins
 
 Omejdn's functionality can be customized through the use of plugins.
-For more information please take a look at [the Plugin README](plugins/README.md).
+For more information please take a look at the documentation.
 
 ## Using the Omejdn Docker Image
 
@@ -156,6 +147,7 @@ This server mostly implements the following standards (potentially via plugins):
   * [RFC 9068](https://datatracker.ietf.org/doc/rfc9068/) - JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens
   * [RFC 9101](https://datatracker.ietf.org/doc/rfc9101/) - The OAuth 2.0 Authorization Framework: JWT-Secured Authorization Request (JAR)
   * [RFC 9126](https://datatracker.ietf.org/doc/rfc9126/) - OAuth 2.0 Pushed Authorization Requests
+  * [RFC 9207](https://datatracker.ietf.org/doc/rfc9207/) - OAuth 2.0 Authorization Server Issuer Identification
 - OpenID Connect Protocol Suite
   * [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html)
   * [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html)
@@ -165,7 +157,7 @@ This server mostly implements the following standards (potentially via plugins):
 - Internet Drafts
   * [draft-spencer-oauth-claims-01](https://www.ietf.org/archive/id/draft-spencer-oauth-claims-01.txt)
   * [draft-ietf-oauth-security-topics-19](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics/)
-  * [draft-ietf-oauth-v2-1-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)
+  * [draft-ietf-oauth-v2-1-05](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)
 
 
 **NOTE**: Omejdn only implements *two* grant types:
@@ -206,6 +198,7 @@ Omejdn uses the following directory structure:
     \_ clients/              (The public key certificates for clients)
 \_ views/                    (Web-Pages)
 \_ public/                   (Additional frontend resources (CSS+Images))
+\_ docs/                     (Documentation)
 \_ tests/
     \_ test_*.rb             (Unit and E2E tests for Omejdn)
     \_ test_resources/       (Test vectors)

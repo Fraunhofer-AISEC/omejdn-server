@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 require 'test/unit'
 require 'rack/test'
-require 'webrick/https'
 require_relative 'config_testsetup'
 require_relative '../omejdn'
 require_relative '../lib/token'
@@ -16,9 +15,10 @@ class AdminApiTest < Test::Unit::TestCase
   def setup
     TestSetup.setup
     
-    client = Client.find_by_id 'testClient'
-    @token = Token.access_token client, nil, ['omejdn:admin'], {}, TestSetup.config['front_url']+"/api"
-    @insufficient_token = Token.access_token client, nil, ['omejdn:write'], {}, "test"
+    @client = Client.find_by_id 'private_key_jwt_client'
+    @client2 = Client.find_by_id 'publicClient'
+    @token = Token.access_token @client, nil, ['omejdn:admin'], {}, TestSetup.config['front_url']+"/api"
+    @insufficient_token = Token.access_token @client, nil, ['omejdn:write'], {}, "test"
     @testCertificate = File.read './tests/test_resources/testClient.pem'
   end
 
@@ -126,42 +126,42 @@ class AdminApiTest < Test::Unit::TestCase
   end
 
   def test_get_client
-    get '/api/v1/config/clients/testClient', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    get "/api/v1/config/clients/#{@client.client_id}", {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal TestSetup.clients[0], JSON.parse(last_response.body)
+    assert_equal @client.to_dict, JSON.parse(last_response.body)
   end
 
   def test_put_client
-    client = TestSetup.clients[1]
-    client.delete("client_id")
-    client['name'] = "Alternative Name"
-    put '/api/v1/config/clients/testClient2', client.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    client_desc = @client.to_dict
+    client_desc.delete("client_id")
+    client_desc['name'] = "Alternative Name"
+    put "/api/v1/config/clients/#{@client.client_id}", client_desc.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
-    get '/api/v1/config/clients/testClient2', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    get "/api/v1/config/clients/#{@client.client_id}", {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    client['client_id'] = 'testClient2'
-    assert_equal client, JSON.parse(last_response.body)
+    client_desc['client_id'] = @client.client_id
+    assert_equal client_desc, JSON.parse(last_response.body)
   end
 
   def test_post_client
-    client = {
+    new_client = {
       'client_id' => 'testClient3',
       'name' => 'omejdn admin ui',
       'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
       'attributes' => []
     }
-    post '/api/v1/config/clients', client.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    post '/api/v1/config/clients', new_client.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.created?
     get '/api/v1/config/clients/testClient3', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal client, JSON.parse(last_response.body)
+    assert_equal new_client, JSON.parse(last_response.body)
   end
 
   def test_delete_client
-    delete '/api/v1/config/clients/testClient2', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    delete "/api/v1/config/clients/#{@client2.client_id}", {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
-    get '/api/v1/config/clients/testClient2', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    get "/api/v1/config/clients/#{@client2.client_id}", {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.not_found?
     assert_equal '', last_response.body
   end
@@ -184,24 +184,24 @@ class AdminApiTest < Test::Unit::TestCase
     cert = {
       'certificate' => @testCertificate
     }
-    post '/api/v1/config/clients/testClient2/keys', cert.to_json,
+    post "/api/v1/config/clients/#{@client.client_id}/keys", cert.to_json,
          { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.created?
-    get '/api/v1/config/clients/testClient2/keys', {},
+    get "/api/v1/config/clients/#{@client.client_id}/keys", {},
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
     assert_equal cert, JSON.parse(last_response.body)
-    put '/api/v1/config/clients/testClient2/keys', cert.to_json,
+    put "/api/v1/config/clients/#{@client.client_id}/keys", cert.to_json,
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
-    get '/api/v1/config/clients/testClient2/keys', {},
+    get "/api/v1/config/clients/#{@client.client_id}/keys", {},
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
     assert_equal cert, JSON.parse(last_response.body)
-    delete '/api/v1/config/clients/testClient2/keys', {},
+    delete "/api/v1/config/clients/#{@client.client_id}/keys", {},
            { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
-    get '/api/v1/config/clients/testClient2/keys', {},
+    get "/api/v1/config/clients/#{@client.client_id}/keys", {},
         { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.not_found?
   end

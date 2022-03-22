@@ -4,10 +4,7 @@ require_relative './keys'
 require_relative './config'
 require_relative './client'
 require 'jwt'
-require 'base64'
-
-# Need this constant to encode subject the right way.
-ASN1_STRFLGS_ESC_MSB = 4
+require 'securerandom'
 
 # A helper for building JWT access tokens and ID tokens
 class Token
@@ -24,7 +21,7 @@ class Token
       'sub' => user&.username || client.client_id,
       'nbf' => now,
       'iat' => now,
-      'jti' => Base64.urlsafe_encode64(rand(2**64).to_s),
+      'jti' => SecureRandom.uuid,
       'exp' => now + base_config.dig('access_token', 'expiration'),
       'client_id' => client.client_id
     }
@@ -59,7 +56,7 @@ class Token
     JWT.encode token, key_pair['sk'], 'RS256', { typ: 'JWT', kid: key_pair['kid'] }
   end
 
-  # Decodes an access token for inspection
+  # Decodes an access token or id token for inspection
   def self.decode(token, endpoint = nil)
     raise 'No token found' if token.nil? | token.empty?
 

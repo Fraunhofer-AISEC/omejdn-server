@@ -1,7 +1,7 @@
 ---
 ## Welcome to Omejdn.
 ##
-## Please have a look at the documentation first, if you have any questions.
+## Please have a look at the documentation (/docs) first if you have any questions.
 ## This is the main configuration file.
 ## Once you start Omejdn for the first time, the comments here will disappear
 ## and all non-specified values will be filled in with their default values.
@@ -23,12 +23,8 @@
 ## Changes only apply after a restart
 #bind_to: 0.0.0.0:4567
 
-## CORS allow origin response value
-## Changes only apply after a restart
-#allow_origin: "*"
-
 ## Application Environment. Set to production to supress debug output
-#app_env: debug
+#environment: development
 
 ## Enable OpenID functionality (requires at least one user_db plugin)
 #openid: false

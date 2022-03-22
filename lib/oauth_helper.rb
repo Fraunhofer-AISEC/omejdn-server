@@ -3,11 +3,11 @@
 require_relative './config'
 require 'json'
 require 'set'
-require 'securerandom'
 require 'base64'
 require 'digest'
 
-# The OAuth Exception class
+# Represents the error responses to be returned in OAuth Flows
+# See https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#extensions-error
 class OAuthError < RuntimeError
   attr_reader :type, :description
 
@@ -17,30 +17,47 @@ class OAuthError < RuntimeError
     @description = description
   end
 
+  def to_h
+    { 'error' => @type, 'error_description' => @description }.compact
+  end
+
   def to_s
-    { 'error' => @type, 'error_description' => @description }.to_json
+    to_h.to_json
   end
 end
 
 # Helper functions for OAuth related tasks
 class OAuthHelper
-  # Identifies a client from the request parameters and optionally enforces authentication
+  # Identifies a client from the request parameters and enforces authentication
   # This function may not assume the existence of any parameter that could be within a request object
-  def self.identify_client(params, authenticate: true)
-    client = nil
-    if params[:client_assertion_type] # RFC 7521, Section 4.2
-      if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
-        _, client = Client.decode_jwt params[:client_assertion], true
-      end
-      raise OAuthError.new 'invalid_client', 'Client assertion not accepted' if client.nil?
-
-      return client
+  def self.authenticate_client(params, auth_header)
+    # Determine the client, trusting it will use the correct method to tell us
+    client_id = params[:client_id]
+    if auth_header.start_with? 'Basic'
+      client_id, client_secret = Base64.decode64(auth_header.slice(6..-1)).split(':', 2)
     end
-
-    raise OAuthError.new 'invalid_client', 'Client not authenticated' if authenticate
-
-    client = Client.find_by_id params[:client_id]
+    if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
+      client_id = JWT.decode(params[:client_assertion], nil, false).dig(0, 'sub') # Decode without verify
+    end
+    client = Client.find_by_id client_id
     raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
+
+    # Apply the correct authentication method
+    # See https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#token-endpoint-auth-method
+    auth_method = client.metadata['token_endpoint_auth_method'] || 'client_secret_basic'
+    access = (case auth_method
+              when 'client_secret_basic'
+                client_secret && client_secret == client.metadata['client_secret']
+              when 'client_secret_post'
+                params[:client_secret] == client.metadata['client_secret']
+              when 'private_key_jwt'
+                client.decode_jwt params[:client_assertion], true
+              when 'none'
+                true
+              else
+                raise OAuthError.new 'invalid_client', 'auth_method not supported'
+              end)
+    raise OAuthError.new 'invalid_client', 'Client authentication failed' unless access
 
     client
   end
@@ -69,7 +86,7 @@ class OAuthHelper
 
       if url_params[:request_uri].start_with? 'urn:ietf:params:oauth:request_uri:'
         # Retrieve token from Pushed Authorization Request Cache
-        params = PARCache.get[url_params[:request_uri]]
+        params = Cache.par[url_params[:request_uri]]
       elsif url_params[:request_uri].start_with? 'https://'
         # Retrieve remote token
         jwt = retrieve_request_uri url_params[:request_uri], client
@@ -81,7 +98,7 @@ class OAuthHelper
     end
 
     if jwt
-      params, = Client.decode_jwt jwt, false, client
+      params = client.decode_jwt jwt, false
       raise OAuthError, 'invalid_client' unless params['client_id'] == url_params[:client_id]
     end
 
@@ -93,26 +110,9 @@ class OAuthHelper
     url_params
   end
 
-  def self.token_response(access_token, scopes, id_token)
-    response = {}
-    response['access_token'] = access_token
-    response['id_token'] = id_token unless id_token.nil?
-    response['expires_in'] = Config.base_config.dig('access_token', 'expiration')
-    response['token_type'] = 'bearer'
-    response['scope'] = scopes.join ' '
-    JSON.generate response
-  end
-
-  def self.userinfo(client, user, token)
-    req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
-    userinfo = map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
-    userinfo['sub'] = user.username
-    userinfo
-  end
-
   def self.add_jwt_claim(jwt_body, key, value)
     # Address is handled differently. For reasons...
-    if %w[street_address postal_code locality region country].include?(key)
+    if %w[street_address postal_code locality region country formatted].include?(key)
       jwt_body['address'] ||= {}
       jwt_body['address'][key] = value
       return
@@ -147,14 +147,6 @@ class OAuthHelper
     new_payload
   end
 
-  def self.supported_scopes
-    Config.scope_mapping_config.map { |m| m[0] }
-  end
-
-  def self.new_authz_code
-    Base64.urlsafe_encode64(rand(2**512).to_s)
-  end
-
   def self.validate_pkce(code_challenge, code_verifier, method)
     raise OAuthError.new 'invalid_request', "Unsupported verifier method: #{method}" unless method == 'S256'
     raise OAuthError.new 'invalid_request', 'Code verifier missing' if code_verifier.nil?
@@ -165,12 +157,12 @@ class OAuthHelper
     raise OAuthError.new 'invalid_request', 'Code verifier mismatch' unless expected_challenge == code_challenge
   end
 
-  def self.configuration_metadata_oidc_discovery(base_config, _host, path)
+  def self.configuration_metadata_oidc_discovery(base_config, path)
     metadata = {}
     metadata['userinfo_endpoint'] = "#{path}/userinfo"
     metadata['acr_values_supported'] = []
-    metadata['subject_types_supported'] = 'public'
-    metadata['id_token_signing_alg_values_supported'] = base_config.dig('id_token', 'algorithm')
+    metadata['subject_types_supported'] = ['public']
+    metadata['id_token_signing_alg_values_supported'] = [*base_config.dig('id_token', 'algorithm')]
     metadata['id_token_encryption_alg_values_supported'] = ['none']
     metadata['id_token_encryption_enc_values_supported'] = ['none']
     metadata['userinfo_signing_alg_values_supported'] = ['none']
@@ -190,18 +182,19 @@ class OAuthHelper
     metadata
   end
 
-  def self.configuration_metadata_rfc8414(base_config, host, path)
+  def self.configuration_metadata_rfc8414(base_config, path)
     metadata = {}
     metadata['issuer'] = base_config['issuer']
     metadata['authorization_endpoint'] = "#{path}/authorize"
     metadata['token_endpoint'] = "#{path}/token"
-    metadata['jwks_uri'] = "#{host}/.well-known/jwks.json"
+    metadata['jwks_uri'] = "#{path}/jwks.json"
     # metadata["registration_endpoint"] = "#{host}/FIXME"
-    metadata['scopes_supported'] = OAuthHelper.supported_scopes
+    metadata['scopes_supported'] = Config.scope_mapping_config.map { |m| m[0] }
+    metadata['scopes_supported'] << 'openid' if Config.base_config['openid']
     metadata['response_types_supported'] = ['code']
     metadata['response_modes_supported'] = %w[query fragment form_post]
     metadata['grant_types_supported'] = %w[authorization_code client_credentials]
-    metadata['token_endpoint_auth_methods_supported'] = %w[none private_key_jwt]
+    metadata['token_endpoint_auth_methods_supported'] = %w[none client_secret_basic client_secret_post private_key_jwt]
     metadata['token_endpoint_auth_signing_alg_values_supported'] = %w[RS256 RS512 ES256 ES512]
     metadata['service_documentation'] = 'https://github.com/Fraunhofer-AISEC/omejdn-server/wiki'
     metadata['ui_locales_supported'] = []
@@ -217,12 +210,13 @@ class OAuthHelper
     metadata
   end
 
-  def self.configuration_metadata(host, path)
+  def self.configuration_metadata
     base_config = Config.base_config
+    path = base_config['front_url']
     metadata = {}
 
     # RFC 8414 (also OpenID Connect Core for the most part)
-    metadata.merge!(configuration_metadata_rfc8414(base_config, host, path))
+    metadata.merge!(configuration_metadata_rfc8414(base_config, path))
 
     # RFC 8628
     # metadata['device_authorization_endpoint'] =
@@ -246,8 +240,11 @@ class OAuthHelper
     # RFC-ietf-oauth-iss-auth-resp-04
     metadata['authorization_response_iss_parameter_supported'] = true
 
+    # OpenID Connect RP-initiated Logout 1.0 - draft 01
+    metadata['end_session_endpoint'] = "#{path}/logout"
+
     # OpenID Connect Discovery 1.0
-    metadata.merge!(configuration_metadata_oidc_discovery(base_config, host, path))
+    metadata.merge!(configuration_metadata_oidc_discovery(base_config, path))
 
     # Signing as per RFC 8414
     metadata['signed_metadata'] = sign_metadata metadata
