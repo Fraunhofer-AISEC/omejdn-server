@@ -82,8 +82,8 @@ after do
     # response.headers['Access-Control-Allow-Credentials'] = true # For some reason this throws an error
     if request.env['REQUEST_METHOD'] == 'OPTIONS' # CORS Preflight Request
       headers['Access-Control-Allow-Headers'] = request.env['HTTP_ACCESS_CONTROL_REQUEST_HEADERS']
-      headers['Access-Control-Allow-Methods'] = request.env['HTTP_ACCESS_CONTROL_REQUEST_METHODS']
-      headers['Allow']                        = request.env['HTTP_ACCESS_CONTROL_REQUEST_METHODS']
+      headers['Access-Control-Allow-Methods'] = request.env['HTTP_ACCESS_CONTROL_REQUEST_METHOD']
+      headers['Allow']                        = request.env['HTTP_ACCESS_CONTROL_REQUEST_METHOD']
       halt 204
     end
   end
