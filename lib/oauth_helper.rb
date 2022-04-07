@@ -148,13 +148,17 @@ class OAuthHelper
   end
 
   def self.validate_pkce(code_challenge, code_verifier, method)
+    expected_challenge = generate_pkce(code_verifier, method)
+    raise OAuthError.new 'invalid_request', 'Code verifier mismatch' unless expected_challenge == code_challenge
+  end
+
+  def self.generate_pkce(code_verifier, method)
     raise OAuthError.new 'invalid_request', "Unsupported verifier method: #{method}" unless method == 'S256'
     raise OAuthError.new 'invalid_request', 'Code verifier missing' if code_verifier.nil?
 
     digest = Digest::SHA256.new
     digest << code_verifier
-    expected_challenge = digest.base64digest.gsub('+', '-').gsub('/', '_').gsub('=', '')
-    raise OAuthError.new 'invalid_request', 'Code verifier mismatch' unless expected_challenge == code_challenge
+    digest.base64digest.gsub('+', '-').gsub('/', '_').gsub('=', '')
   end
 
   def self.configuration_metadata_oidc_discovery(base_config, path)

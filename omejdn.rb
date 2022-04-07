@@ -210,6 +210,7 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
 
   # Generate new authorization code and aggregate data about the request
   # Any inputs to members not starting in req_ are sufficiently sanitized
+  # Note that some values are reassigned after dealing with request and request_uri
   session[:current_auth] = SecureRandom.uuid
   Cache.authorization[session[:current_auth]] = cache = {
     client_id: client.client_id, # The requesting client
@@ -223,6 +224,13 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
   cache[:redirect_uri] = client.verify_redirect_uri params[:redirect_uri], true if params[:redirect_uri]
   OAuthHelper.prepare_params params, client
   uri = client.verify_redirect_uri params[:redirect_uri], openid?((params[:scope] || '').split) # For real this time
+
+  # Some of these values may have been overwritten
+  cache.merge!({
+                 state: params[:state], # Client state
+                 nonce: params[:nonce], # The client's OIDC nonce
+                 response_mode: params[:response_mode] # The response mode to use
+               })
 
   raise OAuthError.new 'invalid_scope', 'No scope specified' unless params[:scope] # We require specifying the scope
   raise OAuthError.new 'unsupported_response_type', 'Only code supported' unless params[:response_type] == 'code'
@@ -433,44 +441,6 @@ endpoint '/login/exec', ['POST'] do
   next_task AuthorizationTask::LOGIN
 rescue OAuthError => e
   auth_response Cache.authorization[session[:current_auth]], e.to_h
-end
-
-# FIXME
-# This should also be more generic and use the correct OP
-endpoint '/oauth_cb', ['GET'], public_endpoint: true do
-  oauth_providers = Config.oauth_provider_config
-  provider = oauth_providers.select { |pv| pv['name'] == params[:provider] }.first
-
-  at = nil
-  uri = URI(provider['token_endpoint'])
-  Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
-    req = Net::HTTP::Post.new(uri)
-    req.set_form_data('code' => params[:code],
-                      'client_id' => provider['client_id'],
-                      'client_secret' => provider['client_secret'],
-                      'grant_type' => 'authorization_code',
-                      'redirect_uri' => provider['redirect_uri'])
-    res = http.request req
-    at = JSON.parse(res.body)['access_token']
-  end
-  return 'Unauthorized' if at.nil?
-
-  user = nil
-  uri = URI(provider['userinfo_endpoint'])
-  Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
-    req = Net::HTTP::Get.new(uri)
-    req['Authorization'] = "Bearer #{at}"
-    res = http.request req
-    user = User.generate_extern_user(provider, JSON.parse(res.body))
-  end
-  return 'Internal Error' if user.username.nil?
-
-  user.auth_time = Time.new.to_i
-  session[:user] = SecureRandom.uuid
-  Cache.user_session[session[:user]] = user
-  auth = Cache.authorization[session[:current_auth]]
-  update_auth_scope auth, user, (Client.find_by_id auth[:client_id])
-  next_task AuthorizationTask::LOGIN
 end
 
 ########## WELL-KNOWN ENDPOINTS ##################
