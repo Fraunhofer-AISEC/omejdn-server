@@ -59,23 +59,6 @@ class User
     PluginLoader.load_plugin('user_db', backend).update_password(self, User.string_to_pass_hash(new_password))
   end
 
-  def self.generate_extern_user(provider, json)
-    return nil if json[provider['external_userid']].nil?
-
-    username = json[provider['external_userid']]
-    user = User.find_by_id(username)
-    return user unless user.nil?
-
-    user = User.new
-    user.username = username
-    user.extern = provider['name'] || false
-    user.attributes = [*provider['claim_mapper']].map do |mapper|
-      PluginLoader.load_plugin('claim_mapper', mapper).map_from_provider(json, provider)
-    end.flatten(1)
-    User.add_user(user, Config.base_config['user_backend_default'])
-    user
-  end
-
   def claim?(searchkey, searchvalue = nil)
     attribute = attributes.select { |a| a['key'] == searchkey }.first
     !attribute.nil? && (searchvalue.nil? || attribute['value'] == searchvalue)

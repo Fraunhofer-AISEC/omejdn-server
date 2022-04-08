@@ -145,6 +145,27 @@ before '/federation/:provider_id*' do
   halt 401 unless @metadata
 end
 
+def generate_extern_user(provider, userinfo)
+  username = "#{userinfo['sub']}@#{provider['issuer']}" # Maintain unique usernames
+  user = User.find_by_id(username)
+
+  # Add user if they is logging in for the first time
+  if user.nil?
+    user = User.new
+    user.username = username
+    user.extern = provider['issuer'] || false
+    User.add_user(user, Config.base_config['user_backend_default'])
+  end
+
+  # Update local Attributes
+  user.attributes = [*provider['claim_mapper']].map do |mapper|
+    PluginLoader.load_plugin('claim_mapper', mapper).map_from_provider(userinfo, provider)
+  end.flatten(1)
+  user.save
+
+  user
+end
+
 # Redirect the user here to start the flow
 endpoint '/federation/:provider_id', ['GET'] do
   code_verifier = SecureRandom.uuid
@@ -162,7 +183,8 @@ endpoint '/federation/:provider_id', ['GET'] do
   FederationCache.cache[oauth_params[:state]] = {
     issuer: @provider['issuer'],
     nonce: oauth_params[:nonce],
-    code_verifier: code_verifier
+    code_verifier: code_verifier,
+    current_auth: session[:current_auth]
   }
 
   # Pushed Authorization Requests where possible
@@ -185,6 +207,9 @@ endpoint '/federation/:provider_id/callback', ['GET'] do
   # Authorization Server Issuer Identification (RFC 9207)
   halt 400, 'ISS' if @metadata['authorization_response_iss_parameter_supported'] && params['iss'] != cached[:issuer]
 
+  # Restore cached auth context handler
+  session[:current_auth] = cached[:current_auth]
+
   # Error handling
   if params['error']
     halt 400,
@@ -204,10 +229,10 @@ endpoint '/federation/:provider_id/callback', ['GET'] do
   halt 400 unless token_response['nonce'] == cached['nonce']
 
   halt 400 unless (access_token = token_response['access_token'])
-  _id_token = token_response['id_token'] # TODO: Evaluate authentication
+  _id_token = token_response['id_token'] # TODO: Evaluate authentication, verify signature
 
   userinfo_response = post(@metadata['userinfo_endpoint'], nil, "Bearer #{access_token}")
-  user = User.generate_extern_user(@provider, JSON.parse(userinfo_response))
+  user = generate_extern_user(@provider, JSON.parse(userinfo_response))
 
   user.auth_time = Time.now.to_i # TODO: Should be the time from the ID Token
   session[:user] = SecureRandom.uuid
