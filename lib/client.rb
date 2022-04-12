@@ -37,7 +37,7 @@ class Client
     clients
   end
 
-  def self.from_dict(json)
+  def self.from_h(json)
     client = Client.new
     client.apply_values(json)
     client
@@ -59,7 +59,7 @@ class Client
     raise OAuthError.new 'invalid_client', "Error decoding JWT: #{e}"
   end
 
-  def to_dict
+  def to_h
     result = { 'client_id' => @client_id }.merge(@metadata)
     result['attributes'] = @attributes
     result.compact

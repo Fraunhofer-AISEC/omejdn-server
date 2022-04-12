@@ -135,22 +135,16 @@ class TestSetup
         'algorithm' => 'RS256',
       },
       'plugins' => {
-        'user_db' => {
-          'yaml' => {
-            'location' => 'config/users_test.yml'
-          }
+        'user_backend_yaml' => {
+          'location' => 'config/users_test.yml'
         },
-        'api' => {
-          'admin_v1' => nil,
-          'user_selfservice_v1' => {
-            'allow_deletion' => true,
-            'allow_password_change' => true,
-            'editable_attributes' => ['name']
-          }
+        'admin_api' => nil,
+        'user_selfservice' => {
+          'allow_deletion' => true,
+          'allow_password_change' => true,
+          'editable_attributes' => ['name']
         },
-        'claim_mapper' => {
-          'attribute' => nil
-        }
+        'token_user_attributes' => nil
       }
     }
   end

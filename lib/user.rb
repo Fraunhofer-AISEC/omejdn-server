@@ -7,56 +7,19 @@ require_relative './plugins'
 class User
   attr_accessor :username, :password, :attributes, :extern, :backend, :auth_time
 
-  def verify_password(pass)
-    PluginLoader.load_plugin('user_db', backend)&.verify_password(self, pass) || false
+  def verify_password(password)
+    user = self
+    PluginLoader.fire('USER_AUTHENTICATION_PASSWORD_VERIFY', binding).compact.first || false
   end
 
-  def self.all_users
-    PluginLoader.load_plugins('user_db').map(&:all_users).flatten
-  end
-
-  def self.find_by_id(username)
-    PluginLoader.load_plugins('user_db').each do |db|
-      user = db.find_by_id(username)
-      return user unless user.nil?
-    end
-    nil
-  end
-
-  def self.from_dict(dict)
-    user = User.new
-    user.username = dict['username']
-    user.attributes = dict['attributes']
-    user.extern = dict['extern']
-    user.backend = dict['backend']
-    user.password = string_to_pass_hash(dict['password']) unless user.extern
-    user
-  end
-
-  def to_dict
-    {
-      'username' => username,
-      'attributes' => attributes,
-      'password' => password&.to_s,
-      'extern' => extern,
-      'backend' => backend
-    }.compact
-  end
-
-  def self.delete_user(username)
-    !PluginLoader.load_plugins('user_db').index { |db| db.delete_user(username) }.nil?
-  end
-
-  def self.add_user(user, user_backend)
-    PluginLoader.load_plugin('user_db', user_backend).create_user(user)
+  def update_password(password)
+    user = self
+    PluginLoader.fire('USER_AUTHENTICATION_PASSWORD_CHANGE', binding)
   end
 
   def save
-    PluginLoader.load_plugin('user_db', backend || Config.base_config['user_backend_default']).update_user(self)
-  end
-
-  def update_password(new_password)
-    PluginLoader.load_plugin('user_db', backend).update_password(self, User.string_to_pass_hash(new_password))
+    user = self
+    PluginLoader.fire('USER_UPDATE', binding)
   end
 
   def claim?(searchkey, searchvalue = nil)
@@ -67,6 +30,42 @@ class User
   # usernames are unique
   def ==(other)
     username == other.username
+  end
+
+  def self.all_users
+    PluginLoader.fire('USER_GET_ALL', binding).flatten
+  end
+
+  def self.find_by_id(username)
+    PluginLoader.fire('USER_GET', binding).flatten.compact.first
+  end
+
+  def self.from_h(dict)
+    user = User.new
+    user.username = dict['username']
+    user.attributes = dict['attributes']
+    user.extern = dict['extern']
+    user.backend = dict['backend']
+    user.password = string_to_pass_hash(dict['password']) unless user.extern
+    user
+  end
+
+  def to_h
+    {
+      'username' => username,
+      'attributes' => attributes,
+      'password' => password&.to_s,
+      'extern' => extern,
+      'backend' => backend
+    }.compact
+  end
+
+  def self.delete_user(username)
+    PluginLoader.fire('USER_DELETE', binding)
+  end
+
+  def self.add_user(user, user_backend)
+    PluginLoader.fire('USER_CREATE', binding)
   end
 
   def self.string_to_pass_hash(str)

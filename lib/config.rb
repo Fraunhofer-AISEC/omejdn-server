@@ -26,7 +26,7 @@ class Config
   end
 
   def self.client_config=(clients)
-    clients_yaml = clients.map(&:to_dict)
+    clients_yaml = clients.map(&:to_h)
     write_config(OMEJDN_CLIENT_CONFIG_FILE, clients_yaml.to_yaml)
   end
 
@@ -85,9 +85,9 @@ class Config
     end
     if config['openid'] && !has_user_db_configured
       puts 'ERROR: No user_db plugin defined. Cannot serve OpenID functionality'
-      exit
+      # exit
     end
-    apply_env(config, 'user_backend_default', config.dig('plugins', 'user_db').keys.first) if has_user_db_configured
+    # apply_env(config, 'user_backend_default', config.dig('plugins', 'user_db').keys.first) if has_user_db_configured
     Config.base_config = config
   end
 
@@ -116,10 +116,10 @@ class Config
     admin_name, admin_pw = ENV['OMEJDN_ADMIN'].split(':')
     admin = User.find_by_id(admin_name)
     unless admin
-      admin = User.from_dict({
-                               'username' => admin_name,
-                               'attributes' => [{ 'key' => 'omejdn', 'value' => 'admin' }]
-                             })
+      admin = User.from_h({
+                            'username' => admin_name,
+                            'attributes' => [{ 'key' => 'omejdn', 'value' => 'admin' }]
+                          })
       User.add_user(admin, Config.base_config['user_backend_default'])
     end
     admin.update_password(admin_pw)

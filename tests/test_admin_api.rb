@@ -128,11 +128,11 @@ class AdminApiTest < Test::Unit::TestCase
   def test_get_client
     get "/api/v1/config/clients/#{@client.client_id}", {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal @client.to_dict, JSON.parse(last_response.body)
+    assert_equal @client.to_h, JSON.parse(last_response.body)
   end
 
   def test_put_client
-    client_desc = @client.to_dict
+    client_desc = @client.to_h
     client_desc.delete("client_id")
     client_desc['name'] = "Alternative Name"
     put "/api/v1/config/clients/#{@client.client_id}", client_desc.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }

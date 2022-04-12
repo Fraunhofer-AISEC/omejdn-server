@@ -23,12 +23,12 @@ end
 
 # Users
 endpoint '/api/v1/config/users', ['GET'], public_endpoint: true do
-  halt 200, JSON.generate(User.all_users.map(&:to_dict))
+  halt 200, JSON.generate(User.all_users.map(&:to_h))
 end
 
 endpoint '/api/v1/config/users', ['POST'], public_endpoint: true do
   json = JSON.parse request.body.read
-  user = User.from_dict(json)
+  user = User.from_h(json)
   User.add_user(user, json['userBackend'] || Config.base_config['user_backend_default'])
   halt 201
 end
@@ -36,13 +36,13 @@ end
 endpoint '/api/v1/config/users/:username', ['GET'], public_endpoint: true do
   user = User.find_by_id params['username']
   halt 404 if user.nil?
-  halt 200, user.to_dict.to_json
+  halt 200, user.to_h.to_json
 end
 
 endpoint '/api/v1/config/users/:username', ['PUT'], public_endpoint: true do
   user = User.find_by_id params['username']
   halt 404 if user.nil?
-  updated_user = User.from_dict(JSON.parse(request.body.read))
+  updated_user = User.from_h(JSON.parse(request.body.read))
   updated_user.username = user.username
   updated_user.save
   halt 204
@@ -77,7 +77,7 @@ endpoint '/api/v1/config/clients', ['PUT'], public_endpoint: true do
 end
 
 endpoint '/api/v1/config/clients', ['POST'], public_endpoint: true do
-  client = Client.from_dict(JSON.parse(request.body.read))
+  client = Client.from_h(JSON.parse(request.body.read))
   clients = Client.load_clients
   clients << client
   Config.client_config = clients
@@ -87,7 +87,7 @@ end
 endpoint '/api/v1/config/clients/:client_id', ['GET'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
-  halt 200, client.to_dict.to_json
+  halt 200, client.to_h.to_json
 end
 
 endpoint '/api/v1/config/clients/:client_id', ['PUT'], public_endpoint: true do
