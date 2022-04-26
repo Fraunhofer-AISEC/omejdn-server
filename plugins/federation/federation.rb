@@ -17,23 +17,23 @@
 # - Configurable Claim Mapping
 
 require 'net/http'
+require_relative './default_attribute_mappers'
 
-provider_config = {
-  'omejdn' => {
-    'issuer' => 'http://localhost:4568', # REQUIRED
-    'grant_type' => 'authorization_code', # Defaults to 'authorization_code'. Can be 'implicit' for SIOPv2
-    #    'metadata' => { # For those Servers that neither implemented RFC 8414 nor OIDC Discovery correctly
-    #      'token_endpoint' => 'https://oauth2.googleapis.com/token',
-    #      'authorization_endpoint' => 'https://accounts.google.com/o/oauth2/v2/auth',
-    #      'userinfo_endpoint' => 'https://openidconnect.googleapis.com/v1/userinfo',
-    #      'jwks_uri' => 'https://www.googleapis.com/oauth2/v3/certs'
-    #    },
-    'client_id' => 'myAwesomeClientId', # REQUIRED
-    'token_endpoint_auth_method' => 'private_key_jwt', # Defaults to 'client_secret_basic'
-    'client_secret' => 'mySuperSecretSecret', # CONDITIONAL if auth method requires it
-    'scope' => %w[openid profile] # REQUIRED
-  }
-}
+def provider_config
+  Config.base_config.dig('plugins', 'federation', 'providers')
+end
+
+def get_login_options(bind)
+  login_options = bind.local_variable_get('login_options')
+  provider_config.each do |id, options|
+    login_options << {
+      url: "#{Config.base_config['front_url']}/federation/#{id}",
+      desc: (options['description'] || "Login with #{id.capitalize}"),
+      logo: options['op_logo_uri']
+    }.compact
+  end
+end
+PluginLoader.register 'AUTHORIZATION_LOGIN_STARTED', method(:get_login_options)
 
 # Remembers any sent requests
 class FederationCache
@@ -103,7 +103,7 @@ def authenticated_post(provider, target, params)
   when 'none'
     params[:client_id] = provider['client_id']
   when 'client_secret_basic'
-    http_auth = "Basic #{Base64.encode64("#{provider['client_id']}:#{provider['client_secret']}")}".chomp
+    http_auth = "Basic #{Base64.strict_encode64("#{provider['client_id']}:#{provider['client_secret']}")}".chomp
   when 'client_secret_post'
     params[:client_id] = provider['client_id']
     params[:client_secret] = provider['client_secret']
@@ -145,7 +145,14 @@ before '/federation/:provider_id*' do
   halt 401 unless @metadata
 end
 
+def check_prerequisites(mapper, userinfo)
+  !((mapper['prerequisites'] || {}).any? do |k, v|
+    ([*userinfo[k]] & [*v]).empty?
+  end)
+end
+
 def generate_extern_user(provider, userinfo)
+  base_config = Config.base_config
   username = "#{userinfo['sub']}@#{provider['issuer']}" # Maintain unique usernames
   user = User.find_by_id(username)
 
@@ -154,13 +161,17 @@ def generate_extern_user(provider, userinfo)
     user = User.new
     user.username = username
     user.extern = provider['issuer'] || false
-    User.add_user(user, Config.base_config['user_backend_default'])
+    user.backend = base_config['user_backend_default']
+    User.add_user(user, base_config['user_backend_default'])
   end
 
   # Update local Attributes
-  user.attributes = [*provider['claim_mapper']].map do |mapper|
-    PluginLoader.load_plugin('claim_mapper', mapper).map_from_provider(userinfo, provider)
-  end.flatten(1)
+  user.attributes = (provider['attribute_mappers'] || []).map do |mapper|
+    mapper = base_config.dig('plugins', 'federation', 'attribute_mappers', mapper)
+    if check_prerequisites mapper, userinfo
+      PluginLoader.fire "PLUGIN_FEDERATION_ATTRIBUTE_MAPPING_#{mapper['type'].upcase}", binding
+    end
+  end.flatten(2).compact
   user.save
 
   user
@@ -171,7 +182,7 @@ endpoint '/federation/:provider_id', ['GET'] do
   code_verifier = SecureRandom.uuid
   oauth_params = {
     response_type: 'code',
-    response_mode: 'query',
+    # response_mode: 'query',
     redirect_uri: "#{Config.base_config['front_url']}/federation/#{params['provider_id']}/callback",
     scope: [*@provider['scope']].join(' '),
     nonce: SecureRandom.uuid,

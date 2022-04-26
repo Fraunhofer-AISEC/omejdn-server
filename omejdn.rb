@@ -410,20 +410,12 @@ end
 # FIXME
 # This should use a more generic way to select the OP to use
 endpoint '/login', ['GET'] do
-  providers = Config.oauth_provider_config&.map do |provider|
-    url = URI(provider['authorization_endpoint'])
-    url.query = URI.encode_www_form({
-                                      client_id: provider['client_id'],
-                                      scope: provider['scopes'],
-                                      redirect_uri: provider['redirect_uri'],
-                                      response_type: provider['response_type']
-                                    })
-    { url: url.to_s, name: provider['name'], logo: provider['logo'] }
-  end
+  login_options = []
+  PluginLoader.fire('AUTHORIZATION_LOGIN_STARTED', binding)
   halt 200, (haml :login, locals: {
     no_password_login: (Config.base_config['no_password_login'] || false),
     host: Config.base_config['front_url'],
-    providers: providers
+    login_options: login_options
   })
 end
 

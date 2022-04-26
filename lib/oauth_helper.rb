@@ -34,7 +34,7 @@ class OAuthHelper
     # Determine the client, trusting it will use the correct method to tell us
     client_id = params[:client_id]
     if auth_header.start_with? 'Basic'
-      client_id, client_secret = Base64.decode64(auth_header.slice(6..-1)).split(':', 2)
+      client_id, client_secret = Base64.strict_decode64(auth_header.slice(6..-1)).split(':', 2)
     end
     if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
       client_id = JWT.decode(params[:client_assertion], nil, false).dig(0, 'sub') # Decode without verify

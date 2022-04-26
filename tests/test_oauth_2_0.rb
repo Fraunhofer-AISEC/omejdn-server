@@ -55,7 +55,7 @@ class OAuth2Test < Test::Unit::TestCase
         })
       when 'client_secret_basic'
         headers.merge! ({
-          'HTTP_AUTHORIZATION' => "Basic #{Base64.encode64("#{client.client_id}:#{client.metadata['client_secret']}")}"
+          'HTTP_AUTHORIZATION' => "Basic #{Base64.strict_encode64("#{client.client_id}:#{client.metadata['client_secret']}")}"
         })
       when 'client_secret_post'
         params.merge! ({ :client_secret => client.metadata['client_secret'] })

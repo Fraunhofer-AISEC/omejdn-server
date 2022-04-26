@@ -15,7 +15,7 @@ class Keys
   end
 
   def self.gen_x5c(certs)
-    certs.map { |cert| Base64.encode64(cert.to_der).strip }
+    certs.map { |cert| Base64.strict_encode64(cert.to_der).strip }
   end
 
   def self.gen_x5t(certs)

@@ -13,14 +13,17 @@
       %br
       %br
       %input{:type => "submit", :value => "Login", :class => "button"}
-%div{:hidden => locals[:providers].empty?}
+%div{:hidden => locals[:login_options].empty?}
   %hr
-  %h2 Login with external provider:
-%div{:class => "idplist", :hidden => locals[:providers].empty?}
+  - if locals[:no_password_login]
+    %h2 Please choose your preferred login option:
+  - else
+    %h2 Other login options:
+%div{:class => "idplist", :hidden => locals[:login_options].empty?}
   %br
-  - (locals[:providers]).each do |provider|
-    %a{:href => provider[:url], :class => "button"}
-      %span{:hidden => !provider[:logo].nil? } #{provider[:name]}
-      %img{:src => "#{provider[:logo]}", :hidden => provider[:logo].nil?}
+  - (locals[:login_options]).each do |opt|
+    %a{:href => opt[:url], :class => "button"}
+      %img{:src => "#{opt[:logo]}", :hidden => opt[:logo].nil?}
+      %span{:hidden => !opt[:logo].nil? } #{opt[:desc]}
     %br
 </center>
