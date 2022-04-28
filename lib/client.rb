@@ -47,6 +47,9 @@ class Client
   def decode_jwt(jwt, verify_aud)
     _, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
     aud = Config.base_config['accept_audience']
+    raise 'Not self-issued' if jwt['sub'] && jwt_dec['sub'] != jwt_dec['iss']
+    raise 'Invalid algorithm' unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
+
     jwt_dec, = JWT.decode jwt, certificate&.public_key, true,
                           { nbf_leeway: 30, aud: aud, verify_aud: verify_aud, algorithm: jwt_hdr['alg'] }
 
