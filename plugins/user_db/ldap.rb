@@ -92,8 +92,8 @@ class LdapUserDb < UserDb
 
   def connect_directory(bind_dn = nil, bind_pass = nil)
     if bind_dn.nil?
-      bind_dn   = ENV['OMEJDN_LDAP_BIND_DN']
-      bind_pass = ENV['OMEJDN_LDAP_BIND_PW']
+      bind_dn   = ENV.fetch('OMEJDN_LDAP_BIND_DN', nil)
+      bind_pass = ENV.fetch('OMEJDN_LDAP_BIND_PW', nil)
     end
     ldap_conf = {
       host: @config['host'],
