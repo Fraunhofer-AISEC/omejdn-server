@@ -64,23 +64,21 @@ end
 
 # Clients
 endpoint '/api/v1/config/clients', ['GET'], public_endpoint: true do
-  JSON.generate Config.client_config
+  halt 200, JSON.generate(Client.all_clients.map(&:to_h))
 end
 
 endpoint '/api/v1/config/clients', ['PUT'], public_endpoint: true do
-  Config.client_config = JSON.parse(request.body.read).map do |c|
-    client = Client.new
-    client.apply_values(c)
-    client
+  Client.all_clients.each { |c| Client.delete_client c.client_id }
+
+  JSON.parse(request.body.read).each do |c|
+    Client.add_client Client.from_h(c), 'default'
   end
   halt 204
 end
 
 endpoint '/api/v1/config/clients', ['POST'], public_endpoint: true do
-  client = Client.from_h(JSON.parse(request.body.read))
-  clients = Client.load_clients
-  clients << client
-  Config.client_config = clients
+  client = JSON.parse(request.body.read)
+  Client.add_client client, 'default'
   halt 201
 end
 
@@ -92,37 +90,25 @@ end
 
 endpoint '/api/v1/config/clients/:client_id', ['PUT'], public_endpoint: true do
   json = JSON.parse(request.body.read)
-  clients = Client.load_clients
-  clients.each do |stored_client|
-    next if stored_client.client_id != params['client_id']
+  client = Client.find_by_id params['client_id']
+  halt 404 unless client
 
-    stored_client.attributes = json.delete('attributes') unless json['attributes'].nil?
-    stored_client.metadata.merge!(json)
-    Config.client_config = clients
-    halt 204
-  end
-  halt 404
+  client.attributes = json.delete('attributes') unless json['attributes'].nil?
+  client.metadata.merge!(json)
+  client.save
+  halt 204
 end
 
 endpoint '/api/v1/config/clients/:client_id', ['DELETE'], public_endpoint: true do
-  clients = Client.load_clients
-  clients.each do |stored_client|
-    next unless stored_client.client_id.eql?(params['client_id'])
-
-    clients.delete(stored_client)
-    Config.client_config = clients
-    halt 204
-  end
-  halt 404
+  Client.delete_client params['client_id']
+  halt 204
 end
 
 # Client Keys
 endpoint '/api/v1/config/clients/:client_id/keys', ['GET'], public_endpoint: true do
-  client = Client.find_by_id params['client_id']
-  halt 404 if client.nil?
-  certificate = client.certificate
+  certificate = Client.find_by_id(params['client_id'])&.certificate
   halt 404 if certificate.nil?
-  halt 200, JSON.generate({ 'certificate' => client.certificate.to_s })
+  halt 200, JSON.generate({ 'certificate' => certificate.to_s })
 end
 
 endpoint '/api/v1/config/clients/:client_id/keys', ['PUT'], public_endpoint: true do

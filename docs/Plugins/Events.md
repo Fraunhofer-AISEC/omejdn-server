@@ -33,6 +33,20 @@ You may edit the token using the local variable `token`.
 Fired once the core id token is created.
 You may edit the token using the local variable `token`.
 
+### CLIENT_GET
+
+### CLIENT_GET_ALL
+
+### CLIENT_CREATE
+
+### CLIENT_UPDATE
+
+### CLIENT_DELETE
+
+### CLIENT_AUTHENTICATION_CERTIFICATE_GET
+
+### CLIENT_AUTHENTICATION_CERTIFICATE_UPDATE
+
 ### USER_GET
 
 Fired to retrieve a certain user.

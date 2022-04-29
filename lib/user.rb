@@ -7,6 +7,29 @@ require_relative './plugins'
 class User
   attr_accessor :username, :password, :attributes, :extern, :backend, :auth_time
 
+  # ----- Implemented by plugins -----
+
+  def self.find_by_id(username)
+    PluginLoader.fire('USER_GET', binding).flatten.compact.first
+  end
+
+  def self.all_users
+    PluginLoader.fire('USER_GET_ALL', binding).flatten
+  end
+
+  def self.add_user(user, user_backend)
+    PluginLoader.fire('USER_CREATE', binding)
+  end
+
+  def self.delete_user(username)
+    PluginLoader.fire('USER_DELETE', binding)
+  end
+
+  def save
+    user = self
+    PluginLoader.fire('USER_UPDATE', binding)
+  end
+
   def verify_password(password)
     user = self
     PluginLoader.fire('USER_AUTHENTICATION_PASSWORD_VERIFY', binding).compact.first || false
@@ -17,28 +40,7 @@ class User
     PluginLoader.fire('USER_AUTHENTICATION_PASSWORD_CHANGE', binding)
   end
 
-  def save
-    user = self
-    PluginLoader.fire('USER_UPDATE', binding)
-  end
-
-  def claim?(searchkey, searchvalue = nil)
-    attribute = attributes.select { |a| a['key'] == searchkey }.first
-    !attribute.nil? && (searchvalue.nil? || attribute['value'] == searchvalue)
-  end
-
-  # usernames are unique
-  def ==(other)
-    username == other.username
-  end
-
-  def self.all_users
-    PluginLoader.fire('USER_GET_ALL', binding).flatten
-  end
-
-  def self.find_by_id(username)
-    PluginLoader.fire('USER_GET', binding).flatten.compact.first
-  end
+  # ----- Conversion to/from hash for import/export -----
 
   def self.from_h(dict)
     user = User.new
@@ -60,12 +62,18 @@ class User
     }.compact
   end
 
-  def self.delete_user(username)
-    PluginLoader.fire('USER_DELETE', binding)
+  # ----- Whether the user has such an attribute -----
+
+  def claim?(searchkey, searchvalue = nil)
+    attribute = attributes.select { |a| a['key'] == searchkey }.first
+    !attribute.nil? && (searchvalue.nil? || attribute['value'] == searchvalue)
   end
 
-  def self.add_user(user, user_backend)
-    PluginLoader.fire('USER_CREATE', binding)
+  # ----- Util -----
+
+  # usernames are the primary key for users
+  def ==(other)
+    username == other.username
   end
 
   def self.string_to_pass_hash(str)
