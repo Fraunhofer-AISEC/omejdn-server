@@ -77,7 +77,7 @@ class Config
       apply_env(config, "#{token}.algorithm",  'RS256')
     end
     has_user_db_configured = config.dig('plugins', 'user_db') && !config.dig('plugins', 'user_db').empty?
-    if ENV['OMEJDN_ADMIN'] && !has_user_db_configured
+    if ENV.fetch('OMEJDN_ADMIN', nil) && !has_user_db_configured
       # Try to enable yaml plugin, to have at least one user_db
       config['plugins'] ||= {}
       config['plugins']['user_db'] = { 'yaml' => nil }
@@ -93,7 +93,7 @@ class Config
 
   def self.apply_env(config, conf_key, fallback)
     conf_parts = conf_key.split('.')
-    env_value = ENV["OMEJDN_#{conf_parts.join('__').upcase}"]
+    env_value = ENV.fetch("OMEJDN_#{conf_parts.join('__').upcase}", nil)
     conf_key = conf_parts.pop
     conf_parts.each do |part|
       config[part] ||= {}

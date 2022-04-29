@@ -23,7 +23,7 @@ end
 
 client_id = ARGV[0]
 keyfile = ARGV[1]
-aud = ENV['HOST'] || 'http://localhost:4567'
+aud = ENV.fetch('HOST', nil) || 'http://localhost:4567'
 aud = ARGV[2] if ARGV.length >= 3
 
 error 'ERROR: File not existent.' unless File.exist? keyfile
