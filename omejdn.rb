@@ -108,7 +108,7 @@ endpoint '/token', ['POST'], public_endpoint: true do
   case params[:grant_type]
   when 'client_credentials'
     scopes     = filter_scopes(client, client.filter_scopes(params[:scope]&.split) || [])
-    resources  = [Config.base_config['default_audience']] if resources.empty?
+    resources  = [*Config.base_config['default_audience']] if resources.empty?
     req_claims = JSON.parse(params[:claims] || '{}')
     raise OAuthError.new 'invalid_target', "Access denied to: #{resources}" unless client.resources_allowed? resources
   when 'authorization_code'

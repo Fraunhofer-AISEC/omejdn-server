@@ -11,21 +11,21 @@ CONFIG_FILE_CLIENTS = './config/clients.yml'
 class TestSetup
 
   def self.backup
-    @backup_clients = File.read './config/clients.yml' rescue nil
-    @backup_users = File.read CONFIG_FILE_USERS rescue nil
+    @backup_clients = File.read CONFIG_FILE_CLIENTS rescue nil
+    @backup_users   = File.read CONFIG_FILE_USERS   rescue nil
     @backup_omejdn  = File.read CONFIG_FILE_OMEJDN  rescue nil
     File.open(CONFIG_FILE_USERS, 'w')   { |file| file.write(users.to_yaml) }
     File.open(CONFIG_FILE_CLIENTS, 'w') { |file| file.write(clients.to_yaml) }
     File.open(CONFIG_FILE_OMEJDN, 'w')  { |file| file.write(config.to_yaml) }
   end
 
-  def self.setup
+  def self.setup(config: {}, clients: {}, users: {})
     File.open('./keys/omejdn/omejdn_test.cert', 'w') do |file|
       file.write (File.read './tests/test_resources/omejdn_test.cert')
     end
-    File.open(CONFIG_FILE_USERS, 'w')   { |file| file.write(users.to_yaml) }
-    File.open(CONFIG_FILE_CLIENTS, 'w') { |file| file.write(clients.to_yaml) }
-    File.open(CONFIG_FILE_OMEJDN, 'w')  { |file| file.write(config.to_yaml) }
+    File.open(CONFIG_FILE_USERS, 'w')   { |file| file.write(TestSetup.users  .to_yaml) }
+    File.open(CONFIG_FILE_CLIENTS, 'w') { |file| file.write(TestSetup.clients.to_yaml) }
+    File.open(CONFIG_FILE_OMEJDN, 'w')  { |file| file.write(TestSetup.config .merge(config).to_yaml) }
   end
 
   def self.teardown
@@ -128,8 +128,8 @@ class TestSetup
       'front_url' => 'http://localhost:4567',
       'bind_to' => '0.0.0.0:4567',
       'environment' => 'test',
-      'openid' => true,
-      'default_audience' => 'TestServer',
+      'openid' => false,
+      'default_audience' => [],
       'accept_audience' => 'http://localhost:4567',
       'user_backend_default' => 'yaml',
       'access_token' => {
@@ -139,15 +139,6 @@ class TestSetup
       'id_token' => {
         'expiration' => 3600,
         'algorithm' => 'RS256',
-      },
-      'plugins' => {
-        'admin_api' => nil,
-        'user_selfservice' => {
-          'allow_deletion' => true,
-          'allow_password_change' => true,
-          'editable_attributes' => ['name']
-        },
-        'token_user_attributes' => nil
       }
     }
   end

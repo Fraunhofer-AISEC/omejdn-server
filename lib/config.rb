@@ -63,31 +63,25 @@ class Config
   end
 
   # Fill missing values in the main configuration
+  # This will create a configuration file if necessary
   def self.setup
+    # Load existing configuration
     config = base_config
+
+    # Fill in default values
     apply_env(config, 'issuer',           'http://localhost:4567')
     apply_env(config, 'front_url',        config['issuer'])
     apply_env(config, 'bind_to',          '0.0.0.0:4567')
     apply_env(config, 'environment',      'development')
     apply_env(config, 'openid',           false)
-    apply_env(config, 'default_audience', '')
-    apply_env(config, 'accept_audience',  config['issuer'])
+    apply_env(config, 'default_audience', [])
+    apply_env(config, 'accept_audience',  [config['issuer'], "#{config['front_url']}/token"])
     %w[access_token id_token].each do |token|
       apply_env(config, "#{token}.expiration", 3600)
       apply_env(config, "#{token}.algorithm",  'RS256')
     end
-    has_user_db_configured = config.dig('plugins', 'user_db') && !config.dig('plugins', 'user_db').empty?
-    if ENV.fetch('OMEJDN_ADMIN', nil) && !has_user_db_configured
-      # Try to enable yaml plugin, to have at least one user_db
-      config['plugins'] ||= {}
-      config['plugins']['user_db'] = { 'yaml' => nil }
-      has_user_db_configured = true
-    end
-    if config['openid'] && !has_user_db_configured
-      puts 'ERROR: No user_db plugin defined. Cannot serve OpenID functionality'
-      # exit
-    end
-    # apply_env(config, 'user_backend_default', config.dig('plugins', 'user_db').keys.first) if has_user_db_configured
+
+    # Save configuration file
     Config.base_config = config
   end
 

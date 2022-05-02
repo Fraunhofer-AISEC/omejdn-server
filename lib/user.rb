@@ -154,14 +154,15 @@ class DefaultUserDb
   end
 
   def self.db_file
-    "config/users.yml"
+    'config/users.yml'
   end
 
   def self.write_user_db(users)
-    Config.write_config(db_file, users.map(&:to_h).map do |u|
-                                   u.delete('backend')
-                                   u
-                                 end.to_yaml)
+    entries = users.map(&:to_h)
+    entries.each { |u| u.delete('backend') }
+    file = File.new db_file, File::CREAT | File::TRUNC | File::RDWR
+    file.write entries.to_yaml
+    file.close
   end
 
   PluginLoader.register 'USER_GET',                            method(:get)

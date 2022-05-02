@@ -1,9 +1,23 @@
 # frozen_string_literal: true
 require 'test/unit'
 require 'rack/test'
-require_relative 'config_testsetup'
-require_relative '../omejdn'
-require_relative '../lib/token'
+require_relative '../config_testsetup'
+
+TEST_CONFIG = {
+  'plugins' => {
+    'user_selfservice' => {
+      'editable_attributes' => ['name'],
+      'allow_deletion' => true,
+      'allow_password_change' => true
+    }
+  }
+}
+
+# Make sure Plugins are loaded
+TestSetup.setup config: TEST_CONFIG
+
+require_relative '../../omejdn'
+require_relative '../../lib/token'
 
 class SelfServiceApiTest < Test::Unit::TestCase
   include Rack::Test::Methods
@@ -13,7 +27,7 @@ class SelfServiceApiTest < Test::Unit::TestCase
   end
 
   def setup
-    TestSetup.setup
+    TestSetup.setup config: TEST_CONFIG
     user = User.find_by_id 'testUser'
     client = Client.find_by_id 'publicClient'
     @write_token   = Token.access_token client, user, ['omejdn:write'], {}, TestSetup.config['front_url']+"/api"
