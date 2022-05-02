@@ -4,30 +4,36 @@
 
 require 'yaml'
 
+CONFIG_FILE_OMEJDN  = './config/omejdn.yml'
+CONFIG_FILE_USERS   = './config/users.yml'
+CONFIG_FILE_CLIENTS = './config/clients.yml'
+
 class TestSetup
 
   def self.backup
     @backup_clients = File.read './config/clients.yml' rescue nil
-    @backup_omejdn  = File.read './config/omejdn.yml'  rescue nil
-    File.open('./config/users_test.yml', 'w')   { |file| file.write(users.to_yaml) }
-    File.open('./config/clients.yml', 'w') { |file| file.write(clients.to_yaml) }
-    File.open('./config/omejdn.yml', 'w')  { |file| file.write(config.to_yaml) }
+    @backup_users = File.read CONFIG_FILE_USERS rescue nil
+    @backup_omejdn  = File.read CONFIG_FILE_OMEJDN  rescue nil
+    File.open(CONFIG_FILE_USERS, 'w')   { |file| file.write(users.to_yaml) }
+    File.open(CONFIG_FILE_CLIENTS, 'w') { |file| file.write(clients.to_yaml) }
+    File.open(CONFIG_FILE_OMEJDN, 'w')  { |file| file.write(config.to_yaml) }
   end
 
   def self.setup
     File.open('./keys/omejdn/omejdn_test.cert', 'w') do |file|
       file.write (File.read './tests/test_resources/omejdn_test.cert')
     end
-    File.open('./config/users_test.yml', 'w')   { |file| file.write(users.to_yaml) }
-    File.open('./config/clients.yml', 'w') { |file| file.write(clients.to_yaml) }
-    File.open('./config/omejdn.yml', 'w')  { |file| file.write(config.to_yaml) }
+    File.open(CONFIG_FILE_USERS, 'w')   { |file| file.write(users.to_yaml) }
+    File.open(CONFIG_FILE_CLIENTS, 'w') { |file| file.write(clients.to_yaml) }
+    File.open(CONFIG_FILE_OMEJDN, 'w')  { |file| file.write(config.to_yaml) }
   end
 
   def self.teardown
-    File.delete './config/users_test.yml'
+    File.delete CONFIG_FILE_USERS
     File.delete './keys/omejdn/omejdn_test.cert'
-    File.open('./config/clients.yml', 'w') { |file| file.write(@backup_clients) }
-    File.open('./config/omejdn.yml', 'w')  { |file| file.write(@backup_omejdn) }
+    File.open(CONFIG_FILE_USERS, 'w')   { |file| file.write(@backup_users) }
+    File.open(CONFIG_FILE_CLIENTS, 'w') { |file| file.write(@backup_clients) }
+    File.open(CONFIG_FILE_OMEJDN, 'w')  { |file| file.write(@backup_omejdn) }
   end
 
   def self.users
@@ -135,9 +141,6 @@ class TestSetup
         'algorithm' => 'RS256',
       },
       'plugins' => {
-        'user_backend_yaml' => {
-          'location' => 'config/users_test.yml'
-        },
         'admin_api' => nil,
         'user_selfservice' => {
           'allow_deletion' => true,

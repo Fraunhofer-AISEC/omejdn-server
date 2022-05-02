@@ -84,3 +84,91 @@ class User
     end
   end
 end
+
+# The default User DB saves User Configuration in a YAML configuration file
+class DefaultUserDb
+  def self.create_user(bind)
+    user = bind.local_variable_get('user')
+    return unless user.backend == 'yaml'
+
+    users = get_all bind
+    users << user
+    write_user_db users
+  end
+
+  def self.delete_user(bind)
+    user = get bind
+    return unless user
+
+    users = get_all bind
+    users.delete(user)
+    write_user_db users
+  end
+
+  def self.update_user(bind)
+    user = bind.local_variable_get('user')
+    return unless user.backend == 'yaml'
+
+    users = get_all bind
+    idx = users.index user
+    return false unless idx
+
+    users[idx] = user
+    write_user_db users
+    true
+  end
+
+  def self.get_all(_bind)
+    ((YAML.safe_load File.read db_file) || []).map do |user|
+      user['backend'] = 'yaml'
+      User.from_h user
+    end
+  end
+
+  def self.update_password(bind)
+    user = bind.local_variable_get('user')
+    password = bind.local_variable_get('password')
+    return unless user.backend == 'yaml'
+
+    user.password = password
+    update_user(bind)
+  end
+
+  def self.verify_password(bind)
+    user = bind.local_variable_get('user')
+    password = bind.local_variable_get('password')
+    return unless user.backend == 'yaml'
+
+    user.password == password
+  end
+
+  def self.get(bind)
+    username = bind.local_variable_get 'username'
+    ((YAML.safe_load File.read db_file) || []).each do |user|
+      next unless user['username'] == username
+
+      user['backend'] = 'yaml'
+      return User.from_h user
+    end
+    nil
+  end
+
+  def self.db_file
+    "config/users.yml"
+  end
+
+  def self.write_user_db(users)
+    Config.write_config(db_file, users.map(&:to_h).map do |u|
+                                   u.delete('backend')
+                                   u
+                                 end.to_yaml)
+  end
+
+  PluginLoader.register 'USER_GET',                            method(:get)
+  PluginLoader.register 'USER_GET_ALL',                        method(:get_all)
+  PluginLoader.register 'USER_CREATE',                         method(:create_user)
+  PluginLoader.register 'USER_UPDATE',                         method(:update_user)
+  PluginLoader.register 'USER_DELETE',                         method(:delete_user)
+  PluginLoader.register 'USER_AUTHENTICATION_PASSWORD_CHANGE', method(:update_password)
+  PluginLoader.register 'USER_AUTHENTICATION_PASSWORD_VERIFY', method(:verify_password)
+end
