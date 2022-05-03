@@ -144,22 +144,7 @@ class DefaultClientDB
   PluginLoader.register 'CLIENT_GET', method(:get)
 
   def self.get_all(*)
-    needs_save = false
-    clients = Config.client_config.map do |ccnf|
-      import = ccnf.delete('import_certfile')
-      client = Client.from_h ccnf
-      if import
-        begin
-          client.certificate = OpenSSL::X509::Certificate.new File.read import
-          needs_save = true
-        rescue StandardError => e
-          p "Unable to load key ``#{import}'': #{e}"
-        end
-      end
-      client
-    end
-    Config.client_config = clients.map(&:to_h) if needs_save
-    clients
+    Config.client_config.map { |ccnf| Client.from_h ccnf }
   end
   PluginLoader.register 'CLIENT_GET_ALL', method(:get_all)
 
