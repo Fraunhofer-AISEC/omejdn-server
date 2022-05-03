@@ -118,7 +118,7 @@ def authenticated_post(provider, target, params)
       iat: now,
       jti: SecureRandom.uuid
     }
-    key_pair = Keys.load_skey
+    key_pair = Keys.load_key KEYS_TARGET_OMEJDN, 'omejdn'
     params[:client_assertion_type] = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
     params[:client_assertion] = JWT.encode json, key_pair['sk'], 'RS256', { typ: 'JWT', kid: key_pair['kid'] }
   end

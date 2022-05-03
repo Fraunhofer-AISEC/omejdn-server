@@ -114,14 +114,14 @@ end
 endpoint '/api/v1/config/clients/:client_id/keys', ['PUT'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
-  client.certificate = JSON.parse(request.body.read)['certificate']
+  client.certificate = OpenSSL::X509::Certificate.new JSON.parse(request.body.read)['certificate']
   halt 204
 end
 
 endpoint '/api/v1/config/clients/:client_id/keys', ['POST'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
-  client.certificate = JSON.parse(request.body.read)['certificate']
+  client.certificate = OpenSSL::X509::Certificate.new JSON.parse(request.body.read)['certificate']
   halt 201
 end
 

@@ -131,7 +131,7 @@ class Client
   end
 end
 
-# The default Client DB saves Client Configuration in a YAML configuration file.
+# The default Client DB saves Client Configuration in a dedicated configuration section.
 # The exception to this rule are certificates, which are stored in keys/clients/
 # in PEM encoded form.
 class DefaultClientDB
@@ -158,7 +158,7 @@ class DefaultClientDB
       end
       client
     end
-    Config.client_config = clients if needs_save
+    Config.client_config = clients.map(&:to_h) if needs_save
     clients
   end
   PluginLoader.register 'CLIENT_GET_ALL', method(:get_all)
@@ -167,7 +167,7 @@ class DefaultClientDB
     new_client = bind.local_variable_get :client
     clients = get_all
     clients << new_client
-    Config.client_config = clients
+    Config.client_config = clients.map(&:to_h)
   end
   PluginLoader.register 'CLIENT_CREATE', method(:create)
 
@@ -176,7 +176,7 @@ class DefaultClientDB
     clients = get_all
     idx = clients.index client
     clients[idx] = client if idx
-    Config.client_config = clients
+    Config.client_config = clients.map(&:to_h)
   end
   PluginLoader.register 'CLIENT_UPDATE', method(:update)
 
@@ -185,37 +185,23 @@ class DefaultClientDB
     clients = get_all
     idx = clients.index Client.from_h({ 'client_id' => client_id })
     clients.delete_at idx if idx
-    Config.client_config = clients
+    Config.client_config = clients.map(&:to_h)
   end
   PluginLoader.register 'CLIENT_DELETE', method(:delete)
 
-  def self.certificate_file(client_id)
-    "keys/clients/#{Base64.urlsafe_encode64(client_id)}.cert"
-  end
-
   def self.certificate_get(bind)
     client = bind.local_variable_get :client
-    cert = OpenSSL::X509::Certificate.new File.read certificate_file(client.client_id)
-    raise 'Certificate expired' if cert.not_after < Time.now
-    raise 'Certificate not yet valid' if cert.not_before > Time.now
-
-    cert
-  rescue StandardError => e
-    p "Unable to load key: #{e}"
-    nil
+    key_material = Keys.load_key KEYS_TARGET_CLIENT, client.client_id
+    key_material&.dig('certs', 0)
   end
   PluginLoader.register 'CLIENT_AUTHENTICATION_CERTIFICATE_GET', method(:certificate_get)
 
   def self.certificate_update(bind)
     client = bind.local_variable_get :client
     new_cert = bind.local_variable_get :new_cert
-    # delete the certificate if set to nil
-    filename = certificate_file(client.client_id)
-    if new_cert.nil?
-      File.delete filename if File.exist? filename
-      return
-    end
-    File.write(filename, new_cert)
+    hash = Keys.load_key KEYS_TARGET_CLIENT, client.client_id
+    hash['certs'] = new_cert ? [new_cert] : nil
+    Keys.store_key KEYS_TARGET_CLIENT, client.client_id, hash
   end
   PluginLoader.register 'CLIENT_AUTHENTICATION_CERTIFICATE_UPDATE', method(:certificate_update)
 end

@@ -29,7 +29,7 @@ class AdminApiTest < Test::Unit::TestCase
     @client2 = Client.find_by_id 'publicClient'
     @token = Token.access_token @client, nil, ['omejdn:admin'], {}, TestSetup.config['front_url']+"/api"
     @insufficient_token = Token.access_token @client, nil, ['omejdn:write'], {}, "test"
-    @testCertificate = File.read './tests/test_resources/testClient.pem'
+    @testCertificate = OpenSSL::X509::Certificate.new File.read('./tests/test_resources/testClient.pem')
   end
 
   def teardown
@@ -192,7 +192,7 @@ class AdminApiTest < Test::Unit::TestCase
 
   def test_post_put_delete_certificate
     cert = {
-      'certificate' => @testCertificate
+      'certificate' => @testCertificate.to_pem
     }
     post "/api/v1/config/clients/#{@client.client_id}/keys", cert.to_json,
          { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }

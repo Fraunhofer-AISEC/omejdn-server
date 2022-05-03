@@ -23,6 +23,16 @@ This allows you to directly edit any values in the caller's context.
 
 ## Core Events
 
+### CONFIGURATION_STORE
+
+### CONFIGURATION_LOAD
+
+### KEYS_STORE
+
+### KEYS_LOAD
+
+### KEYS_LOAD_ALL
+
 ### TOKEN_CREATED_ACCESS_TOKEN
 
 Fired once the core access token is created.

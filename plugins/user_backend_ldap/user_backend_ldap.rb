@@ -89,7 +89,7 @@ class LdapUserDb
   def verify_password(bind)
     user = bind.local_variable_get('user')
     password = bind.local_variable_get('password')
-    return unless user.backend == 'yaml'
+    return unless user.backend == 'ldap'
 
     user_dn = lookup_user(user.username) if user_dn.nil?
     return false if user_dn.nil?

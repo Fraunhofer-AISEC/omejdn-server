@@ -1,65 +1,70 @@
 # frozen_string_literal: true
 
 require 'yaml'
-OMEJDN_CONFIG_DIR            = 'config'
-OMEJDN_BASE_CONFIG_FILE      = "#{OMEJDN_CONFIG_DIR}/omejdn.yml"
-OMEJDN_CLIENT_CONFIG_FILE    = "#{OMEJDN_CONFIG_DIR}/clients.yml"
-OMEJDN_OAUTH_PROVIDER_CONFIG = "#{OMEJDN_CONFIG_DIR}/oauth_providers.yml"
-SCOPE_DESCRIPTION_CONFIG     = "#{OMEJDN_CONFIG_DIR}/scope_description.yml"
-SCOPE_MAPPING_CONFIG         = "#{OMEJDN_CONFIG_DIR}/scope_mapping.yml"
-WEBFINGER_CONFIG             = "#{OMEJDN_CONFIG_DIR}/webfinger.yml"
+CONFIG_SECTION_OMEJDN            = 'omejdn'
+CONFIG_SECTION_CLIENTS           = 'clients'
+CONFIG_SECTION_USERS             = 'users'
+CONFIG_SECTION_OAUTH_PROVIDERS   = 'oauth_providers'
+CONFIG_SECTION_SCOPE_DESCRIPTION = 'scope_description'
+CONFIG_SECTION_SCOPE_MAPPING     = 'scope_mapping'
+CONFIG_SECTION_WEBFINGER         = 'webfinger'
 
 # Configuration helpers functions
 class Config
-  def self.write_config(file, data)
-    file = File.new file, File::CREAT | File::TRUNC | File::RDWR
-    file.write data
-    file.close
+  def self.write_config(section, data)
+    PluginLoader.fire('CONFIGURATION_STORE', binding)
   end
 
-  def self.read_config(file, fallback)
-    (YAML.safe_load (File.read file), fallback: fallback, filename: file) || fallback
+  def self.read_config(section, fallback)
+    PluginLoader.fire('CONFIGURATION_LOAD', binding).first
   end
 
   def self.client_config
-    read_config OMEJDN_CLIENT_CONFIG_FILE, []
+    read_config CONFIG_SECTION_CLIENTS, []
   end
 
-  def self.client_config=(clients)
-    clients_yaml = clients.map(&:to_h)
-    write_config(OMEJDN_CLIENT_CONFIG_FILE, clients_yaml.to_yaml)
+  def self.client_config=(config)
+    write_config(CONFIG_SECTION_CLIENTS, config)
+  end
+
+  def self.user_config
+    read_config CONFIG_SECTION_USERS, []
+  end
+
+  def self.user_config=(config)
+    write_config(CONFIG_SECTION_USERS, config)
   end
 
   def self.base_config
-    read_config OMEJDN_BASE_CONFIG_FILE, {}
+    read_config CONFIG_SECTION_OMEJDN, {}
   end
 
   def self.base_config=(config)
-    write_config OMEJDN_BASE_CONFIG_FILE, config.to_yaml
+    write_config CONFIG_SECTION_OMEJDN, config
   end
 
   def self.oauth_provider_config
-    read_config OMEJDN_OAUTH_PROVIDER_CONFIG, []
+    read_config CONFIG_SECTION_OAUTH_PROVIDERS, []
   end
 
   def self.oauth_provider_config=(providers)
-    write_config(OMEJDN_OAUTH_PROVIDER_CONFIG, providers.to_yaml)
+    write_config(CONFIG_SECTION_OAUTH_PROVIDERS, providers)
   end
 
   def self.scope_description_config
-    read_config SCOPE_DESCRIPTION_CONFIG, {}
+    read_config CONFIG_SECTION_SCOPE_DESCRIPTION, {}
   end
 
   def self.scope_mapping_config
-    read_config SCOPE_MAPPING_CONFIG, {}
+    read_config CONFIG_SECTION_SCOPE_MAPPING, {}
   end
 
   def self.webfinger_config
-    read_config WEBFINGER_CONFIG, {}
+    read_config CONFIG_SECTION_WEBFINGER, {}
   end
 
   def self.webfinger_config=(config)
-    write_config(WEBFINGER_CONFIG, config.to_yaml)
+    write_config(CONFIG_SECTION_WEBFINGER, config)
   end
 
   # Fill missing values in the main configuration
@@ -118,4 +123,26 @@ class Config
     end
     admin.update_password(admin_pw)
   end
+end
+
+# DefaultConfigDB saves Configuration Data as YAML files on disk
+class DefaultConfigDB
+  CONFIG_DIR = 'config'
+
+  def self.write_config(bind)
+    section = bind.local_variable_get :section
+    data    = bind.local_variable_get :data
+    file = File.new "#{CONFIG_DIR}/#{section}.yml", File::CREAT | File::TRUNC | File::RDWR
+    file.write data.to_yaml
+    file.close
+  end
+  PluginLoader.register 'CONFIGURATION_STORE', method(:write_config)
+
+  def self.read_config(bind)
+    section  = bind.local_variable_get :section
+    fallback = bind.local_variable_get :fallback
+    (YAML.safe_load (File.read "#{CONFIG_DIR}/#{section}.yml"), fallback: fallback,
+                                                                filename: "#{CONFIG_DIR}/#{section}.yml") || fallback
+  end
+  PluginLoader.register 'CONFIGURATION_LOAD', method(:read_config)
 end

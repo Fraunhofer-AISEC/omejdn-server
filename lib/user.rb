@@ -85,15 +85,15 @@ class User
   end
 end
 
-# The default User DB saves User Configuration in a YAML configuration file
-class DefaultUserDb
+# The default User DB saves User Configuration in a dedicated configuration section
+class DefaultUserDB
   def self.create_user(bind)
     user = bind.local_variable_get('user')
     return unless user.backend == 'yaml'
 
     users = get_all bind
     users << user
-    write_user_db users
+    Config.user_config = users.map(&:to_h)
   end
 
   def self.delete_user(bind)
@@ -102,7 +102,7 @@ class DefaultUserDb
 
     users = get_all bind
     users.delete(user)
-    write_user_db users
+    Config.user_config = users.map(&:to_h)
   end
 
   def self.update_user(bind)
@@ -114,12 +114,12 @@ class DefaultUserDb
     return false unless idx
 
     users[idx] = user
-    write_user_db users
+    Config.user_config = users.map(&:to_h)
     true
   end
 
   def self.get_all(_bind)
-    ((YAML.safe_load File.read db_file) || []).map do |user|
+    Config.user_config.map do |user|
       user['backend'] = 'yaml'
       User.from_h user
     end
@@ -144,25 +144,13 @@ class DefaultUserDb
 
   def self.get(bind)
     username = bind.local_variable_get 'username'
-    ((YAML.safe_load File.read db_file) || []).each do |user|
+    Config.user_config.each do |user|
       next unless user['username'] == username
 
       user['backend'] = 'yaml'
       return User.from_h user
     end
     nil
-  end
-
-  def self.db_file
-    'config/users.yml'
-  end
-
-  def self.write_user_db(users)
-    entries = users.map(&:to_h)
-    entries.each { |u| u.delete('backend') }
-    file = File.new db_file, File::CREAT | File::TRUNC | File::RDWR
-    file.write entries.to_yaml
-    file.close
   end
 
   PluginLoader.register 'USER_GET',                            method(:get)

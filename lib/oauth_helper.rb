@@ -258,7 +258,7 @@ class OAuthHelper
   def self.sign_metadata(metadata)
     to_sign = metadata.merge
     to_sign['iss'] = to_sign['issuer']
-    key_pair = Keys.load_skey
+    key_pair = Keys.load_key KEYS_TARGET_OMEJDN, 'omejdn'
     JWT.encode to_sign, key_pair['sk'], 'RS256', { kid: key_pair['kid'] }
   end
 

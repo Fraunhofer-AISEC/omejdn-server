@@ -17,9 +17,9 @@ class OAuth2Test < Test::Unit::TestCase
     @priv_key_ec256 = OpenSSL::PKey::EC.new File.read './tests/test_resources/ec256.pem'
     @priv_key_ec512 = OpenSSL::PKey::EC.new File.read './tests/test_resources/ec512.pem'
     @priv_key_rsa = OpenSSL::PKey::RSA.new File.read './tests/test_resources/rsa.pem'
-    @certificate_ec256 = File.read './tests/test_resources/ec256.cert'
-    @certificate_ec512 = File.read './tests/test_resources/ec512.cert'
-    @certificate_rsa = File.read './tests/test_resources/rsa.cert'
+    @certificate_ec256 = OpenSSL::X509::Certificate.new File.read('./tests/test_resources/ec256.cert')
+    @certificate_ec512 = OpenSSL::X509::Certificate.new File.read('./tests/test_resources/ec512.cert')
+    @certificate_rsa = OpenSSL::X509::Certificate.new File.read('./tests/test_resources/rsa.cert')
 
     TestSetup.setup
 

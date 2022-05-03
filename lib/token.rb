@@ -29,7 +29,7 @@ class Token
     reserved = {}
     reserved['userinfo_req_claims'] = claims['userinfo'] unless (claims['userinfo'] || {}).empty?
     token['omejdn_reserved'] = reserved unless reserved.empty?
-    key_pair = Keys.load_skey
+    key_pair = Keys.load_key KEYS_TARGET_OMEJDN, 'omejdn'
     JWT.encode token, key_pair['sk'], 'RS256', { typ: 'at+jwt', kid: key_pair['kid'] }
   end
 
@@ -48,7 +48,7 @@ class Token
       'nonce' => nonce
     }.compact
     PluginLoader.fire 'TOKEN_CREATED_ID_TOKEN', binding
-    key_pair = Keys.load_skey
+    key_pair = Keys.load_key KEYS_TARGET_OMEJDN, 'omejdn'
     JWT.encode token, key_pair['sk'], 'RS256', { typ: 'JWT', kid: key_pair['kid'] }
   end
 
@@ -58,6 +58,6 @@ class Token
 
     args = { algorithm: Config.base_config.dig('access_token', 'algorithm') }
     args.merge!({ aud: "#{Config.base_config['front_url']}#{endpoint}", verify_aud: true }) if endpoint
-    JWT.decode(token, Keys.load_skey['sk'].public_key, true, args)[0]
+    JWT.decode(token, Keys.load_key(KEYS_TARGET_OMEJDN, 'omejdn')['sk'].public_key, true, args)[0]
   end
 end
