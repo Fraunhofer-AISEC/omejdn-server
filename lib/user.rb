@@ -153,11 +153,14 @@ class DefaultUserDB
     nil
   end
 
-  PluginLoader.register 'USER_GET',                            method(:get)
-  PluginLoader.register 'USER_GET_ALL',                        method(:get_all)
-  PluginLoader.register 'USER_CREATE',                         method(:create_user)
-  PluginLoader.register 'USER_UPDATE',                         method(:update_user)
-  PluginLoader.register 'USER_DELETE',                         method(:delete_user)
-  PluginLoader.register 'USER_AUTHENTICATION_PASSWORD_CHANGE', method(:update_password)
-  PluginLoader.register 'USER_AUTHENTICATION_PASSWORD_VERIFY', method(:verify_password)
+  # register functions
+  def self.register
+    PluginLoader.register 'USER_GET',                            method(:get)
+    PluginLoader.register 'USER_GET_ALL',                        method(:get_all)
+    PluginLoader.register 'USER_CREATE',                         method(:create_user)
+    PluginLoader.register 'USER_UPDATE',                         method(:update_user)
+    PluginLoader.register 'USER_DELETE',                         method(:delete_user)
+    PluginLoader.register 'USER_AUTHENTICATION_PASSWORD_CHANGE', method(:update_password)
+    PluginLoader.register 'USER_AUTHENTICATION_PASSWORD_VERIFY', method(:verify_password)
+  end
 end

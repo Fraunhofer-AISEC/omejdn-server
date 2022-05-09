@@ -18,7 +18,7 @@ before '/api/v1/user*' do
   user_may_read  = !(scopes & ['omejdn:admin', 'omejdn:write', 'omejdn:read']).empty?
   halt 403 unless request.env['REQUEST_METHOD'] == 'GET' ? user_may_read : user_may_write
   @user = User.find_by_id token['sub']
-  @selfservice_config = Config.base_config.dig('plugins', 'user_selfservice') || {
+  @selfservice_config = PluginLoader.configuration('user_selfservice') || {
     'editable_attributes' => [],
     'allow_deletion' => false,
     'allow_password_change' => false

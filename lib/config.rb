@@ -136,7 +136,6 @@ class DefaultConfigDB
     file.write data.to_yaml
     file.close
   end
-  PluginLoader.register 'CONFIGURATION_STORE', method(:write_config)
 
   def self.read_config(bind)
     section  = bind.local_variable_get :section
@@ -144,5 +143,10 @@ class DefaultConfigDB
     (YAML.safe_load (File.read "#{CONFIG_DIR}/#{section}.yml"), fallback: fallback,
                                                                 filename: "#{CONFIG_DIR}/#{section}.yml") || fallback
   end
-  PluginLoader.register 'CONFIGURATION_LOAD', method(:read_config)
+
+  # register functions
+  def self.register
+    PluginLoader.register 'CONFIGURATION_STORE', method(:write_config)
+    PluginLoader.register 'CONFIGURATION_LOAD',  method(:read_config)
+  end
 end

@@ -41,7 +41,21 @@ class Cache
   @public_endpoints = []
 end
 
+# Define endpoints using this to support fine-grained CORS
+def endpoint(endpoint, methods, public_endpoint: false, &block)
+  Cache.public_endpoints << (Regexp.new endpoint) if public_endpoint
+  [*methods].each do |verb|
+    get    endpoint, {}, &block if verb == 'GET' # Takes care of 'HEAD'
+    post   endpoint, {}, &block if verb == 'POST'
+    put    endpoint, {}, &block if verb == 'PUT'
+    delete endpoint, {}, &block if verb == 'DELETE'
+  end
+end
+
 configure do
+  # Load Plugins
+  PluginLoader.initialize
+
   config = Config.setup
   set :environment, (proc { Config.base_config['environment'].to_sym })
   enable :dump_errors, :raise_errors, :quiet
@@ -54,15 +68,12 @@ configure do
   set :session_store, Rack::Session::Pool
 end
 
-# Define endpoints using this to support fine-grained CORS
-def endpoint(endpoint, methods, public_endpoint: false, &block)
-  Cache.public_endpoints << (Regexp.new endpoint) if public_endpoint
-  [*methods].each do |verb|
-    get    endpoint, {}, &block if verb == 'GET' # Takes care of 'HEAD'
-    post   endpoint, {}, &block if verb == 'POST'
-    put    endpoint, {}, &block if verb == 'PUT'
-    delete endpoint, {}, &block if verb == 'DELETE'
-  end
+def debug
+  Config.base_config['environment'] != 'production'
+end
+
+def openid?(scopes)
+  Config.base_config['openid'] && (scopes.include? 'openid')
 end
 
 before do
@@ -87,14 +98,6 @@ after do
       halt 204
     end
   end
-end
-
-def debug
-  Config.base_config['environment'] != 'production'
-end
-
-def openid?(scopes)
-  Config.base_config['openid'] && (scopes.include? 'openid')
 end
 
 ########## TOKEN ISSUANCE ##################
@@ -471,6 +474,5 @@ endpoint '/about', ['GET'], public_endpoint: true do
   }.to_json
 end
 
-# Load all Plugins and optionally create admin
-PluginLoader.initialize
+# Optionally create admin
 Config.create_admin

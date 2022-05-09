@@ -1,18 +1,9 @@
 # frozen_string_literal: true
 require 'test/unit'
 require 'rack/test'
+
+ENV['OMEJDN_PLUGINS'] = 'tests/test_resources/plugins_test_admin_api.yml'
 require_relative '../config_testsetup'
-
-TEST_CONFIG = {
-  'plugins' => {
-    'admin_api' => nil
-  }
-}
-
-# Make sure Plugins are loaded
-TestSetup.setup config: TEST_CONFIG
-
-require_relative '../../omejdn'
 require_relative '../../lib/token'
 
 class AdminApiTest < Test::Unit::TestCase
@@ -23,17 +14,13 @@ class AdminApiTest < Test::Unit::TestCase
   end
 
   def setup
-    TestSetup.setup config: TEST_CONFIG
+    TestSetup.setup
     
     @client = Client.find_by_id 'private_key_jwt_client'
     @client2 = Client.find_by_id 'publicClient'
     @token = Token.access_token @client, nil, ['omejdn:admin'], {}, TestSetup.config['front_url']+"/api"
     @insufficient_token = Token.access_token @client, nil, ['omejdn:write'], {}, "test"
     @testCertificate = OpenSSL::X509::Certificate.new File.read('./tests/test_resources/testClient.pem')
-  end
-
-  def teardown
-    TestSetup.teardown
   end
 
   def test_require_admin_scope
@@ -179,7 +166,7 @@ class AdminApiTest < Test::Unit::TestCase
   def test_get_config
     get '/api/v1/config/omejdn', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal TestSetup.config.merge(TEST_CONFIG), JSON.parse(last_response.body)
+    assert_equal TestSetup.config, JSON.parse(last_response.body)
   end
 
   def test_put_config

@@ -33,7 +33,6 @@ class OAuth2Test < Test::Unit::TestCase
   end
 
   def teardown
-    TestSetup.teardown
     @client_private_key_jwt.certificate = nil
   end
 

@@ -98,12 +98,9 @@ class Client
 
   # Decodes a JWT
   def decode_jwt(jwt, verify_aud)
-    _, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
     aud = Config.base_config['accept_audience']
-    raise 'Invalid algorithm' unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
-
     jwt_dec, = JWT.decode jwt, certificate&.public_key, true,
-                          { nbf_leeway: 30, aud: aud, verify_aud: verify_aud, algorithm: jwt_hdr['alg'] }
+                          { nbf_leeway: 30, aud: aud, verify_aud: verify_aud, algorithm: %w[RS256 RS512 ES256 ES512] }
 
     raise 'Not self-issued' if jwt_dec['sub'] && jwt_dec['sub'] != jwt_dec['iss']
     raise 'Wrong Client ID in JWT' if jwt_dec['sub'] && jwt_dec['sub'] != client_id
@@ -141,12 +138,10 @@ class DefaultClientDB
     idx = clients.index Client.from_h({ 'client_id' => client_id })
     idx ? clients[idx] : nil
   end
-  PluginLoader.register 'CLIENT_GET', method(:get)
 
   def self.get_all(*)
     Config.client_config.map { |ccnf| Client.from_h ccnf }
   end
-  PluginLoader.register 'CLIENT_GET_ALL', method(:get_all)
 
   def self.create(bind)
     new_client = bind.local_variable_get :client
@@ -154,7 +149,6 @@ class DefaultClientDB
     clients << new_client
     Config.client_config = clients.map(&:to_h)
   end
-  PluginLoader.register 'CLIENT_CREATE', method(:create)
 
   def self.update(bind)
     client = bind.local_variable_get :client
@@ -163,7 +157,6 @@ class DefaultClientDB
     clients[idx] = client if idx
     Config.client_config = clients.map(&:to_h)
   end
-  PluginLoader.register 'CLIENT_UPDATE', method(:update)
 
   def self.delete(bind)
     client_id = bind.local_variable_get :client_id
@@ -172,21 +165,31 @@ class DefaultClientDB
     clients.delete_at idx if idx
     Config.client_config = clients.map(&:to_h)
   end
-  PluginLoader.register 'CLIENT_DELETE', method(:delete)
 
   def self.certificate_get(bind)
     client = bind.local_variable_get :client
     key_material = Keys.load_key KEYS_TARGET_CLIENT, client.client_id
     key_material&.dig('certs', 0)
   end
-  PluginLoader.register 'CLIENT_AUTHENTICATION_CERTIFICATE_GET', method(:certificate_get)
 
   def self.certificate_update(bind)
     client = bind.local_variable_get :client
     new_cert = bind.local_variable_get :new_cert
     hash = Keys.load_key KEYS_TARGET_CLIENT, client.client_id
     hash['certs'] = new_cert ? [new_cert] : nil
-    Keys.store_key KEYS_TARGET_CLIENT, client.client_id, hash
+    hash = {} unless hash['sk'] || hash['certs']
+    hash['pk'] = (hash['sk'] || hash.dig('certs', 0))&.public_key
+    Keys.store_key KEYS_TARGET_CLIENT, client.client_id, hash.compact
   end
-  PluginLoader.register 'CLIENT_AUTHENTICATION_CERTIFICATE_UPDATE', method(:certificate_update)
+
+  # register functions
+  def self.register
+    PluginLoader.register 'CLIENT_GET',                               method(:get)
+    PluginLoader.register 'CLIENT_GET_ALL',                           method(:get_all)
+    PluginLoader.register 'CLIENT_CREATE',                            method(:create)
+    PluginLoader.register 'CLIENT_UPDATE',                            method(:update)
+    PluginLoader.register 'CLIENT_DELETE',                            method(:delete)
+    PluginLoader.register 'CLIENT_AUTHENTICATION_CERTIFICATE_GET',    method(:certificate_get)
+    PluginLoader.register 'CLIENT_AUTHENTICATION_CERTIFICATE_UPDATE', method(:certificate_update)
+  end
 end

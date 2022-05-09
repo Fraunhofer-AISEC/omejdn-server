@@ -14,7 +14,14 @@ class Keys
 
   # Loads a cryptographic key (sk where available) and/or certificates
   def self.load_key(target_type, target, create_key: false)
-    PluginLoader.fire('KEYS_LOAD', binding).first
+    key_material = PluginLoader.fire('KEYS_LOAD', binding).first
+    if key_material['sk'].nil? && create_key
+      (key_material = {})['sk'] = OpenSSL::PKey::RSA.new 2048
+      key_material['pk'] = key_material['sk'].public_key
+      store_key(target_type, target, key_material)
+    end
+    key_material['kid'] = JWT::JWK.new(key_material['pk']).export[:kid] if key_material['pk']
+    key_material.compact
   end
 
   # Loads all available keys and certificates for a target_type
@@ -69,23 +76,12 @@ class DefaultKeysDB
       File.write("#{filename}.key", key_material['sk'])
     end
   end
-  PluginLoader.register 'KEYS_STORE', method(:store_key)
 
   def self.load_key(bind)
     target_type = bind.local_variable_get :target_type
     target      = bind.local_variable_get :target
-    create_key  = bind.local_variable_get :create_key
     result = {}
     filename = "#{KEYS_DIR}/#{target_type}/#{target}"
-
-    # Create key if asked for
-    if !File.exist?("#{filename}.key") && create_key
-      rsa_key = OpenSSL::PKey::RSA.new 2048
-      file = File.new "#{filename}.key", File::CREAT | File::TRUNC | File::RDWR
-      file.write(rsa_key.to_pem)
-      file.close
-      p "Created new key at #{filename}.key"
-    end
 
     # Try to load keys
     if File.exist?("#{filename}.key")
@@ -106,19 +102,15 @@ class DefaultKeysDB
         raise 'Certificate not yet valid' if certs[0].not_before > Time.now
 
         result['certs'] = certs if result['sk'].nil? || (certs[0].check_private_key result['sk'])
-        result['pk'] ||= result.dig('certs', 0)&.public_key
       rescue StandardError
         p 'Loading certificate failed'
       end
     end
-    result['kid'] = JWT::JWK.new(result['pk']).export[:kid] if result['pk']
     result
   end
-  PluginLoader.register 'KEYS_LOAD', method(:load_key)
 
   def self.load_all_keys(bind)
     target_type = bind.local_variable_get :target_type
-    files = Dir.entries("#{KEYS_DIR}/#{target_type}")
     Dir.entries("#{KEYS_DIR}/#{target_type}").reject { |f| f.start_with? '.' }.map do |f|
       result = {}
       # The file could be either a certificate or a key
@@ -132,5 +124,11 @@ class DefaultKeysDB
       result
     end
   end
-  PluginLoader.register 'KEYS_LOAD_ALL', method(:load_all_keys)
+
+  # register functions
+  def self.register
+    PluginLoader.register 'KEYS_STORE',    method(:store_key)
+    PluginLoader.register 'KEYS_LOAD',     method(:load_key)
+    PluginLoader.register 'KEYS_LOAD_ALL', method(:load_all_keys)
+  end
 end
