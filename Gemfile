@@ -16,7 +16,7 @@ end
 # Necessary Gems for Plugins
 group :plugins do
   gem 'net-ldap'
-  gem 'sqlite3'
+  gem 'pg'
 end
 
 # Development only

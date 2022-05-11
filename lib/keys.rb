@@ -61,6 +61,11 @@ class DefaultKeysDB
     key_material = bind.local_variable_get :key_material
     filename = "#{KEYS_DIR}/#{target_type}/#{target}"
 
+    # Ensure the directory exists
+    if (key_material['certs'] || key_material['sk']) && !(File.directory? "#{KEYS_DIR}/#{target_type}")
+      Dir.mkdir "#{KEYS_DIR}/#{target_type}"
+    end
+
     # Certificates
     if key_material['certs'].nil?
       File.delete "#{filename}.cert" if File.exist? "#{filename}.cert"
@@ -111,6 +116,8 @@ class DefaultKeysDB
 
   def self.load_all_keys(bind)
     target_type = bind.local_variable_get :target_type
+    return [] unless File.directory? "#{KEYS_DIR}/#{target_type}"
+
     Dir.entries("#{KEYS_DIR}/#{target_type}").reject { |f| f.start_with? '.' }.map do |f|
       result = {}
       # The file could be either a certificate or a key

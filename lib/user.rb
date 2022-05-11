@@ -130,7 +130,7 @@ class DefaultUserDB
     password = bind.local_variable_get('password')
     return unless user.backend == 'yaml'
 
-    user.password = password
+    user.password = User.string_to_pass_hash password
     update_user(bind)
   end
 

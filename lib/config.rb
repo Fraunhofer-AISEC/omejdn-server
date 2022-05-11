@@ -8,6 +8,27 @@ CONFIG_SECTION_OAUTH_PROVIDERS   = 'oauth_providers'
 CONFIG_SECTION_SCOPE_DESCRIPTION = 'scope_description'
 CONFIG_SECTION_SCOPE_MAPPING     = 'scope_mapping'
 CONFIG_SECTION_WEBFINGER         = 'webfinger'
+DEFAULT_SCOPE_MAPPING = {
+  # Omejdn API scopes
+  'omejdn:read' => ['omejdn'],
+  'omejdn:write' => ['omejdn'],
+  'omejdn:admin' => ['omejdn'],
+  # OpenID scopes
+  'profile' => %w[name family_name given_name middle_name nickname preferred_username profile picture
+                  website gender birthdate zoneinfo locale updated_at],
+  'email' => %w[email email_verified],
+  'address' => %w[formatted street_address locality region postal_code country],
+  'phone' => %w[phone_number phone_number_verified]
+}.freeze
+DEFAULT_SCOPE_DESCRIPTION = {
+  'omejdn:read' => 'Read access to the Omejdn server API',
+  'omejdn:write' => 'Write access to the Omejdn server API',
+  'omejdn:admin' => 'Access to the Omejdn server admin API',
+  'profile' => 'Standard profile claims (e.g.: Name, picture, website, gender, birthdate, location)',
+  'email' => 'Email-Address',
+  'address' => 'Address',
+  'phone' => 'Phone-number'
+}.freeze
 
 # Configuration helpers functions
 class Config
@@ -55,8 +76,16 @@ class Config
     read_config CONFIG_SECTION_SCOPE_DESCRIPTION, {}
   end
 
+  def self.scope_description_config=(config)
+    write_config(CONFIG_SECTION_SCOPE_DESCRIPTION, config)
+  end
+
   def self.scope_mapping_config
     read_config CONFIG_SECTION_SCOPE_MAPPING, {}
+  end
+
+  def self.scope_mapping_config=(config)
+    write_config(CONFIG_SECTION_SCOPE_MAPPING, config)
   end
 
   def self.webfinger_config
@@ -67,8 +96,8 @@ class Config
     write_config(CONFIG_SECTION_WEBFINGER, config)
   end
 
-  # Fill missing values in the main configuration
-  # This will create a configuration file if necessary
+  # Fill missing values in the configuration
+  # This will create a configuration if necessary
   def self.setup
     # Load existing configuration
     config = base_config
@@ -86,7 +115,21 @@ class Config
       apply_env(config, "#{token}.algorithm",  'RS256')
     end
 
-    # Save configuration file
+    # Scope Mapping
+    scope_mapping = scope_mapping_config
+    scope_mapping = DEFAULT_SCOPE_MAPPING if scope_mapping.empty?
+    Config.scope_mapping_config = scope_mapping
+
+    # Scope Description
+    scope_description = scope_description_config
+    scope_description = DEFAULT_SCOPE_DESCRIPTION if scope_description.empty?
+    Config.scope_description_config = scope_description
+
+    # Webfinger (Fallback is default)
+    webfinger = webfinger_config
+    Config.webfinger_config = webfinger
+
+    # Save base configuration and return it
     Config.base_config = config
   end
 
@@ -140,6 +183,8 @@ class DefaultConfigDB
   def self.read_config(bind)
     section  = bind.local_variable_get :section
     fallback = bind.local_variable_get :fallback
+    return fallback unless File.exist? "#{CONFIG_DIR}/#{section}.yml"
+
     (YAML.safe_load (File.read "#{CONFIG_DIR}/#{section}.yml"), fallback: fallback,
                                                                 filename: "#{CONFIG_DIR}/#{section}.yml") || fallback
   end
