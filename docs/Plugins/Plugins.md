@@ -4,7 +4,14 @@ Omejdn provides a mechanism for extending its functionality with plugins.
 Plugins are pieces of Ruby code which are executed when so-called events are fired,
 and may make arbitrary changes to the program's state.
 
-There are two types of plugins:
+There are three types of plugins:
+
+* **Default Plugins** are plugins that implement necessary but interchangable behavior.
+  Examples include the `DefaultUserDB` which provides a way of storing
+  users.
+  You have to explicitly disable them if you want to replace their
+  functionality.
+  They are found in Omejdn's Core code in `/lib`.
 
 * **Official Plugins** live in the same repository as Omejdn and can be found in `/plugins`.
   They offer functionality that can be considered useful in a diverse range of use cases.
@@ -19,20 +26,27 @@ There are two types of plugins:
 
 ## Activating Plugins
 
-Plugins can be activated and configured by specifying them in `omejdn.yml`.
-The following example activates two plugins called `user_backend_yaml` and `admin_api`,
-and configures the former to use a `location` property of `config/users.yml`.
+Plugins can be activated and configured by specifying them in a YAML file
+and instructing Omejdn to load it.
+The latter can be done by setting the environment variable `OMEJDN_PLUGINS`.
+
+
+The following example file activates two plugins called `user_backend_sqlite` and `admin_api`,
+configures the former to use a `location` property of `config/users.yml`,
+and deactivates the DefaultUserDB plugin.
 How plugins use their configuration values is up to the individual plugins
 and *should* be documented.
 
 ```yaml
+deactivate_defaults:
+- user
 plugins:
-  user_backend_yaml:
+  user_backend_sqlite:
     location: config/users.yml
   admin_api:
 ```
 
-Each plugin lives in a folder corresponding to its name in `/plugins`.
+Each explicitly activated plugin lives in a folder corresponding to its name in `/plugins`.
 The main Ruby file must have the same name as the plugin.
 
 For example: The main plugin file for the `admin_api` plugin
