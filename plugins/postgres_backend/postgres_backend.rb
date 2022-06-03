@@ -10,8 +10,9 @@ require_relative 'storage_clients'
 
 # The main class for this plugin
 class PostgresBackendPlugin
+  class << self; attr_accessor :config, :database end
   @config = {} # Database configuration
-  @db = nil # Database connection
+  @database = nil # Database connection
 
   # init reads the static configuration
   # and registers the event handlers
@@ -49,7 +50,7 @@ class PostgresBackendPlugin
 
   # Connects to a database
   def self.connect_db
-    @db ||= PG.connect @config['connection']
+    PostgresBackendPlugin.database ||= PG.connect @config['connection']
   end
 end
 
