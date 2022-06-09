@@ -1,0 +1,15 @@
+:javascript
+    var es = new EventSource('./#{locals[:provider_id]}/stream?state=#{locals[:state]}');
+    es.onmessage = function(e) { console.log(e.data + "\n"); window.location='./#{locals[:provider_id]}/callback?'+e.data };
+
+%h2 Please scan the following QR code to authenticate with your phone
+
+!= locals[:qr]
+
+%div#content
+
+%a{:href => locals[:cross_device_href]} Debugging Link
+
+%h2 Or you can click here to authenticate using an app on this device
+
+%a{:href => locals[:href]} Click here

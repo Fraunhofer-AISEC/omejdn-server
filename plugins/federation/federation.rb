@@ -14,13 +14,43 @@
 #   + Support Pushed Authorization Requests
 # + Optionally use nonce for OpenID requests
 # + Cache Server Metadata
-# - Configurable Claim Mapping
+# + Configurable Claim Mapping
+
+# Goals (SIOPv2):
+# - Support Implicit Flow
+# - Support Authorization Code Flow
+# - Support Same-Device SIOP
+# - Support Cross-Device SIOP
+# - Support Dynamic Discovery
+# - Support Registration
+# - Validate Response correctly
 
 require 'net/http'
 require_relative './default_attribute_mappers'
 
+# SIOPv2 Static Discovery Metadata
+SIOP_V2_STATIC_METADATA = {
+  'authorization_endpoint' => 'openid:',
+  'issuer' => 'https://self-issued.me/v2',
+  'response_types_supported' => ['id_token'],
+  'scopes_supported' => ['openid'],
+  'subject_types_supported' => ['pairwise'],
+  'id_token_signing_alg_values_supported' => ['ES256'],
+  'request_object_signing_alg_values_supported' => ['ES256'],
+  'subject_syntax_types_supported' => ['urn:ietf:params:oauth:jwk-thumbprint'],
+  'id_token_types_supported' => ['subject_signed']
+}.freeze
+
+def siop?(provider)
+  provider['self-issued'] || false
+end
+
 def provider_config
-  Config.base_config.dig('plugins', 'federation', 'providers')
+  PluginLoader.configuration('federation')&.dig('providers')
+end
+
+def attribute_mapper_config
+  PluginLoader.configuration('federation')&.dig('attribute_mappers')
 end
 
 def get_login_options(bind)
@@ -52,8 +82,8 @@ class UrlCache
     !cached.nil?
   end
 
-  def self.get(url)
-    return @cache.dig(url, :body) if has? url
+  def self.get(url, force_reload: false)
+    return @cache.dig(url, :body) if has?(url) && !force_reload
 
     # Call the resource
     res = Net::HTTP.get_response(URI(url))
@@ -78,7 +108,7 @@ class UrlCache
 end
 
 def get_metadata(provider)
-  return nil unless provider['issuer']
+  return (siop?(provider) ? SIOP_V2_STATIC_METADATA : nil) unless provider['issuer']
 
   issuer = URI(provider['issuer'])
   metadata_locations = [
@@ -167,7 +197,7 @@ def generate_extern_user(provider, userinfo)
 
   # Update local Attributes
   user.attributes = (provider['attribute_mappers'] || []).map do |mapper|
-    mapper = base_config.dig('plugins', 'federation', 'attribute_mappers', mapper)
+    mapper = attribute_mapper_config&.dig(mapper)
     if check_prerequisites mapper, userinfo
       PluginLoader.fire "PLUGIN_FEDERATION_ATTRIBUTE_MAPPING_#{mapper['type'].upcase}", binding
     end
@@ -177,12 +207,23 @@ def generate_extern_user(provider, userinfo)
   user
 end
 
+def implicit?(provider, metadata)
+  siop?(provider) && !metadata['response_types_supported'].include?('code')
+end
+
+def jwk_thumbprint(jwk)
+  jwk = jwk.clone
+  jwk.delete(:kid)
+  digest = Digest::SHA256.new
+  digest << jwk.sort.to_h.to_json
+  digest.base64digest.gsub('+', '-').gsub('/', '_').gsub('=', '')
+end
+
 # Redirect the user here to start the flow
 endpoint '/federation/:provider_id', ['GET'] do
   code_verifier = SecureRandom.uuid
   oauth_params = {
     response_type: 'code',
-    # response_mode: 'query',
     redirect_uri: "#{Config.base_config['front_url']}/federation/#{params['provider_id']}/callback",
     scope: [*@provider['scope']].join(' '),
     nonce: SecureRandom.uuid,
@@ -190,6 +231,13 @@ endpoint '/federation/:provider_id', ['GET'] do
     code_challenge: OAuthHelper.generate_pkce(code_verifier, 'S256'),
     state: SecureRandom.uuid
   }
+  if implicit? @provider, @metadata
+    # Use Implicit Flow for SIOP if necessary
+    oauth_params[:response_type] = 'id_token'
+    oauth_params[:response_mode] = 'query'
+    oauth_params.delete(:code_challenge_method)
+    oauth_params.delete(:code_challenge)
+  end
 
   FederationCache.cache[oauth_params[:state]] = {
     issuer: @provider['issuer'],
@@ -200,6 +248,21 @@ endpoint '/federation/:provider_id', ['GET'] do
 
   # Pushed Authorization Requests where possible
   request_params = { client_id: @provider['client_id'] }
+  if siop?(@provider) && @provider['client_id'].nil?
+    request_params[:client_id] ||= oauth_params[:redirect_uri]
+    # Registration
+    registration_params = {
+      'subject_syntax_types_supported' => ['urn:ietf:params:oauth:jwk-thumbprint'],
+      'id_token_signing_alg_values_supported' => %w[RS256 RS512 ES256 ES512]
+    }
+    if @metadata['registration_endpoint']
+      halt 400, 'Dynamic Client Registration is not implemented'
+    else
+      oauth_params[:registration] = registration_params.to_json
+    end
+  end
+
+  # TODO: Signing using OIDC Federation?
   if @metadata['pushed_authorization_request_endpoint']
     request_uri = authenticated_post(@provider, @metadata['pushed_authorization_request_endpoint'], oauth_params)
     request_params['request_uri'] = (JSON.parse request_uri)['request_uri']
@@ -208,7 +271,42 @@ endpoint '/federation/:provider_id', ['GET'] do
     request_params.merge! oauth_params
   end
 
-  redirect to("#{@metadata['authorization_endpoint']}?#{URI.encode_www_form request_params}")
+  # Start Authorization Flow
+  request_url = "#{@metadata['authorization_endpoint']}?#{URI.encode_www_form request_params}"
+  if siop?(@provider)
+    request_params[:response_mode] = 'post'
+    cross_device_request_url = "#{@metadata['authorization_endpoint']}?#{URI.encode_www_form request_params}"
+    halt 200, (haml :federation_siop, locals: {
+      state: oauth_params[:state],
+      provider_id: params['provider_id'],
+      href: request_url,
+      cross_device_href: cross_device_request_url,
+      qr: RQRCode::QRCode.new(cross_device_request_url).as_svg(module_size: 4)
+    })
+  else
+    redirect to(request_url)
+  end
+end
+
+# This endpoint is for notifying the open browser window
+# when login is done on another device (see SIOP Cross-Device Callback below)
+get '/federation/:provider_id/stream', provides: 'text/event-stream' do
+  halt 400, 'Cache' unless params['state'] && (cached = FederationCache.cache[params['state']])
+  stream :keep_open do |out|
+    cached[:callback_stream] = out
+    out.callback { cached.delete(:callback_stream) }
+  end
+end
+
+# SIOP Cross-Device Callback
+# We just signal to the open browser window to complete the callback
+# at the normal callback endpoint below
+endpoint '/federation/:provider_id/callback', ['POST'] do
+  halt 400, 'Cache' unless params['state'] && (cached = FederationCache.cache[params['state']])
+  halt 400, 'Stream not available' unless (out = cached[:callback_stream])
+  params.delete('provider_id')
+  out << "data: #{URI.encode_www_form params}\n\n"
+  out.flush
 end
 
 # Callback endpoint
@@ -227,28 +325,83 @@ endpoint '/federation/:provider_id/callback', ['GET'] do
          "Error: The Federation partner responded with #{params['error']}: #{params['error_description']}"
   end
 
-  # Get Access Token
-  token_params = {
-    grant_type: 'authorization_code',
-    code: params['code'],
-    redirect_uri: "#{Config.base_config['front_url']}/federation/#{params['provider_id']}/callback",
-    code_verifier: cached[:code_verifier]
-  }
-  token_response = (JSON.parse authenticated_post(@provider, @metadata['token_endpoint'], token_params))
+  # Get id_token and userinfo
+  if implicit? @provider, @metadata
+    halt 400, 'No ID Token' unless (id_token = params['id_token'])
+    userinfo, = JWT.decode id_token, nil, false
+  else
+    # Get Access Token
+    token_params = {
+      grant_type: 'authorization_code',
+      code: params['code'],
+      redirect_uri: "#{Config.base_config['front_url']}/federation/#{params['provider_id']}/callback",
+      code_verifier: cached[:code_verifier]
+    }
+    token_response = (JSON.parse authenticated_post(@provider, @metadata['token_endpoint'], token_params))
+    halt 400, 'No access Token' unless (access_token = token_response['access_token'])
+    halt 400, 'No ID Token' unless (id_token = token_response['id_token'])
 
-  # Verify OpenID nonce
-  halt 400 unless token_response['nonce'] == cached['nonce']
+    # Get Userinfo
+    userinfo = post(@metadata['userinfo_endpoint'], nil, "Bearer #{access_token}")
+    userinfo = JSON.parse(userinfo)
+  end
 
-  halt 400 unless (access_token = token_response['access_token'])
-  _id_token = token_response['id_token'] # TODO: Evaluate authentication, verify signature
+  # Verify ID Token
+  if siop? @provider
+    # Since we know already that we are looking for a SIOP id_token, we deviate slightly from the draft
+    # and throw errors whenever something goes bad.
+    # Verify signature
+    id_token, = JWT.decode id_token, nil, true, { algorithms: %w[RS256 RS512 ES256 ES512] } do |_header, body|
+      # We only support JWK-Thumbprints atm.
+      JWT::JWK.import(body['sub_jwk']).keypair.public_key
+    end
+    # Verify self-signedness
+    halt 400, 'wrong sub' if id_token['sub'] != jwk_thumbprint(id_token['sub_jwk'])
+    halt 400, 'not self-issued' if id_token['iss'] != id_token['sub']
+  else
+    jwks = ->(_o) { UrlCache.get @metadata['jwks_uri'], force_reload: o[:invalidate] }
+    id_token, = JWT.decode id_token, nil, true, { algorithms: %w[RS256 RS512 ES256 ES512], jwks: jwks }
+  end
 
-  userinfo_response = post(@metadata['userinfo_endpoint'], nil, "Bearer #{access_token}")
-  user = generate_extern_user(@provider, JSON.parse(userinfo_response))
+  halt 400, 'wrong nonce' if id_token['nonce'] != cached[:nonce]
 
-  user.auth_time = Time.now.to_i # TODO: Should be the time from the ID Token
+  user = generate_extern_user(@provider, userinfo)
+  user.auth_time = id_token['auth_time'] || Time.now.to_i
   session[:user] = SecureRandom.uuid
   Cache.user_session[session[:user]] = user
   auth = Cache.authorization[session[:current_auth]]
   update_auth_scope auth, user, (Client.find_by_id auth[:client_id])
   next_task AuthorizationTask::LOGIN
+end
+
+require 'rqrcode'
+require 'sinatra/streaming'
+
+# Remembers any sent requests
+class StreamCache
+  class << self; attr_accessor :cache end
+  @cache = {} # indexed by the state parameter
+end
+
+endpoint '/test', ['GET'] do
+  url = 'https://bellebaum.eu'
+  halt 200, (haml :federation_siop, locals: {
+    stream_id: SecureRandom.uuid,
+    href: url,
+    qr: RQRCode::QRCode.new(url).as_svg
+  })
+end
+
+endpoint '/test/callback/:id', ['GET'] do
+  halt 400 unless (out = StreamCache.cache[params[:id]])
+  out << "data: Signal caught!\n\n"
+  out.flush
+end
+
+# This endpoint is for notifying the device when login is done on another device
+get '/test/stream/:id', provides: 'text/event-stream' do
+  stream :keep_open do |out|
+    StreamCache.cache[params[:id]] = out
+    out.callback { StreamCache.cache.delete params[:id] }
+  end
 end

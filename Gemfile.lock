@@ -3,6 +3,7 @@ GEM
   specs:
     ast (2.4.2)
     bcrypt (3.1.18)
+    chunky_png (1.4.0)
     daemons (1.4.1)
     eventmachine (1.2.7)
     haml (5.2.2)
@@ -27,6 +28,10 @@ GEM
     rainbow (3.1.1)
     regexp_parser (2.5.0)
     rexml (3.2.5)
+    rqrcode (2.1.1)
+      chunky_png (~> 1.0)
+      rqrcode_core (~> 1.0)
+    rqrcode_core (1.2.0)
     rubocop (1.30.0)
       parallel (~> 1.10)
       parser (>= 3.1.0.0)
@@ -72,6 +77,7 @@ DEPENDENCIES
   openssl
   pg
   rack-test
+  rqrcode
   rubocop
   sinatra
   sinatra-contrib

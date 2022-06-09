@@ -17,6 +17,7 @@ end
 group :plugins do
   gem 'net-ldap'
   gem 'pg'
+  gem 'rqrcode'
 end
 
 # Development only
