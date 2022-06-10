@@ -26,6 +26,8 @@
 # - Validate Response correctly
 
 require 'net/http'
+require 'rqrcode'
+require 'sinatra/streaming'
 require_relative './default_attribute_mappers'
 
 # SIOPv2 Static Discovery Metadata
@@ -358,6 +360,8 @@ endpoint '/federation/:provider_id/callback', ['GET'] do
     # Verify self-signedness
     halt 400, 'wrong sub' if id_token['sub'] != jwk_thumbprint(id_token['sub_jwk'])
     halt 400, 'not self-issued' if id_token['iss'] != id_token['sub']
+    client_id = "#{Config.base_config['front_url']}/federation/#{params['provider_id']}/callback"
+    halt 400, 'wrong audience' if id_token['aud'] != client_id
   else
     jwks = ->(_o) { UrlCache.get @metadata['jwks_uri'], force_reload: o[:invalidate] }
     id_token, = JWT.decode id_token, nil, true, { algorithms: %w[RS256 RS512 ES256 ES512], jwks: jwks }
@@ -370,38 +374,7 @@ endpoint '/federation/:provider_id/callback', ['GET'] do
   session[:user] = SecureRandom.uuid
   Cache.user_session[session[:user]] = user
   auth = Cache.authorization[session[:current_auth]]
+  auth[:user] = user
   update_auth_scope auth, user, (Client.find_by_id auth[:client_id])
   next_task AuthorizationTask::LOGIN
-end
-
-require 'rqrcode'
-require 'sinatra/streaming'
-
-# Remembers any sent requests
-class StreamCache
-  class << self; attr_accessor :cache end
-  @cache = {} # indexed by the state parameter
-end
-
-endpoint '/test', ['GET'] do
-  url = 'https://bellebaum.eu'
-  halt 200, (haml :federation_siop, locals: {
-    stream_id: SecureRandom.uuid,
-    href: url,
-    qr: RQRCode::QRCode.new(url).as_svg
-  })
-end
-
-endpoint '/test/callback/:id', ['GET'] do
-  halt 400 unless (out = StreamCache.cache[params[:id]])
-  out << "data: Signal caught!\n\n"
-  out.flush
-end
-
-# This endpoint is for notifying the device when login is done on another device
-get '/test/stream/:id', provides: 'text/event-stream' do
-  stream :keep_open do |out|
-    StreamCache.cache[params[:id]] = out
-    out.callback { StreamCache.cache.delete params[:id] }
-  end
 end
