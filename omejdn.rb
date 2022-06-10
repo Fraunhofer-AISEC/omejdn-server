@@ -256,11 +256,10 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
     cache[:tasks] << AuthorizationTask::CONSENT
   else
     user = Cache.user_session[session[:user]]
+    cache[:user] = user
     update_auth_scope cache, user, client
     # If consent is not yet given to the client, demand it
-    if (cache[:scope] - (session.dig(:consent, client.client_id) || [])).empty?
-      cache[:user] = user
-    else
+    unless (cache[:scope] - (session.dig(:consent, client.client_id) || [])).empty?
       cache[:tasks] << AuthorizationTask::CONSENT
     end
   end
@@ -283,8 +282,7 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
       cache[:tasks] << AuthorizationTask::ACCOUNT_SELECT
     end
   end
-  if params[:max_age] && session[:user] &&
-     (Time.new.to_i - Cache.user_session[session[:user]].auth_time) > params[:max_age].to_i
+  if params[:max_age] && cache[:user] && (Time.new.to_i - cache[:user].auth_time) > params[:max_age].to_i
     cache[:tasks] << AuthorizationTask::LOGIN
   end
 
@@ -322,13 +320,10 @@ end
 
 endpoint '/consent', ['GET'] do
   auth = Cache.authorization[session[:current_auth]]
-  if session[:user].nil?
+  if (user = auth[:user]).nil? # Require Login for this step
     auth[:tasks].unshift AuthorizationTask::LOGIN
     next_task
   end
-
-  user = Cache.user_session[session[:user]]
-  raise OAuthError.new 'invalid_user', 'User session invalid' if user.nil?
 
   client = Client.find_by_id auth[:client_id]
   raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
@@ -349,7 +344,6 @@ endpoint '/consent/exec', ['POST'] do
   auth = Cache.authorization[session[:current_auth]]
   session[:consent] ||= {}
   session[:consent][auth[:client_id]] = auth[:scope]
-  auth[:user] = Cache.user_session[session[:user]]
   next_task AuthorizationTask::CONSENT
 rescue OAuthError => e
   auth_response Cache.authorization[session[:current_auth]], e.to_h
@@ -396,8 +390,8 @@ endpoint '/logout', ['GET', 'POST'], public_endpoint: true do
   client = Client.find_by_id id_token&.dig('aud')
   halt 200, (haml :logout, locals: {
     state: params[:state],
-    redirect_uri: (client&.verify_post_logout_redirect_uri params[:post_logout_redirect_uri]),
-    user: ((User.find_by_id id_token&.dig('sub')) || Cache.user_session[session[:user]])
+    # user: ((User.find_by_id id_token&.dig('sub')) || Cache.user_session[session[:user]]),
+    redirect_uri: (client&.verify_post_logout_redirect_uri params[:post_logout_redirect_uri])
   })
 rescue StandardError
   halt 400
@@ -428,10 +422,9 @@ endpoint '/login/exec', ['POST'] do
     redirect to("#{Config.base_config['front_url']}/login?error=\"Credentials incorrect\"")
   end
   user.auth_time = Time.new.to_i
-  session[:user] = SecureRandom.uuid
-  Cache.user_session[session[:user]] = user
   auth = Cache.authorization[session[:current_auth]]
   auth[:user] = user
+  Cache.user_session[(session[:user] = SecureRandom.uuid)] = user # Remember user
   update_auth_scope auth, user, (Client.find_by_id auth[:client_id])
   next_task AuthorizationTask::LOGIN
 rescue OAuthError => e
