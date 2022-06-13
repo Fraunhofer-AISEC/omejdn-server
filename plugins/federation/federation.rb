@@ -144,7 +144,7 @@ def authenticated_post(provider, target, params)
     json = {
       iss: provider['client_id'],
       sub: provider['client_id'],
-      aud: provider['issuer'],
+      aud: provider['issuer'], # Does not support all SIOPs
       exp: now + 60,
       nbf: now,
       iat: now,
@@ -192,7 +192,7 @@ def generate_extern_user(provider, userinfo)
   if user.nil?
     user = User.new
     user.username = username
-    user.extern = provider['issuer'] || false
+    user.extern = provider['issuer'] || true
     user.backend = base_config['user_backend_default']
     User.add_user(user, base_config['user_backend_default'])
   end
@@ -363,7 +363,7 @@ endpoint '/federation/:provider_id/callback', ['GET'] do
     client_id = "#{Config.base_config['front_url']}/federation/#{params['provider_id']}/callback"
     halt 400, 'wrong audience' if id_token['aud'] != client_id
   else
-    jwks = ->(_o) { UrlCache.get @metadata['jwks_uri'], force_reload: o[:invalidate] }
+    jwks = ->(o) { JSON.parse(UrlCache.get(@metadata['jwks_uri'], force_reload: o[:invalidate])) }
     id_token, = JWT.decode id_token, nil, true, { algorithms: %w[RS256 RS512 ES256 ES512], jwks: jwks }
   end
 
