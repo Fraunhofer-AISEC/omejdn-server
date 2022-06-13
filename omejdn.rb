@@ -272,7 +272,7 @@ endpoint '/consent', ['GET'] do
 
   # Is consent required?
   consent_required = auth[:req_tasks].include? 'consent'
-  consent_required ||= !(auth[:scope] - (session.dig(:consent, client.client_id) || [])).empty?
+  consent_required ||= !(auth[:scope] - (user.consent&.dig(client.client_id) || [])).empty?
   auth_response auth, { code: session[:current_auth] } unless consent_required # Shortcut
   raise OAuthError, 'consent_required' if auth[:req_tasks].include? 'none'
 
@@ -289,7 +289,9 @@ end
 
 endpoint '/consent/exec', ['POST'] do
   auth = Cache.authorization[session[:current_auth]]
-  (session[:consent] ||= {})[auth[:client].client_id] = auth[:scope]
+  redirect to("#{Config.base_config['front_url']}/login") if (user = auth[:user]).nil? # Require Login for this step
+  (user.consent ||= {})[auth[:client].client_id] = auth[:scope]
+  user.save
   auth_response auth, { code: session[:current_auth] }
 rescue OAuthError => e
   auth_response Cache.authorization[session[:current_auth]], e.to_h

@@ -5,7 +5,7 @@ require_relative './plugins'
 
 # Class representing a user from a DB
 class User
-  attr_accessor :username, :password, :attributes, :extern, :backend, :auth_time
+  attr_accessor :username, :password, :attributes, :extern, :backend, :auth_time, :consent
 
   # ----- Implemented by plugins -----
 
@@ -48,6 +48,7 @@ class User
     user.attributes = dict['attributes']
     user.extern = dict['extern']
     user.backend = dict['backend']
+    user.consent = dict['consent']
     user.password = string_to_pass_hash(dict['password']) unless user.extern
     user
   end
@@ -58,7 +59,8 @@ class User
       'attributes' => attributes,
       'password' => password&.to_s,
       'extern' => extern,
-      'backend' => backend
+      'backend' => backend,
+      'consent' => consent
     }.compact
   end
 
