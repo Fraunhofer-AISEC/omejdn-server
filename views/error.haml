@@ -1,0 +1,23 @@
+%link{:type => "text/css", :rel => "stylesheet", :href => "css/main.css"}
+
+%div{ :class => "header"}
+  %span This is the Authorization Server at #{error[:iss]}
+
+<center>
+
+%h2 An Error occured
+
+%p Whoever sent you here must have misconfigured their service.
+
+%p If that was you, the following error might help you fix it:
+
+%table
+  %tr
+    %td
+      %b OAuth Error Code:
+    %td #{error['error']}
+  - if error['error_description'] && "" != error['error_description']
+    %tr
+      %td
+        %b Description:
+      %td #{error['error_description']}

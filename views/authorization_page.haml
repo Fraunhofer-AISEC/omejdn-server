@@ -3,7 +3,8 @@
 %div{ :class => "header"}
   %span Currently logged in as 
   %b #{locals[:user].username}
-  %a{:href => "logout", :class => "button"} Change...
+  %form{:action => "./logout/exec", :method => "post"}
+    %input{:type => "submit", :value => "Change...", :class => "button"}
 
 <center>
 %h1 Authorization Request

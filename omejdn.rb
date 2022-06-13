@@ -158,7 +158,7 @@ def auth_response(auth, response_params)
     iss: Config.base_config['issuer'],
     state: auth[:state]
   }.merge(response_params).compact
-  halt 400, response_params.to_json if auth[:redirect_uri].nil?
+  halt 400, (haml :error, locals: { error: response_params }) if auth[:redirect_uri].nil?
   case auth[:response_mode]
   when 'form_post'
     halt 200, (haml :form_post_response, locals: { redirect_uri: auth[:redirect_uri], params: response_params })
@@ -333,6 +333,8 @@ endpoint '/login', ['GET'] do
     host: Config.base_config['front_url'],
     login_options: login_options
   })
+rescue OAuthError => e
+  auth_response Cache.authorization[session[:current_auth]], e.to_h
 end
 
 endpoint '/login/exec', ['POST'] do
