@@ -371,10 +371,8 @@ endpoint '/federation/:provider_id/callback', ['GET'] do
 
   user = generate_extern_user(@provider, userinfo)
   user.auth_time = id_token['auth_time'] || Time.now.to_i
-  session[:user] = SecureRandom.uuid
-  Cache.user_session[session[:user]] = user
+  session[:user] = user.username
   auth = Cache.authorization[session[:current_auth]]
   auth[:user] = user
-  update_auth_scope auth, user, (Client.find_by_id auth[:client_id])
-  next_task AuthorizationTask::LOGIN
+  redirect to("#{Config.base_config['front_url']}/consent")
 end

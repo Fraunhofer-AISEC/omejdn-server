@@ -29,9 +29,7 @@ require_relative './lib/plugins'
 
 # A global cache, capable of storing data between calls and sessions
 class Cache
-  class << self; attr_accessor :user_session, :authorization, :par, :public_endpoints end
-  # Stores User Sessions. We probably want to use a KV-store at some point
-  @user_session = {}
+  class << self; attr_accessor :authorization, :par, :public_endpoints end
   # Stores Authorization Code Metadata inbetween authorization and token retrieval
   # Contains: user, nonce, scopes, resources, claims, pkce challenge and method
   @authorization = {}
@@ -152,43 +150,37 @@ rescue OAuthError => e
   halt 400, { 'Content-Type' => 'application/json' }, e.to_s
 end
 
-########## AUTHORIZATION FLOW ##################
+########## AUTHORIZATION CODE FLOW ##################
 
-# Defines tasks for the user before a code is issued
-module AuthorizationTask
-  ACCOUNT_SELECT = 1
-  LOGIN = 2
-  CONSENT = 3
-  ISSUE = 4
+def auth_response(auth, response_params)
+  auth ||= {}
+  response_params = {
+    iss: Config.base_config['issuer'],
+    state: auth[:state]
+  }.merge(response_params).compact
+  halt 400, response_params.to_json if auth[:redirect_uri].nil?
+  case auth[:response_mode]
+  when 'form_post'
+    halt 200, (haml :form_post_response, locals: { redirect_uri: auth[:redirect_uri], params: response_params })
+  when 'fragment'
+    redirect to("#{auth[:redirect_uri]}##{URI.encode_www_form response_params}")
+  else # 'query' and unsupported types
+    redirect to("#{auth[:redirect_uri]}?#{URI.encode_www_form response_params}")
+  end
 end
 
-# Redirect to the current task.
-# completed_task will be removed from the list
-def next_task(completed_task = nil)
-  auth = Cache.authorization[session[:current_auth]]
-  tasklist = auth[:tasks]
-  tasklist ||= []
-  tasklist.delete(completed_task) unless completed_task.nil?
-  tasklist.sort!.uniq!
-  case tasklist.first
-  when AuthorizationTask::ACCOUNT_SELECT
-    # FIXME: Provide a way to choose the current account without requiring another login
-    tasklist[0] = AuthorizationTask::LOGIN
-    tasklist.uniq!
-    next_task
-  when AuthorizationTask::LOGIN
-    redirect to("#{Config.base_config['front_url']}/login")
-  when AuthorizationTask::CONSENT
-    redirect to("#{Config.base_config['front_url']}/consent")
-  when AuthorizationTask::ISSUE
-    # Only issue code once
-    tasklist.shift
-    auth_response auth, { code: session[:current_auth] }
+def filter_scopes(resource_owner, scopes)
+  scope_mapping = Config.scope_mapping_config
+  scopes.select do |s|
+    if s == 'openid'
+      true
+    elsif s.include? ':'
+      key, value = s.split(':', 2)
+      resource_owner.claim?(key, value)
+    else
+      (scope_mapping[s] || []).any? { |claim| resource_owner.claim?(claim) }
+    end
   end
-  # The user has jumped into some stage without an initial /authorize call
-  # For now, redirect to /login
-  p "Undefined task: #{task}. Redirecting to /login"
-  redirect to("#{Config.base_config['front_url']}/login")
 end
 
 # Pushed Authorization Requests
@@ -216,7 +208,7 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
   # Note that some values are reassigned after dealing with request and request_uri
   session[:current_auth] = SecureRandom.uuid
   Cache.authorization[session[:current_auth]] = cache = {
-    client_id: client.client_id, # The requesting client
+    client: client, # The requesting client
     state: params[:state], # Client state
     nonce: params[:nonce], # The client's OIDC nonce
     response_mode: params[:response_mode], # The response mode to use
@@ -250,85 +242,40 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
                  req_resource: params['resource']
                })
 
-  # We first define a minimum set of acceptable tasks
-  if session[:user].nil? # User not yet logged in
-    cache[:tasks] << AuthorizationTask::LOGIN
-    cache[:tasks] << AuthorizationTask::CONSENT
-  else
-    user = Cache.user_session[session[:user]]
-    cache[:user] = user
-    update_auth_scope cache, user, client
-    # If consent is not yet given to the client, demand it
-    unless (cache[:scope] - (session.dig(:consent, client.client_id) || [])).empty?
-      cache[:tasks] << AuthorizationTask::CONSENT
-    end
+  cache[:req_max_age] = params[:max_age]
+  cache[:req_tasks] = params[:prompt]&.split&.uniq || []
+  if (cache[:req_tasks].include? 'none') && cache[:req_tasks] != ['none']
+    raise OAuthError.new 'invalid_request', "Invalid 'prompt' values: #{params[:prompt]}"
   end
 
-  # The client may request some tasks on his own
-  # Strictly speaking, this is OIDC only, but there is no harm in supporting it for plain OAuth,
-  # since a client can at most require additional actions
-  params[:prompt]&.split&.each do |task|
-    case task
-    when 'none'
-      raise OAuthError, 'account_selection_required' if cache[:tasks].include? AuthorizationTask::ACCOUNT_SELECT
-      raise OAuthError, 'login_required'             if cache[:tasks].include? AuthorizationTask::LOGIN
-      raise OAuthError, 'consent_required'           if cache[:tasks].include? AuthorizationTask::CONSENT
-      raise OAuthError.new 'invalid_request', "Invalid 'prompt' values: #{params[:prompt]}" if params[:prompt] != 'none'
-    when 'login'
-      cache[:tasks] << AuthorizationTask::LOGIN
-    when 'consent'
-      cache[:tasks] << AuthorizationTask::CONSENT
-    when 'select_account'
-      cache[:tasks] << AuthorizationTask::ACCOUNT_SELECT
-    end
-  end
-  if params[:max_age] && cache[:user] && (Time.new.to_i - cache[:user].auth_time) > params[:max_age].to_i
-    cache[:tasks] << AuthorizationTask::LOGIN
-  end
-
-  # Redirect the user to start the authentication flow
-  cache[:tasks] << AuthorizationTask::ISSUE
-  next_task
+  redirect to("#{Config.base_config['front_url']}/login")
 rescue OAuthError => e
   auth_response Cache.authorization[session[:current_auth]], e.to_h
 end
 
-def filter_scopes(resource_owner, scopes)
-  scope_mapping = Config.scope_mapping_config
-  scopes.select do |s|
-    if s == 'openid'
-      true
-    elsif s.include? ':'
-      key, value = s.split(':', 2)
-      resource_owner.claim?(key, value)
-    else
-      (scope_mapping[s] || []).any? { |claim| resource_owner.claim?(claim) }
-    end
-  end
-end
-
-def update_auth_scope(auth, user, client)
-  # Find the right scopes
-  auth[:scope] = filter_scopes(user, client.filter_scopes(auth[:req_scope]))
-  p "Granted scopes: #{auth[:scope]}"
-  p "The user seems to be #{user.username}" if debug
-
-  auth[:claims] = auth[:req_claims]
-  auth[:resource] = [auth[:req_resource] || Config.base_config['default_audience']].flatten
-  raise OAuthError.new 'invalid_target', 'Resources not granted' unless client.resources_allowed? auth[:resource]
-end
+########## CONSENT ##################
 
 endpoint '/consent', ['GET'] do
   auth = Cache.authorization[session[:current_auth]]
-  if (user = auth[:user]).nil? # Require Login for this step
-    auth[:tasks].unshift AuthorizationTask::LOGIN
-    next_task
-  end
 
-  client = Client.find_by_id auth[:client_id]
-  raise OAuthError.new 'invalid_client', 'Client unknown' if client.nil?
+  redirect to("#{Config.base_config['front_url']}/login") if (user = auth[:user]).nil? # Require Login for this step
+  raise OAuthError.new 'invalid_client', 'Client unknown' if (client = auth[:client]).nil?
 
-  # Seems to be in order
+  # Find the right scopes
+  auth[:scope] = filter_scopes(user, client.filter_scopes(auth[:req_scope]))
+  auth[:claims] = auth[:req_claims]
+  auth[:resource] = [auth[:req_resource] || Config.base_config['default_audience']].flatten
+  raise OAuthError.new 'invalid_target', 'Resources not granted' unless client.resources_allowed? auth[:resource]
+
+  p "Granted scopes: #{auth[:scope]}"
+  p "The user seems to be #{user.username}" if debug
+
+  # Is consent required?
+  consent_required = auth[:req_tasks].include? 'consent'
+  consent_required ||= !(auth[:scope] - (session.dig(:consent, client.client_id) || [])).empty?
+  auth_response auth, { code: session[:current_auth] } unless consent_required # Shortcut
+  raise OAuthError, 'consent_required' if auth[:req_tasks].include? 'none'
+
   return haml :authorization_page, locals: {
     host: Config.base_config['front_url'],
     user: user,
@@ -342,28 +289,62 @@ end
 
 endpoint '/consent/exec', ['POST'] do
   auth = Cache.authorization[session[:current_auth]]
-  session[:consent] ||= {}
-  session[:consent][auth[:client_id]] = auth[:scope]
-  next_task AuthorizationTask::CONSENT
+  (session[:consent] ||= {})[auth[:client].client_id] = auth[:scope]
+  auth_response auth, { code: session[:current_auth] }
 rescue OAuthError => e
   auth_response Cache.authorization[session[:current_auth]], e.to_h
 end
 
-def auth_response(auth, response_params)
-  auth ||= {}
-  response_params = {
-    iss: Config.base_config['issuer'],
-    state: auth[:state]
-  }.merge(response_params).compact
-  halt 400, response_params.to_json if auth[:redirect_uri].nil?
-  case auth[:response_mode]
-  when 'form_post'
-    halt 200, (haml :form_post_response, locals: { redirect_uri: auth[:redirect_uri], params: response_params })
-  when 'fragment'
-    redirect to("#{auth[:redirect_uri]}##{URI.encode_www_form response_params}")
-  else # 'query' and unsupported types
-    redirect to("#{auth[:redirect_uri]}?#{URI.encode_www_form response_params}")
-  end
+########## LOGIN/LOGOUT ##################
+
+# OpenID Connect RP-Initiated Logout 1.0
+endpoint '/logout', ['GET', 'POST'], public_endpoint: true do
+  id_token = Token.decode params[:id_token_hint]
+  client = Client.find_by_id id_token&.dig('aud')
+  halt 200, (haml :logout, locals: {
+    state: params[:state],
+    redirect_uri: (client&.verify_post_logout_redirect_uri params[:post_logout_redirect_uri])
+  })
+rescue StandardError
+  halt 400
+end
+
+endpoint '/logout/exec', ['POST'] do
+  session.delete(:user) # TODO: log out the specified user only
+  redirect_uri = "#{Config.base_config['front_url']}/login"
+  redirect_uri = params[:redirect_uri] + (params[:state] || '') if params[:redirect_uri]
+  redirect to(redirect_uri)
+end
+
+endpoint '/login', ['GET'] do
+  # Is login required?
+  auth = Cache.authorization[session[:current_auth]]
+  login_required = session[:user].nil? || !(%w[login select_account] & auth[:req_tasks]).empty?
+  login_required ||= (user = User.find_by_id session[:user]).nil?
+  login_required ||= auth[:req_max_age] && (Time.new.to_i - user.auth_time) > auth[:req_max_age].to_i
+  auth[:user] = user                                        unless login_required # Shortcut
+  redirect to("#{Config.base_config['front_url']}/consent") unless login_required # Shortcut
+  raise OAuthError, 'login_required' if auth[:req_tasks].include? 'none'
+
+  login_options = []
+  PluginLoader.fire('AUTHORIZATION_LOGIN_STARTED', binding)
+  halt 200, (haml :login, locals: {
+    no_password_login: (Config.base_config['no_password_login'] || false),
+    host: Config.base_config['front_url'],
+    login_options: login_options
+  })
+end
+
+endpoint '/login/exec', ['POST'] do
+  user = User.find_by_id params[:username]
+  redirect to("#{Config.base_config['front_url']}/login?incorrect") unless user&.verify_password(params[:password])
+  user.auth_time = Time.new.to_i
+  auth = Cache.authorization[session[:current_auth]]
+  auth[:user] = user
+  session[:user] = user.username # Remember user
+  redirect to("#{Config.base_config['front_url']}/consent")
+rescue OAuthError => e
+  auth_response Cache.authorization[session[:current_auth]], e.to_h
 end
 
 ########## USERINFO ##################
@@ -380,55 +361,6 @@ endpoint '/userinfo', ['GET', 'POST'], public_endpoint: true do
 rescue StandardError => e
   p e if debug
   halt 401
-end
-
-########## LOGIN/LOGOUT ##################
-
-# OpenID Connect RP-Initiated Logout 1.0
-endpoint '/logout', ['GET', 'POST'], public_endpoint: true do
-  id_token = Token.decode params[:id_token_hint]
-  client = Client.find_by_id id_token&.dig('aud')
-  halt 200, (haml :logout, locals: {
-    state: params[:state],
-    # user: ((User.find_by_id id_token&.dig('sub')) || Cache.user_session[session[:user]]),
-    redirect_uri: (client&.verify_post_logout_redirect_uri params[:post_logout_redirect_uri])
-  })
-rescue StandardError
-  halt 400
-end
-
-endpoint '/logout/exec', ['POST'] do
-  session.delete(:user) # TODO: log out the specified user only
-  redirect_uri = "#{Config.base_config['front_url']}/login"
-  redirect_uri = params[:redirect_uri] + (params[:state] || '') if params[:redirect_uri]
-  redirect to(redirect_uri)
-end
-
-# FIXME
-# This should use a more generic way to select the OP to use
-endpoint '/login', ['GET'] do
-  login_options = []
-  PluginLoader.fire('AUTHORIZATION_LOGIN_STARTED', binding)
-  halt 200, (haml :login, locals: {
-    no_password_login: (Config.base_config['no_password_login'] || false),
-    host: Config.base_config['front_url'],
-    login_options: login_options
-  })
-end
-
-endpoint '/login/exec', ['POST'] do
-  user = User.find_by_id(params[:username])
-  unless user&.verify_password(params[:password])
-    redirect to("#{Config.base_config['front_url']}/login?error=\"Credentials incorrect\"")
-  end
-  user.auth_time = Time.new.to_i
-  auth = Cache.authorization[session[:current_auth]]
-  auth[:user] = user
-  Cache.user_session[(session[:user] = SecureRandom.uuid)] = user # Remember user
-  update_auth_scope auth, user, (Client.find_by_id auth[:client_id])
-  next_task AuthorizationTask::LOGIN
-rescue OAuthError => e
-  auth_response Cache.authorization[session[:current_auth]], e.to_h
 end
 
 ########## WELL-KNOWN ENDPOINTS ##################
