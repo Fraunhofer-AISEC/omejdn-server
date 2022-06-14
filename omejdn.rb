@@ -276,7 +276,7 @@ endpoint '/consent', ['GET'] do
   auth_response auth, { code: session[:current_auth] } unless consent_required # Shortcut
   raise OAuthError, 'consent_required' if auth[:req_tasks].include? 'none'
 
-  return haml :authorization_page, locals: {
+  return haml :consent, locals: {
     host: Config.base_config['front_url'],
     user: user,
     client: client,
