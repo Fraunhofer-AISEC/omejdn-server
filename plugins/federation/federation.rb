@@ -278,7 +278,8 @@ endpoint '/federation/:provider_id', ['GET'] do
   if siop?(@provider)
     request_params[:response_mode] = 'post'
     cross_device_request_url = "#{@metadata['authorization_endpoint']}?#{URI.encode_www_form request_params}"
-    halt 200, (haml :federation_siop, locals: {
+    siop_haml = File.read 'plugins/federation/federation_siop.haml'
+    halt 200, (haml siop_haml, locals: {
       state: oauth_params[:state],
       provider_id: params['provider_id'],
       href: request_url,
