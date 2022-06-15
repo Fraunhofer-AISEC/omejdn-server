@@ -106,6 +106,7 @@ endpoint '/token', ['POST'], public_endpoint: true do
   client = OAuthHelper.authenticate_client params, env.fetch('HTTP_AUTHORIZATION', '')
   raise OAuthError.new 'invalid_request', 'Grant type not allowed' unless client.grant_type_allowed? params[:grant_type]
 
+  PluginLoader.fire('TOKEN_STARTED', binding)
   case params[:grant_type]
   when 'client_credentials'
     scopes     = filter_scopes(client, client.filter_scopes(params[:scope]&.split) || [])
@@ -123,7 +124,9 @@ endpoint '/token', ['POST'], public_endpoint: true do
     raise OAuthError.new 'invalid_target', "No access to: #{resources}" unless (resources - cache[:resource]).empty?
     raise OAuthError, 'invalid_request' if cache[:redirect_uri] && cache[:redirect_uri] != params[:redirect_uri]
   else
-    raise OAuthError.new 'unsupported_grant_type', "Given: #{params[:grant_type]}"
+    custom_grant_type = false
+    PluginLoader.fire('TOKEN_UNKNOWN_GRANT_TYPE', binding)
+    raise OAuthError.new 'unsupported_grant_type', "Given: #{params[:grant_type]}" unless custom_grant_type
   end
   raise OAuthError.new 'access_denied', 'No scopes granted' if scopes.empty?
 
@@ -137,15 +140,17 @@ endpoint '/token', ['POST'], public_endpoint: true do
   nonce = cache&.dig(:nonce)
   id_token = Token.id_token client, user, scopes, req_claims, nonce if openid?(scopes)
   access_token = Token.access_token client, user, scopes, req_claims, resources
-  # Delete the authorization code as it is single use
-  Cache.authorization.delete(params[:code])
-  halt 200, { 'Content-Type' => 'application/json' }, {
+  response = {
     access_token: access_token,
     id_token: id_token,
     expires_in: Config.base_config.dig('access_token', 'expiration'),
     token_type: 'bearer',
     scope: (scopes.join ' ')
-  }.compact.to_json
+  }
+  PluginLoader.fire('TOKEN_FINISHED', binding)
+  # Delete the authorization code as it is single use
+  Cache.authorization.delete(params[:code])
+  halt 200, { 'Content-Type' => 'application/json' }, response.compact.to_json
 rescue OAuthError => e
   halt 400, { 'Content-Type' => 'application/json' }, e.to_s
 end
@@ -158,6 +163,7 @@ def auth_response(auth, response_params)
     iss: Config.base_config['issuer'],
     state: auth[:state]
   }.merge(response_params).compact
+  PluginLoader.fire('AUTHORIZATION_FINISHED', binding)
   halt 400, (haml :error, locals: { error: response_params }) if auth[:redirect_uri].nil?
   case auth[:response_mode]
   when 'form_post'
@@ -192,6 +198,7 @@ endpoint '/par', ['POST'], public_endpoint: true do
 
   uri = "urn:ietf:params:oauth:request_uri:#{SecureRandom.uuid}"
   Cache.par[uri] = params # TODO: Expiration
+  PluginLoader.fire('AUTHORIZATION_PAR', binding)
   halt 201, { 'Content-Type' => 'application/json' }, { 'request_uri' => uri, 'expires_in' => 60 }.to_json
 rescue OAuthError => e
   halt 400, { 'Content-Type' => 'application/json' }, e.to_s
@@ -207,25 +214,24 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
   # Any inputs to members not starting in req_ are sufficiently sanitized
   # Note that some values are reassigned after dealing with request and request_uri
   session[:current_auth] = SecureRandom.uuid
-  Cache.authorization[session[:current_auth]] = cache = {
+  Cache.authorization[session[:current_auth]] = auth = {
     client: client, # The requesting client
     state: params[:state], # Client state
     nonce: params[:nonce], # The client's OIDC nonce
-    response_mode: params[:response_mode], # The response mode to use
-    tasks: [] # Tasks the user has to perform
+    response_mode: params[:response_mode] # The response mode to use
   }
 
   # Used for error messages, might be overwritten by request objects
-  cache[:redirect_uri] = client.verify_redirect_uri params[:redirect_uri], true if params[:redirect_uri]
+  auth[:redirect_uri] = client.verify_redirect_uri params[:redirect_uri], true if params[:redirect_uri]
   OAuthHelper.prepare_params params, client
   uri = client.verify_redirect_uri params[:redirect_uri], openid?((params[:scope] || '').split) # For real this time
 
   # Some of these values may have been overwritten
-  cache.merge!({
-                 state: params[:state], # Client state
-                 nonce: params[:nonce], # The client's OIDC nonce
-                 response_mode: params[:response_mode] # The response mode to use
-               })
+  auth.merge!({
+                state: params[:state], # Client state
+                nonce: params[:nonce], # The client's OIDC nonce
+                response_mode: params[:response_mode] # The response mode to use
+              })
 
   raise OAuthError.new 'invalid_scope', 'No scope specified' unless params[:scope] # We require specifying the scope
   raise OAuthError.new 'unsupported_response_type', 'Only code supported' unless params[:response_type] == 'code'
@@ -233,21 +239,22 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
     raise OAuthError.new 'invalid_request', 'Transform algorithm not supported'
   end
 
-  cache.merge!({
-                 redirect_uri: uri,
-                 pkce: params[:code_challenge],
-                 pkce_method: params[:code_challenge_method],
-                 req_scope: params[:scope].split,
-                 req_claims: JSON.parse(params[:claims] || '{}'),
-                 req_resource: params['resource']
-               })
+  auth.merge!({
+                redirect_uri: uri,
+                pkce: params[:code_challenge],
+                pkce_method: params[:code_challenge_method],
+                req_scope: params[:scope].split,
+                req_claims: JSON.parse(params[:claims] || '{}'),
+                req_resource: params['resource']
+              })
 
-  cache[:req_max_age] = params[:max_age]
-  cache[:req_tasks] = params[:prompt]&.split&.uniq || []
-  if (cache[:req_tasks].include? 'none') && cache[:req_tasks] != ['none']
+  auth[:req_max_age] = params[:max_age]
+  auth[:req_tasks] = params[:prompt]&.split&.uniq || []
+  if (auth[:req_tasks].include? 'none') && auth[:req_tasks] != ['none']
     raise OAuthError.new 'invalid_request', "Invalid 'prompt' values: #{params[:prompt]}"
   end
 
+  PluginLoader.fire('AUTHORIZATION_STARTED', binding)
   redirect to("#{Config.base_config['front_url']}/login")
 rescue OAuthError => e
   auth_response Cache.authorization[session[:current_auth]], e.to_h
@@ -276,6 +283,7 @@ endpoint '/consent', ['GET'] do
   auth_response auth, { code: session[:current_auth] } unless consent_required # Shortcut
   raise OAuthError, 'consent_required' if auth[:req_tasks].include? 'none'
 
+  PluginLoader.fire('AUTHORIZATION_CONSENT_STARTED', binding)
   return haml :consent, locals: {
     host: Config.base_config['front_url'],
     user: user,
@@ -291,6 +299,7 @@ endpoint '/consent/exec', ['POST'] do
   auth = Cache.authorization[session[:current_auth]]
   redirect to("#{Config.base_config['front_url']}/login") if (user = auth[:user]).nil? # Require Login for this step
   (user.consent ||= {})[auth[:client].client_id] = auth[:scope]
+  PluginLoader.fire('AUTHORIZATION_CONSENT_FINISHED', binding)
   user.save
   auth_response auth, { code: session[:current_auth] }
 rescue OAuthError => e
@@ -303,10 +312,9 @@ end
 endpoint '/logout', ['GET', 'POST'], public_endpoint: true do
   id_token = Token.decode params[:id_token_hint]
   client = Client.find_by_id id_token&.dig('aud')
-  halt 200, (haml :logout, locals: {
-    state: params[:state],
-    redirect_uri: (client&.verify_post_logout_redirect_uri params[:post_logout_redirect_uri])
-  })
+  redirect_uri = client&.verify_post_logout_redirect_uri params[:post_logout_redirect_uri]
+  PluginLoader.fire('LOGOUT_STARTED', binding)
+  halt 200, (haml :logout, locals: { state: params[:state], redirect_uri: redirect_uri })
 rescue StandardError
   halt 400
 end
@@ -315,7 +323,19 @@ endpoint '/logout/exec', ['POST'] do
   session.delete(:user) # TODO: log out the specified user only
   redirect_uri = "#{Config.base_config['front_url']}/login"
   redirect_uri = params[:redirect_uri] + (params[:state] || '') if params[:redirect_uri]
+  PluginLoader.fire('LOGOUT_FINISHED', binding)
   redirect to(redirect_uri)
+end
+
+# Call this function to end the login process
+def login_finished(user, authenticated, remember_me: false)
+  auth = Cache.authorization[session[:current_auth]]
+  user.auth_time = Time.new.to_i if authenticated
+  PluginLoader.fire('AUTHORIZATION_LOGIN_FINISHED', binding)
+  user.save
+  auth[:user] = user
+  session[:user] = user.username if remember_me
+  redirect to("#{Config.base_config['front_url']}/consent")
 end
 
 endpoint '/login', ['GET'] do
@@ -324,8 +344,7 @@ endpoint '/login', ['GET'] do
   login_required = session[:user].nil? || !(%w[login select_account] & auth[:req_tasks]).empty?
   login_required ||= (user = User.find_by_id session[:user]).nil?
   login_required ||= auth[:req_max_age] && (Time.new.to_i - user.auth_time) > auth[:req_max_age].to_i
-  auth[:user] = user                                        unless login_required # Shortcut
-  redirect to("#{Config.base_config['front_url']}/consent") unless login_required # Shortcut
+  login_finished user, false unless login_required
   raise OAuthError, 'login_required' if auth[:req_tasks].include? 'none'
 
   login_options = []
@@ -342,11 +361,7 @@ end
 endpoint '/login/exec', ['POST'] do
   user = User.find_by_id params[:username]
   redirect to("#{Config.base_config['front_url']}/login?incorrect") unless user&.verify_password(params[:password])
-  user.auth_time = Time.new.to_i
-  auth = Cache.authorization[session[:current_auth]]
-  auth[:user] = user
-  session[:user] = user.username # Remember user
-  redirect to("#{Config.base_config['front_url']}/consent")
+  login_finished user, true, remember_me: true
 rescue OAuthError => e
   auth_response Cache.authorization[session[:current_auth]], e.to_h
 end
@@ -354,13 +369,14 @@ end
 ########## USERINFO ##################
 
 endpoint '/userinfo', ['GET', 'POST'], public_endpoint: true do
-  token = Token.decode env.fetch('HTTP_AUTHORIZATION', '')&.slice(7..-1), '/userinfo'
+  token  = Token.decode env.fetch('HTTP_AUTHORIZATION', '')&.slice(7..-1), '/userinfo'
   client = Client.find_by_id token['client_id']
-  user = User.find_by_id(token['sub'])
-  halt 401 if user.nil?
+  user   = User.find_by_id   token['sub']
+  halt 401 unless user && client
   req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
   userinfo = OAuthHelper.map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
   userinfo['sub'] = user.username
+  PluginLoader.fire('OPENID_USERINFO', binding)
   halt 200, { 'Content-Type' => 'application/json' }, userinfo.to_json
 rescue StandardError => e
   p e if debug
@@ -375,32 +391,37 @@ before '/(.well-known*|jwks.json)' do
 end
 
 endpoint '/.well-known/(oauth-authorization-server|openid-configuration)', ['GET'], public_endpoint: true do
-  halt 200, { 'Content-Type' => 'application/json' }, OAuthHelper.configuration_metadata.to_json
+  metadata = OAuthHelper.configuration_metadata
+  PluginLoader.fire('STATIC_METADATA', binding)
+  halt 200, { 'Content-Type' => 'application/json' }, (OAuthHelper.sign_metadata metadata).to_json
 end
 
 endpoint '/.well-known/webfinger', ['GET'], public_endpoint: true do
   res = CGI.unescape((params[:resource] || '').gsub('%20', '+'))
   halt 400 unless res.start_with? 'acct:'
   halt 404 if Config.webfinger_config.filter { |h| res.end_with? h }.empty?
-  halt 200, { 'Content-Type' => 'application/json' }, {
+  webfinger = {
     subject: res,
     properties: {},
     links: [{
       rel: 'http://openid.net/specs/connect/1.0/issuer',
       href: Config.base_config['issuer']
     }]
-  }.to_json
+  }
+  PluginLoader.fire('STATIC_WEBFINGER', binding)
+  halt 200, { 'Content-Type' => 'application/json' }, webfinger.to_json
 end
 
 endpoint '/jwks.json', ['GET'], public_endpoint: true do
-  halt 200, { 'Content-Type' => 'application/json' }, Keys.generate_jwks.to_json
+  jwks = Keys.generate_jwks
+  PluginLoader.fire('STATIC_JWKS', binding)
+  halt 200, { 'Content-Type' => 'application/json' }, jwks.to_json
 end
 
 endpoint '/about', ['GET'], public_endpoint: true do
-  halt 200, { 'Content-Type' => 'application/json' }, {
-    'version' => OMEJDN_VERSION,
-    'license' => OMEJDN_LICENSE
-  }.to_json
+  about = { 'version' => OMEJDN_VERSION, 'license' => OMEJDN_LICENSE }
+  PluginLoader.fire('STATIC_ABOUT', binding)
+  halt 200, { 'Content-Type' => 'application/json' }, about.to_json
 end
 
 # Optionally create admin

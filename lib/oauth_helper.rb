@@ -249,17 +249,14 @@ class OAuthHelper
 
     # OpenID Connect Discovery 1.0
     metadata.merge!(configuration_metadata_oidc_discovery(base_config, path))
-
-    # Signing as per RFC 8414
-    metadata['signed_metadata'] = sign_metadata metadata
-    metadata
   end
 
   def self.sign_metadata(metadata)
     to_sign = metadata.merge
     to_sign['iss'] = to_sign['issuer']
     key_pair = Keys.load_key KEYS_TARGET_OMEJDN, 'omejdn', create_key: true
-    JWT.encode to_sign, key_pair['sk'], 'RS256', { kid: key_pair['kid'] }
+    metadata['signed_metadata'] = JWT.encode to_sign, key_pair['sk'], 'RS256', { kid: key_pair['kid'] }
+    metadata
   end
 
   def self.adapt_requested_claims(req_claims)

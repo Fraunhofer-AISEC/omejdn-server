@@ -174,17 +174,147 @@ and `false` otherwise.
 
 ## Flow Events
 
-### TOKEN_CREATED_ACCESS_TOKEN
+These are events which let you alter the behaviour of Omejdn significantly by adding new processing steps or even overwriting parts of Omejdn's flows.
+The Token Issuing, Authorization, and Logout Flows are the internal flows started
+by invoking the token, authorization, and end-session endpoints respectively.
+Separate from these are the OpenID Userinfo endpoint, and various endpoints returning "static" (cachable)data.
+For the latter, the plugins are typically invoked with the default response already prepared,
+so you can alter directly what is returned.
 
-Fired once the core access token is created.
-You may edit the token using the local variable `token`.
+### Token Issuing Flow
 
-### TOKEN_CREATED_ID_TOKEN
+These events are fired during an invocation of the token endpoint.
+They are listed in the order they are invoked.
+
+- TOKEN_STARTED
+
+Fired after the initial authentication of the **client**.
+The request parameters **params** are available.
+
+- TOKEN_UNKNOWN_GRANT_TYPE
+
+Fired if an unknown grant type was requested
+(as indicated in **params** by `params[:grant_type]`)
+By default, this will cause Omejdn to return an error.
+
+If you would like to implement your own grant types,
+you should set **custom_grant_type** to `true`,
+implement the grant-specific behaviour here
+(including setting the **scopes** and **resources**),
+and edit the tokens and responses in later events.
+
+- TOKEN_CREATED_ID_TOKEN
 
 Fired once the core id token is created.
-You may edit the token using the local variable `token`.
+You may edit the **token** directly.
 
-### AUTHORIZATION_LOGIN_STARTED
+- TOKEN_CREATED_ACCESS_TOKEN
+
+Fired once the core access token is created.
+You may edit the **token** directly.
+
+- TOKEN_FINISHED
+
+Fired upon successful issuing, before returning the **response** hash to the client.
+
+### Authorization Flow
+
+These events are fired during an authorization code flow
+(not including the final token request, which is covered in the token flow above).
+The order presented here follows loosely the order in which the events are fired.
+In some circumstances, events may be fired multiple times,
+e.g. when the user is changed and subsequently multiple logins take place.
+The flow maintains a context hash called `auth`, which contains the request parameters and any information useful for the authorization, such as the logged in user.
+
+- AUTHORIZATION_PAR
+
+Fired when the optional Pushed Authorization Request endpoint is queried and the client successfully authenticates.
+The request params are stored in **params** and the request URI is **uri**.
+
+- AUTHORIZATION_STARTED
+
+Fired when a valid authorization code flow was started.
+**auth** is available, as well as the resolved request parameters **params**.
+Resolved means that e.g. `request_uri`s have been resolved to the actual parameters.
+
+- AUTHORIZATION_LOGIN_STARTED
+
+Fired when the user has to log in.
+This is usually the case when the login was requested by the client, the user was not logged in already or the user decided to switch the account.
+**auth** is available.
+
+If you want to implement other options for login, you may do so by adding a hash to the **login_options** array, containing a `:url` to a custom endpoint implementing the login as well as a `:logo` or `:desc`ription of the option to present to the user.
+Call the function `login_finished` with the logged in user and an indication whether the user was just now authenticated to return to the default flow.
+
+- AUTHORIZATION_LOGIN_FINISHED
+
+Fired when the **user** has successfully logged in.
+**auth** is available.
+
+- AUTHORIZATION_CONSENT_STARTED
+
+Fired when the **user** is required to give consent to some **client**.
+**auth** is available.
+The scope can be found in `auth[:scope]`.
+
+- AUTHORIZATION_CONSENT_FINISHED
+
+Fired when the **user** has given consent to a client.
+**auth** is available.
+
+- AUTHORIZATION_FINISHED
+
+Fired when an authorization decision was made,
+right before returning the **response_params** 
+(including either the `code` or an `error`) to the client.
+**auth** is available, but may be incomplete,
+if the client was not found or the request was otherwise invalid.
+
+### OpenID Specific Endpoints
+
+- OPENID_USERINFO
+
+Fired when the userinfo endpoint is invoked and authorization was successful.
+The hash **userinfo** can be edited directly.
+
+### Logout Flow
+
+- LOGOUT_STARTED
+
+Fired when the end-session endpoint was queried.
+The **id_token**, requesting **client**, and approved **redirect_uri** are available.
+
+- LOGOUT_FINISHED
+
+Fired when the user was logged out,
+right before redirection to **redirect_uri**.
+
+### Static Endpoints
+
+These events are fired whenever certain "static" endpoints are invoked.
+The responses should take caching into account.
+This is not the place to return rapidly changing data.
+
+- STATIC_JWKS
+
+Fired when the default `jwks_uri` is invoked.
+The **jwks** hash can be altered directly.
+
+- STATIC_WEBFINGER
+
+Fired when the webfinger well-known URI is invoked.
+The **webfinger** hash can be altered directly.
+
+- STATIC_METADATA
+
+Fired when the RFC 8414 Server Metadata well-known URI or the OpenID Connect Discovery endpoint is invoked.
+The **metadata** hash can be altered directly.
+After all Plugins have been called, the metadata is signed before being returned.
+
+- STATIC_ABOUT
+
+Fired when `/about` is invoked.
+The hash **about** returns information about the server, such as version or license.
 
 ## Plugin Events
 
