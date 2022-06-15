@@ -5,83 +5,75 @@ require_relative './plugins'
 
 # Class representing a user from a DB
 class User
-  attr_accessor :username, :password, :attributes, :extern, :backend, :auth_time
+  attr_accessor :username, :password, :attributes, :extern, :backend, :auth_time, :consent
 
-  def verify_password(pass)
-    PluginLoader.load_plugin('user_db', backend)&.verify_password(self, pass) || false
+  # ----- Implemented by plugins -----
+
+  def self.find_by_id(username)
+    PluginLoader.fire('USER_GET', binding).flatten.compact.first
   end
 
   def self.all_users
-    PluginLoader.load_plugins('user_db').map(&:all_users).flatten
+    PluginLoader.fire('USER_GET_ALL', binding).flatten
   end
 
-  def self.find_by_id(username)
-    PluginLoader.load_plugins('user_db').each do |db|
-      user = db.find_by_id(username)
-      return user unless user.nil?
-    end
-    nil
+  def self.add_user(user, user_backend)
+    PluginLoader.fire('USER_CREATE', binding)
   end
 
-  def self.from_dict(dict)
+  def self.delete_user(username)
+    PluginLoader.fire('USER_DELETE', binding)
+  end
+
+  def save
+    user = self
+    PluginLoader.fire('USER_UPDATE', binding)
+  end
+
+  def verify_password(password)
+    user = self
+    PluginLoader.fire('USER_AUTHENTICATION_PASSWORD_VERIFY', binding).compact.first || false
+  end
+
+  def update_password(password)
+    user = self
+    PluginLoader.fire('USER_AUTHENTICATION_PASSWORD_CHANGE', binding)
+  end
+
+  # ----- Conversion to/from hash for import/export -----
+
+  def self.from_h(dict)
     user = User.new
     user.username = dict['username']
     user.attributes = dict['attributes']
     user.extern = dict['extern']
     user.backend = dict['backend']
+    user.consent = dict['consent']
     user.password = string_to_pass_hash(dict['password']) unless user.extern
     user
   end
 
-  def to_dict
+  def to_h
     {
       'username' => username,
       'attributes' => attributes,
       'password' => password&.to_s,
       'extern' => extern,
-      'backend' => backend
+      'backend' => backend,
+      'consent' => consent
     }.compact
   end
 
-  def self.delete_user(username)
-    !PluginLoader.load_plugins('user_db').index { |db| db.delete_user(username) }.nil?
-  end
-
-  def self.add_user(user, user_backend)
-    PluginLoader.load_plugin('user_db', user_backend).create_user(user)
-  end
-
-  def save
-    PluginLoader.load_plugin('user_db', backend || Config.base_config['user_backend_default']).update_user(self)
-  end
-
-  def update_password(new_password)
-    PluginLoader.load_plugin('user_db', backend).update_password(self, User.string_to_pass_hash(new_password))
-  end
-
-  def self.generate_extern_user(provider, json)
-    return nil if json[provider['external_userid']].nil?
-
-    username = json[provider['external_userid']]
-    user = User.find_by_id(username)
-    return user unless user.nil?
-
-    user = User.new
-    user.username = username
-    user.extern = provider['name'] || false
-    user.attributes = [*provider['claim_mapper']].map do |mapper|
-      PluginLoader.load_plugin('claim_mapper', mapper).map_from_provider(json, provider)
-    end.flatten(1)
-    User.add_user(user, Config.base_config['user_backend_default'])
-    user
-  end
+  # ----- Whether the user has such an attribute -----
 
   def claim?(searchkey, searchvalue = nil)
     attribute = attributes.select { |a| a['key'] == searchkey }.first
     !attribute.nil? && (searchvalue.nil? || attribute['value'] == searchvalue)
   end
 
-  # usernames are unique
+  # ----- Util -----
+
+  # usernames are the primary key for users
   def ==(other)
     username == other.username
   end
@@ -92,5 +84,85 @@ class User
     else
       BCrypt::Password.create str
     end
+  end
+end
+
+# The default User DB saves User Configuration in a dedicated configuration section
+class DefaultUserDB
+  def self.create_user(bind)
+    user = bind.local_variable_get('user')
+    return unless user.backend == 'yaml'
+
+    users = get_all bind
+    users << user
+    Config.user_config = users.map(&:to_h)
+  end
+
+  def self.delete_user(bind)
+    user = get bind
+    return unless user
+
+    users = get_all bind
+    users.delete(user)
+    Config.user_config = users.map(&:to_h)
+  end
+
+  def self.update_user(bind)
+    user = bind.local_variable_get('user')
+    return unless user.backend == 'yaml'
+
+    users = get_all bind
+    idx = users.index user
+    return false unless idx
+
+    users[idx] = user
+    Config.user_config = users.map(&:to_h)
+    true
+  end
+
+  def self.get_all(_bind)
+    Config.user_config.map do |user|
+      user['backend'] = 'yaml'
+      User.from_h user
+    end
+  end
+
+  def self.update_password(bind)
+    user = bind.local_variable_get('user')
+    password = bind.local_variable_get('password')
+    return unless user.backend == 'yaml'
+
+    user.password = User.string_to_pass_hash password
+    update_user(bind)
+  end
+
+  def self.verify_password(bind)
+    user = bind.local_variable_get('user')
+    password = bind.local_variable_get('password')
+    return unless user.backend == 'yaml'
+
+    user.password == password
+  end
+
+  def self.get(bind)
+    username = bind.local_variable_get 'username'
+    Config.user_config.each do |user|
+      next unless user['username'] == username
+
+      user['backend'] = 'yaml'
+      return User.from_h user
+    end
+    nil
+  end
+
+  # register functions
+  def self.register
+    PluginLoader.register 'USER_GET',                            method(:get)
+    PluginLoader.register 'USER_GET_ALL',                        method(:get_all)
+    PluginLoader.register 'USER_CREATE',                         method(:create_user)
+    PluginLoader.register 'USER_UPDATE',                         method(:update_user)
+    PluginLoader.register 'USER_DELETE',                         method(:delete_user)
+    PluginLoader.register 'USER_AUTHENTICATION_PASSWORD_CHANGE', method(:update_password)
+    PluginLoader.register 'USER_AUTHENTICATION_PASSWORD_VERIFY', method(:verify_password)
   end
 end

@@ -18,7 +18,7 @@ before '/api/v1/user*' do
   user_may_read  = !(scopes & ['omejdn:admin', 'omejdn:write', 'omejdn:read']).empty?
   halt 403 unless request.env['REQUEST_METHOD'] == 'GET' ? user_may_read : user_may_write
   @user = User.find_by_id token['sub']
-  @selfservice_config = Config.base_config.dig('plugins', 'api', 'user_selfservice_v1') || {
+  @selfservice_config = PluginLoader.configuration('user_selfservice') || {
     'editable_attributes' => [],
     'allow_deletion' => false,
     'allow_password_change' => false
@@ -38,6 +38,8 @@ endpoint '/api/v1/user', ['PUT'], public_endpoint: true do
   updated_user = User.new
   updated_user.username = @user.username
   updated_user.attributes = []
+  updated_user.backend = @user.backend
+  updated_user.extern = @user.extern
   JSON.parse(request.body.read)['attributes'].each do |e|
     updated_user.attributes << e if editable.include? e['key']
   end

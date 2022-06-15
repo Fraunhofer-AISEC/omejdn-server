@@ -25,13 +25,11 @@ class Token
       'exp' => now + base_config.dig('access_token', 'expiration'),
       'client_id' => client.client_id
     }
-    PluginLoader.load_plugins('claim_mapper').each do |mapper|
-      token.merge!(mapper.map_to_access_token(client, user, scopes, claims['access_token'], resources))
-    end
+    PluginLoader.fire 'TOKEN_CREATED_ACCESS_TOKEN', binding
     reserved = {}
     reserved['userinfo_req_claims'] = claims['userinfo'] unless (claims['userinfo'] || {}).empty?
     token['omejdn_reserved'] = reserved unless reserved.empty?
-    key_pair = Keys.load_skey
+    key_pair = Keys.load_key KEYS_TARGET_OMEJDN, 'omejdn', create_key: true
     JWT.encode token, key_pair['sk'], 'RS256', { typ: 'at+jwt', kid: key_pair['kid'] }
   end
 
@@ -49,10 +47,8 @@ class Token
       'auth_time' => user.auth_time,
       'nonce' => nonce
     }.compact
-    PluginLoader.load_plugins('claim_mapper').each do |mapper|
-      token.merge!(mapper.map_to_id_token(client, user, scopes, claims['id_token']))
-    end
-    key_pair = Keys.load_skey
+    PluginLoader.fire 'TOKEN_CREATED_ID_TOKEN', binding
+    key_pair = Keys.load_key KEYS_TARGET_OMEJDN, 'omejdn', create_key: true
     JWT.encode token, key_pair['sk'], 'RS256', { typ: 'JWT', kid: key_pair['kid'] }
   end
 
@@ -62,6 +58,6 @@ class Token
 
     args = { algorithm: Config.base_config.dig('access_token', 'algorithm') }
     args.merge!({ aud: "#{Config.base_config['front_url']}#{endpoint}", verify_aud: true }) if endpoint
-    JWT.decode(token, Keys.load_skey['sk'].public_key, true, args)[0]
+    JWT.decode(token, Keys.load_key(KEYS_TARGET_OMEJDN, 'omejdn')['sk'].public_key, true, args)[0]
   end
 end

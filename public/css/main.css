@@ -22,7 +22,14 @@ h1,h2,h3,h4,h5,h6 {
   margin-left: 0;
   margin-right: 0;
   background: #6FA8DC;
-  padding: 20px;
+  padding-top: 2.5px;
+  padding-bottom: 2.5px;
+  padding-left: 20px;
+}
+
+.header form {
+  margin: 0;
+  display: inline
 }
 
 form input {

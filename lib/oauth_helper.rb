@@ -34,7 +34,7 @@ class OAuthHelper
     # Determine the client, trusting it will use the correct method to tell us
     client_id = params[:client_id]
     if auth_header.start_with? 'Basic'
-      client_id, client_secret = Base64.decode64(auth_header.slice(6..-1)).split(':', 2)
+      client_id, client_secret = Base64.strict_decode64(auth_header.slice(6..-1)).split(':', 2)
     end
     if params[:client_assertion_type] == 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
       client_id = JWT.decode(params[:client_assertion], nil, false).dig(0, 'sub') # Decode without verify
@@ -148,13 +148,17 @@ class OAuthHelper
   end
 
   def self.validate_pkce(code_challenge, code_verifier, method)
+    expected_challenge = generate_pkce(code_verifier, method)
+    raise OAuthError.new 'invalid_request', 'Code verifier mismatch' unless expected_challenge == code_challenge
+  end
+
+  def self.generate_pkce(code_verifier, method)
     raise OAuthError.new 'invalid_request', "Unsupported verifier method: #{method}" unless method == 'S256'
     raise OAuthError.new 'invalid_request', 'Code verifier missing' if code_verifier.nil?
 
     digest = Digest::SHA256.new
     digest << code_verifier
-    expected_challenge = digest.base64digest.gsub('+', '-').gsub('/', '_').gsub('=', '')
-    raise OAuthError.new 'invalid_request', 'Code verifier mismatch' unless expected_challenge == code_challenge
+    digest.base64digest.gsub('+', '-').gsub('/', '_').gsub('=', '')
   end
 
   def self.configuration_metadata_oidc_discovery(base_config, path)
@@ -245,17 +249,14 @@ class OAuthHelper
 
     # OpenID Connect Discovery 1.0
     metadata.merge!(configuration_metadata_oidc_discovery(base_config, path))
-
-    # Signing as per RFC 8414
-    metadata['signed_metadata'] = sign_metadata metadata
-    metadata
   end
 
   def self.sign_metadata(metadata)
     to_sign = metadata.merge
     to_sign['iss'] = to_sign['issuer']
-    key_pair = Keys.load_skey
-    JWT.encode to_sign, key_pair['sk'], 'RS256', { kid: key_pair['kid'] }
+    key_pair = Keys.load_key KEYS_TARGET_OMEJDN, 'omejdn', create_key: true
+    metadata['signed_metadata'] = JWT.encode to_sign, key_pair['sk'], 'RS256', { kid: key_pair['kid'] }
+    metadata
   end
 
   def self.adapt_requested_claims(req_claims)

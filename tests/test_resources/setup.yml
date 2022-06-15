@@ -1,0 +1,5 @@
+# This file serves to act as a dummy plugin file for Omejdn tests
+# It simply deactivates some default plugins, so that the tests do not overwrite anything
+deactivate_defaults:
+- config
+- keys

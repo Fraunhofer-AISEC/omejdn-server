@@ -1,7 +1,7 @@
 AllCops:
   NewCops: enable
   Exclude:
-    - tests/*.rb
+    - tests/**/*.rb
     - vendor/**/*
   TargetRubyVersion: 2.5
 Metrics/BlockLength:

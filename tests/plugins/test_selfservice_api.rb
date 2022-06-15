@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 require 'test/unit'
 require 'rack/test'
-require_relative 'config_testsetup'
-require_relative '../omejdn'
-require_relative '../lib/token'
+
+ENV['OMEJDN_PLUGINS'] = 'tests/test_resources/plugins_test_selfservice_api.yml'
+require_relative '../config_testsetup'
+require_relative '../../lib/token'
 
 class SelfServiceApiTest < Test::Unit::TestCase
   include Rack::Test::Methods
@@ -19,10 +20,6 @@ class SelfServiceApiTest < Test::Unit::TestCase
     @write_token   = Token.access_token client, user, ['omejdn:write'], {}, TestSetup.config['front_url']+"/api"
     @read_token    = Token.access_token client, user, ['omejdn:read'],  {}, TestSetup.config['front_url']+"/api"
     @useless_token = Token.access_token client, user, [],               {}, TestSetup.config['front_url']+"/api"
-  end
-
-  def teardown
-    TestSetup.teardown
   end
 
   def test_require_read_scope

@@ -1,71 +1,62 @@
 # frozen_string_literal: true
 
-# OAuth Client
+require_relative './plugins'
+
+# Class representing an OAuth Client
 class Client
-  attr_accessor :client_id, :metadata, :attributes
+  attr_accessor :metadata, :attributes, :backend
+
+  # ----- Implemented by plugins -----
 
   def self.find_by_id(client_id)
-    load_clients.each do |client|
-      return client if client_id == client.client_id
-    end
-    nil
+    PluginLoader.fire('CLIENT_GET', binding).flatten.compact.first
   end
 
-  def apply_values(ccnf)
-    @client_id = ccnf.delete('client_id')
-    @attributes = ccnf.delete('attributes') || []
-    @metadata = ccnf
+  def self.all_clients
+    PluginLoader.fire('CLIENT_GET_ALL', binding).flatten
   end
 
-  def self.load_clients
-    needs_save = false
-    clients = Config.client_config.map do |ccnf|
-      import = ccnf.delete('import_certfile')
-      client = Client.new
-      client.apply_values(ccnf)
-      if import
-        begin
-          client.certificate = OpenSSL::X509::Certificate.new File.read import
-          needs_save = true
-        rescue StandardError => e
-          p "Unable to load key ``#{import}'': #{e}"
-        end
-      end
-      client
-    end
-    Config.client_config = clients if needs_save
-    clients
+  def self.add_client(client, client_backend)
+    PluginLoader.fire('CLIENT_CREATE', binding)
   end
 
-  def self.from_dict(json)
+  def self.delete_client(client_id)
+    PluginLoader.fire('CLIENT_DELETE', binding)
+  end
+
+  def save
+    client = self
+    PluginLoader.fire('CLIENT_UPDATE', binding)
+  end
+
+  def certificate
+    client = self
+    PluginLoader.fire('CLIENT_AUTHENTICATION_CERTIFICATE_GET', binding).compact.first
+  end
+
+  def certificate=(new_cert)
+    client = self
+    PluginLoader.fire('CLIENT_AUTHENTICATION_CERTIFICATE_UPDATE', binding)
+  end
+
+  # ----- Conversion to/from hash for import/export -----
+
+  def self.from_h(dict)
     client = Client.new
-    client.apply_values(json)
+    client.attributes = dict.delete('attributes') || []
+    client.metadata = dict
     client
   end
 
-  # Decodes a JWT
-  def decode_jwt(jwt, verify_aud)
-    jwt_dec, jwt_hdr = JWT.decode(jwt, nil, false) # Decode without verify
-    aud = Config.base_config['accept_audience']
-    raise 'Not self-issued' if jwt_dec['sub'] && jwt_dec['sub'] != jwt_dec['iss']
-    raise 'Invalid algorithm' unless %w[RS256 RS512 ES256 ES512].include? jwt_hdr['alg']
-
-    jwt_dec, = JWT.decode jwt, certificate&.public_key, true,
-                          { nbf_leeway: 30, aud: aud, verify_aud: verify_aud, algorithm: jwt_hdr['alg'] }
-
-    raise 'Not self-issued' if jwt_dec['sub'] && jwt_dec['sub'] != jwt_dec['iss']
-    raise 'Wrong Client ID in JWT' if jwt_dec['sub'] && jwt_dec['sub'] != @client_id
-
-    jwt_dec
-  rescue StandardError => e
-    puts "Error decoding JWT #{jwt}: #{e}"
-    raise OAuthError.new 'invalid_client', "Error decoding JWT: #{e}"
+  def to_h
+    {
+      'attributes' => @attributes
+    }.merge(@metadata).compact
   end
 
-  def to_dict
-    result = { 'client_id' => @client_id }.merge(@metadata)
-    result['attributes'] = @attributes
-    result.compact
+  def claim?(searchkey, searchvalue = nil)
+    attribute = attributes.select { |a| a['key'] == searchkey }.first
+    !attribute.nil? && (searchvalue.nil? || attribute['value'] == searchvalue)
   end
 
   def filter_scopes(scopes)
@@ -105,37 +96,100 @@ class Client
     return uri if [*@metadata['post_logout_redirect_uris']].include? escaped_redir
   end
 
-  def claim?(searchkey, searchvalue = nil)
-    attribute = attributes.select { |a| a['key'] == searchkey }.first
-    !attribute.nil? && (searchvalue.nil? || attribute['value'] == searchvalue)
-  end
+  # Decodes a JWT
+  def decode_jwt(jwt, verify_aud)
+    aud = Config.base_config['accept_audience']
+    jwt_dec, = JWT.decode jwt, certificate&.public_key, true,
+                          { nbf_leeway: 30, aud: aud, verify_aud: verify_aud, algorithm: %w[RS256 RS512 ES256 ES512] }
 
-  def certificate_file
-    "keys/clients/#{Base64.urlsafe_encode64(@client_id)}.cert"
-  end
+    raise 'Not self-issued' if jwt_dec['sub'] && jwt_dec['sub'] != jwt_dec['iss']
+    raise 'Wrong Client ID in JWT' if jwt_dec['sub'] && jwt_dec['sub'] != client_id
 
-  def certificate
-    cert = OpenSSL::X509::Certificate.new File.read certificate_file
-    raise 'Certificate expired' if cert.not_after < Time.now
-    raise 'Certificate not yet valid' if cert.not_before > Time.now
-
-    cert
+    jwt_dec
   rescue StandardError => e
-    p "Unable to load key ``#{certificate_file}'': #{e}"
-    nil
+    puts "Error decoding JWT #{jwt}: #{e}"
+    raise OAuthError.new 'invalid_client', "Error decoding JWT: #{e}"
   end
 
-  def certificate=(new_cert)
-    # delete the certificate if set to nil
-    filename = certificate_file
-    if new_cert.nil?
-      File.delete filename if File.exist? filename
-      return
-    end
-    File.write(filename, new_cert)
+  # ----- Util -----
+
+  # For convenience, make the client_id a symbol
+  def client_id
+    @metadata['client_id']
   end
 
+  def client_id=(_new_cid)
+    @metadata['client_id'] = newcid
+  end
+
+  # client_ids are the primary key for clients
   def ==(other)
     client_id == other.client_id
+  end
+end
+
+# The default Client DB saves Client Configuration in a dedicated configuration section.
+# The exception to this rule are certificates, which are stored in keys/clients/
+# in PEM encoded form.
+class DefaultClientDB
+  def self.get(bind)
+    client_id = bind.local_variable_get :client_id
+    clients = get_all
+    idx = clients.index Client.from_h({ 'client_id' => client_id })
+    idx ? clients[idx] : nil
+  end
+
+  def self.get_all(*)
+    Config.client_config.map { |ccnf| Client.from_h ccnf }
+  end
+
+  def self.create(bind)
+    new_client = bind.local_variable_get :client
+    clients = get_all
+    clients << new_client
+    Config.client_config = clients.map(&:to_h)
+  end
+
+  def self.update(bind)
+    client = bind.local_variable_get :client
+    clients = get_all
+    idx = clients.index client
+    clients[idx] = client if idx
+    Config.client_config = clients.map(&:to_h)
+  end
+
+  def self.delete(bind)
+    client_id = bind.local_variable_get :client_id
+    clients = get_all
+    idx = clients.index Client.from_h({ 'client_id' => client_id })
+    clients.delete_at idx if idx
+    Config.client_config = clients.map(&:to_h)
+  end
+
+  def self.certificate_get(bind)
+    client = bind.local_variable_get :client
+    key_material = Keys.load_key KEYS_TARGET_CLIENT, client.client_id
+    key_material&.dig('certs', 0)
+  end
+
+  def self.certificate_update(bind)
+    client = bind.local_variable_get :client
+    new_cert = bind.local_variable_get :new_cert
+    hash = Keys.load_key KEYS_TARGET_CLIENT, client.client_id
+    hash['certs'] = new_cert ? [new_cert] : nil
+    hash = {} unless hash['sk'] || hash['certs']
+    hash['pk'] = (hash['sk'] || hash.dig('certs', 0))&.public_key
+    Keys.store_key KEYS_TARGET_CLIENT, client.client_id, hash.compact
+  end
+
+  # register functions
+  def self.register
+    PluginLoader.register 'CLIENT_GET',                               method(:get)
+    PluginLoader.register 'CLIENT_GET_ALL',                           method(:get_all)
+    PluginLoader.register 'CLIENT_CREATE',                            method(:create)
+    PluginLoader.register 'CLIENT_UPDATE',                            method(:update)
+    PluginLoader.register 'CLIENT_DELETE',                            method(:delete)
+    PluginLoader.register 'CLIENT_AUTHENTICATION_CERTIFICATE_GET',    method(:certificate_get)
+    PluginLoader.register 'CLIENT_AUTHENTICATION_CERTIFICATE_UPDATE', method(:certificate_update)
   end
 end

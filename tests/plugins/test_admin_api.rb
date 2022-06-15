@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 require 'test/unit'
 require 'rack/test'
-require_relative 'config_testsetup'
-require_relative '../omejdn'
-require_relative '../lib/token'
+
+ENV['OMEJDN_PLUGINS'] = 'tests/test_resources/plugins_test_admin_api.yml'
+require_relative '../config_testsetup'
+require_relative '../../lib/token'
 
 class AdminApiTest < Test::Unit::TestCase
   include Rack::Test::Methods
@@ -19,11 +20,7 @@ class AdminApiTest < Test::Unit::TestCase
     @client2 = Client.find_by_id 'publicClient'
     @token = Token.access_token @client, nil, ['omejdn:admin'], {}, TestSetup.config['front_url']+"/api"
     @insufficient_token = Token.access_token @client, nil, ['omejdn:write'], {}, "test"
-    @testCertificate = File.read './tests/test_resources/testClient.pem'
-  end
-
-  def teardown
-    TestSetup.teardown
+    @testCertificate = OpenSSL::X509::Certificate.new File.read('./tests/test_resources/testClient.pem')
   end
 
   def test_require_admin_scope
@@ -128,11 +125,11 @@ class AdminApiTest < Test::Unit::TestCase
   def test_get_client
     get "/api/v1/config/clients/#{@client.client_id}", {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal @client.to_dict, JSON.parse(last_response.body)
+    assert_equal @client.to_h, JSON.parse(last_response.body)
   end
 
   def test_put_client
-    client_desc = @client.to_dict
+    client_desc = @client.to_h
     client_desc.delete("client_id")
     client_desc['name'] = "Alternative Name"
     put "/api/v1/config/clients/#{@client.client_id}", client_desc.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
@@ -182,7 +179,7 @@ class AdminApiTest < Test::Unit::TestCase
 
   def test_post_put_delete_certificate
     cert = {
-      'certificate' => @testCertificate
+      'certificate' => @testCertificate.to_pem
     }
     post "/api/v1/config/clients/#{@client.client_id}/keys", cert.to_json,
          { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }

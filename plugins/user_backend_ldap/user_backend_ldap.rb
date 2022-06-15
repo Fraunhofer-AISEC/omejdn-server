@@ -3,10 +3,9 @@
 require 'socket'
 require 'net/ldap'
 require 'base64'
-require_relative './_abstract'
 
 # LDAP User DB backend
-class LdapUserDb < UserDb
+class LdapUserDb
   attr_reader :config
 
   @dn_cache = {}
@@ -19,6 +18,10 @@ class LdapUserDb < UserDb
       'base_dn' => '',
       'uid_key' => 'dn'
     }.merge(config || {})
+
+    PluginLoader.register 'USER_GET',                            method(:find_by_id)
+    PluginLoader.register 'USER_GET_ALL',                        method(:all_users)
+    PluginLoader.register 'USER_AUTHENTICATION_PASSWORD_VERIFY', method(:verify_password)
   end
 
   def decode_value(value, encoding)
@@ -60,7 +63,7 @@ class LdapUserDb < UserDb
                             end
     end
     user['attributes'].compact!
-    User.from_dict user
+    User.from_h user
   end
 
   def all_users
@@ -83,7 +86,11 @@ class LdapUserDb < UserDb
     nil
   end
 
-  def verify_password(user, password)
+  def verify_password(bind)
+    user = bind.local_variable_get('user')
+    password = bind.local_variable_get('password')
+    return unless user.backend == 'ldap'
+
     user_dn = lookup_user(user.username) if user_dn.nil?
     return false if user_dn.nil?
 
@@ -119,7 +126,8 @@ class LdapUserDb < UserDb
     dir
   end
 
-  def find_by_id(username)
+  def find_by_id(bind)
+    username = bind.local_variable_get 'username'
     ldap = connect_directory
     uid_key = @config['uidKey']
     filter = Net::LDAP::Filter.eq(uid_key, username)
@@ -132,9 +140,4 @@ class LdapUserDb < UserDb
   end
 end
 
-# Monkey patch the loader
-class PluginLoader
-  def self.load_user_db_ldap
-    LdapUserDb.new
-  end
-end
+YamlUserDb.new Config.base_config.dig('plugins', 'user_backend_ldap')

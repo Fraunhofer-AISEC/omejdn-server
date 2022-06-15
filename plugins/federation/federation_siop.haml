@@ -1,0 +1,27 @@
+:javascript
+  var es = new EventSource('./#{locals[:provider_id]}/stream?state=#{locals[:state]}');
+  es.onmessage = function(e) { console.log(e.data + "\n"); window.location='./#{locals[:provider_id]}/callback?'+e.data };
+
+%link{:type => "text/css", :rel => "stylesheet", :href => "../css/main.css"}
+
+%div{ :class => "header"}
+  %form{:action => "../login", :method => "get"}
+    %input{:type => "submit", :value => "Go Back...", :class => "button"}
+
+<center>
+%h2 Please scan the following QR code to authenticate with your phone
+
+%br
+
+!= locals[:qr]
+
+%br
+
+%a{:href => locals[:cross_device_href]} Debugging Link
+
+%br
+%h2 Or you can click the button below to authenticate using an app on this device
+
+%br
+
+%a{:href => locals[:href], :class => "button"} Click here
