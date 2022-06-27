@@ -68,7 +68,7 @@ class DefaultKeysDB
 
     # Certificates
     if key_material['certs'].nil?
-      File.delete "#{filename}.cert" if File.exist? "#{filename}.cert"
+      FileUtils.rm_rf "#{filename}.cert"
     else
       pem = key_material['certs'].map(&:to_pem).join("\n")
       File.write("#{filename}.cert", pem)
@@ -76,7 +76,7 @@ class DefaultKeysDB
 
     # Keys
     if key_material['sk'].nil?
-      File.delete "#{filename}.key" if File.exist? "#{filename}.key"
+      FileUtils.rm_rf "#{filename}.key"
     else
       File.write("#{filename}.key", key_material['sk'])
     end

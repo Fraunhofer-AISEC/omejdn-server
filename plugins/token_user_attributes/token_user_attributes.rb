@@ -31,4 +31,4 @@ class TokenUserAttributesPlugin
   end
 end
 
-TokenUserAttributesPlugin.new Config.base_config.dig('plugins', 'token_user_attributes')
+TokenUserAttributesPlugin.new PluginLoader.configuration('token_user_attributes')
