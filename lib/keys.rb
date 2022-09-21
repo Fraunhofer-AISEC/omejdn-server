@@ -122,10 +122,10 @@ class DefaultKeysDB
       result = {}
       # The file could be either a certificate or a key
       begin
-        result['certs'] = OpenSSL::X509::Certificate.load_file "keys/omejdn/#{f}"
+        result['certs'] = OpenSSL::X509::Certificate.load_file "keys/#{target_type}/#{f}"
         result['pk'] = result['certs'][0].public_key
       rescue StandardError
-        key = OpenSSL::PKey::RSA.new File.read("keys/omejdn/#{f}")
+        key = OpenSSL::PKey::RSA.new File.read("keys/#{target_type}/#{f}")
         result['pk'] = key.public_key
       end
       result
