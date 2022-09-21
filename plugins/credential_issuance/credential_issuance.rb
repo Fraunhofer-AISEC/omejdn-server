@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative 'id_credential'
+require_relative 'simple_credential'
 
 # Cache for nonces
 class NonceCache
@@ -99,5 +99,7 @@ def add_to_metadata(bind)
   credentials_supported = {}
   PluginLoader.fire 'PLUGIN_CREDENTIAL_ISSUANCE_LIST', binding
   metadata['credentials_supported'] = credentials_supported
+  conf = PluginLoader.configuration('credential_issuance')
+  metadata['credential_issuer'] = conf['credential_issuer'] if conf['credential_issuer']
 end
 PluginLoader.register 'STATIC_METADATA', method(:add_to_metadata)
