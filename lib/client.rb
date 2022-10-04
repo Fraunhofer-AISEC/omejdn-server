@@ -54,17 +54,8 @@ class Client
     }.merge(@metadata).compact
   end
 
-  def claim?(searchkey, searchvalue = nil)
-    attribute = attributes.select { |a| a['key'] == searchkey }.first
-    !attribute.nil? && (searchvalue.nil? || attribute['value'] == searchvalue)
-  end
-
   def filter_scopes(scopes)
     (scopes || []) & [*@metadata['scope']]
-  end
-
-  def allowed_scoped_attributes(scopes)
-    filter_scopes(scopes).map { |s| Config.scope_mapping_config[s] }.compact.flatten.uniq
   end
 
   def grant_type_allowed?(grant_type)
@@ -118,8 +109,8 @@ class Client
     @metadata['client_id']
   end
 
-  def client_id=(_new_cid)
-    @metadata['client_id'] = newcid
+  def client_id=(new_cid)
+    @metadata['client_id'] = new_cid
   end
 
   # client_ids are the primary key for clients

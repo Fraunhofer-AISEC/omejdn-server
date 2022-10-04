@@ -78,31 +78,33 @@ class TestSetup
   def self.users
     [{
       'username' => 'testUser',
-      'attributes' => [
-        { 'key' => 'omejdn', 'value' => 'write' },
-        { 'key' => 'openid', 'value' => true },
-        { 'key' => 'profile', 'value' => true },
-        { 'key' => 'email', 'value' => 'admin@example.com' },
-        { 'key' => 'asdfasf', 'value' => 'asdfasf' },
-        { 'key' => 'exampleKey', 'value' => 'exampleValue' }
-      ],
+      'attributes' => {
+        'omejdn' => 'write',
+        'openid' => true,
+        'profile' => true,
+        'email' => 'admin@example.com',
+        'asdfasf' => 'asdfasf',
+        'exampleKey' => 'exampleValue'
+      },
       'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC', # "mypassword"
       'backend' => 'yaml'
     },
     {
       'username' => 'testUser2',
-      'attributes' => [
-        { 'key' => 'omejdn', 'value' => 'write' }
-      ],
+      'attributes' => {
+        'omejdn' => 'write'
+      },
       'password' => '$2a$12$Be9.8qVsGOVpUFO4ebiMBel/TNetkPhnUkJ8KENHjHLiDG.IXi0Zi',
       'backend' => 'yaml'
     },
     {
       'username' => 'dynamic_claims',
-      'attributes' => [
-        { 'key' => 'omejdn', 'value' => 'write' },
-        { 'key' => 'dynattribute', 'dynamic' => true }
-      ],
+      'attributes' => {
+        'omejdn' => 'write',
+        'dynattribute' => {
+          'dynamic' => true
+        }
+      },
       'password' => '$2a$12$s1UhO7bRO9b5fTTiRE4KxOR88vz3462Bxn8DGh/iDX26Neh95AHrC',
       'backend' => 'yaml'
     }]#.map { |u| User.from_h(u) }
@@ -116,7 +118,7 @@ class TestSetup
       'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write', 'openid', 'email'],
       'redirect_uris' => 'http://localhost:4200',
-      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
+      'attributes' => {'omejdn' => 'write'}
      },{
       'client_id' => 'client_secret_post_client',
       'client_secret' => 'post_secret',
@@ -124,28 +126,28 @@ class TestSetup
       'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write', 'openid', 'email'],
       'redirect_uris' => 'http://localhost:4200',
-      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
+      'attributes' => {'omejdn' => 'write'}
      },{
       'client_id' => 'private_key_jwt_client',
       'token_endpoint_auth_method' => 'private_key_jwt',
       'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write', 'openid', 'email'],
       'redirect_uris' => 'http://localhost:4200',
-      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
+      'attributes' => {'omejdn' => 'write'}
      },{
       'client_id' => 'publicClient',
       'token_endpoint_auth_method' => 'none',
       'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write'],
       'redirect_uris' => 'http://localhost:4200',
-      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}]
+      'attributes' => {'omejdn' => 'write'}
      },{
       'client_id' => 'resourceClient',
       'token_endpoint_auth_method' => 'none',
       'grant_types' => ['authorization_code','client_credentials'],
       'scope' => ['omejdn:write'],
       'redirect_uris' => 'http://localhost:4200',
-      'attributes' => [{'key'=> 'omejdn', 'value'=> 'write'}],
+      'attributes' => {'omejdn' => 'write'},
       'resource' => ['http://example.org','http://localhost:4567/api']
      },{
       'client_id' => 'dynamic_claims',
@@ -154,10 +156,12 @@ class TestSetup
       'client_name' => 'omejdn admin ui',
       'scope' => ['omejdn:write'],
       'redirect_uris' => 'http://localhost:4200',
-      'attributes' => [
-        { 'key' => 'dynattribute', 'dynamic' => true },
-        {'key'=> 'omejdn', 'value'=> 'write'}
-      ]
+      'attributes' => {
+        'dynattribute' => {
+          'dynamic' => true
+        },
+        'omejdn' => 'write'
+      }
     }]#.map { |c| Client.from_h(c) }
   end
 

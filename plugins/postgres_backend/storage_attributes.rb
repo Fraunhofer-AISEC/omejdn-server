@@ -6,9 +6,9 @@ class PostgresAttributeDB
   def self.write_attributes(type, identifier, attributes)
     PostgresBackendPlugin.connect_db.transaction do |t|
       t.exec_params "DELETE FROM #{TABLE_ATTRIBUTES} WHERE type = $1 AND identifier = $2", [type, identifier]
-      attributes.each do |a|
+      attributes.each do |ak,av|
         t.exec_params "INSERT INTO #{TABLE_ATTRIBUTES}(type,identifier,key,value) VALUES ($1,$2,$3,$4)",
-                      [type, identifier, a['key'], (JSON.generate a['value'])]
+                      [type, identifier, ak, (JSON.generate av)]
       end
     end
   end

@@ -45,6 +45,10 @@ class SelfServiceApiTest < Test::Unit::TestCase
     expected = TestSetup.users[0]
     expected.delete('password')
     expected.delete('backend')
+    expected['attributes'] = expected['attributes'].to_a.map do |ak, av|
+      av = { 'value' => av } unless av.instance_of?(Hash)
+      { 'key' => ak }.merge(av)
+    end
     assert_equal expected, JSON.parse(last_response.body)
   end
 

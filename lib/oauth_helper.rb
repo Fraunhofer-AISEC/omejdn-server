@@ -116,28 +116,26 @@ class OAuthHelper
     hash[key.shift] = value
   end
 
-  def self.map_claims_to_userinfo(attrs, claims, client, scopes)
+  def self.map_claims_to_userinfo(attrs, claims, scopes)
     new_payload = {}
-    claims ||= {}
 
-    # Add attribute if it was requested indirectly through OIDC
-    # scope and scope is allowed for client.
-    allowed_scoped_attrs = client.allowed_scoped_attributes(scopes)
-    attrs.select { |a| allowed_scoped_attrs.include?(a['key']) }
-         .each { |a| add_nested_claim(new_payload, a['key'], a['value']) }
-    return new_payload if claims.empty?
+    # Add attribute if it was requested indirectly through a scope
+    scopes&.map { |s| Config.scope_mapping_config[s] }&.compact&.flatten&.uniq&.each do |ak|
+      next unless (av = attrs[ak])
 
-    # Add attribute if it was specifically requested through OIDC
-    # claims parameter.
-    attrs.each do |attr|
-      next unless (name = claims[attr['key']])
+      av = { 'value' => av } unless av.instance_of?(Hash)
+      add_nested_claim new_payload, ak, av if av.key? 'value'
+    end
 
-      if    attr['dynamic'] && name['value']
-        add_nested_claim(new_payload, attr['key'], name['value'])
-      elsif attr['dynamic'] && name['values']
-        add_nested_claim(new_payload, attr['key'], name.dig('values', 0))
-      elsif attr['value']
-        add_nested_claim(new_payload, attr['key'], attr['value'])
+    # Add attribute if it was specifically requested through OIDC claims parameter.
+    claims&.each do |ck, cv|
+      next unless (av = attrs[ck])
+
+      av = { 'value' => av } unless av.instance_of?(Hash)
+      if av['dynamic'] && (req_value = cv['value'] || cv.dig('values', 0))
+        add_nested_claim new_payload, ck, req_value
+      elsif av.key? 'value'
+        add_nested_claim new_payload, ck, av['value']
       end
     end
     new_payload

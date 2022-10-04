@@ -64,13 +64,6 @@ class User
     }.compact
   end
 
-  # ----- Whether the user has such an attribute -----
-
-  def claim?(searchkey, searchvalue = nil)
-    attribute = attributes.select { |a| a['key'] == searchkey }.first
-    !attribute.nil? && (searchvalue.nil? || attribute['value'] == searchvalue)
-  end
-
   # ----- Util -----
 
   # usernames are the primary key for users

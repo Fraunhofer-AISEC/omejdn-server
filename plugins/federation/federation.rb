@@ -198,12 +198,13 @@ def generate_extern_user(provider, userinfo)
   end
 
   # Update local Attributes
-  user.attributes = (provider['attribute_mappers'] || []).map do |mapper|
+  user.attributes = attributes = {}
+  (provider['attribute_mappers'] || []).each do |mapper|
     mapper = attribute_mapper_config&.dig(mapper)
     if check_prerequisites mapper, userinfo
       PluginLoader.fire "PLUGIN_FEDERATION_ATTRIBUTE_MAPPING_#{mapper['type'].upcase}", binding
     end
-  end.flatten(2).compact
+  end
   user.save
 
   user

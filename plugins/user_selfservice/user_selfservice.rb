@@ -30,18 +30,23 @@ rescue StandardError => e
 end
 
 endpoint '/api/v1/user', ['GET'], public_endpoint: true do
-  halt 200, { 'username' => @user.username, 'attributes' => @user.attributes }.to_json
+  attributes = @user.attributes.to_a.map do |ak,av|
+    av = { 'value' => av } unless av.instance_of?(Hash)
+    { 'key' => ak }.merge(av)
+  end
+  halt 200, { 'username' => @user.username, 'attributes' => attributes }.to_json
 end
 
 endpoint '/api/v1/user', ['PUT'], public_endpoint: true do
   editable = @selfservice_config['editable_attributes'] || []
   updated_user = User.new
   updated_user.username = @user.username
-  updated_user.attributes = []
+  updated_user.attributes = {}
   updated_user.backend = @user.backend
   updated_user.extern = @user.extern
   JSON.parse(request.body.read)['attributes'].each do |e|
-    updated_user.attributes << e if editable.include? e['key']
+    attribute_key = e.delete('key')
+    updated_user.attributes[attribute_key] = e if editable.include? attribute_key
   end
   updated_user.save
   halt 204

@@ -182,9 +182,11 @@ def filter_scopes(resource_owner, scopes)
       true
     elsif s.include? ':'
       key, value = s.split(':', 2)
-      resource_owner.claim?(key, value)
+      av = resource_owner.attributes[key]
+      av = { 'value' => av } unless av.instance_of?(Hash)
+      av && av['value'] == value
     else
-      (scope_mapping[s] || []).any? { |claim| resource_owner.claim?(claim) }
+      (scope_mapping[s] || []).any? { |claim| resource_owner.attributes[claim] }
     end
   end
 end
@@ -374,7 +376,7 @@ endpoint '/userinfo', ['GET', 'POST'], public_endpoint: true do
   user   = User.find_by_id   token['sub']
   halt 401 unless user && client
   req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
-  userinfo = OAuthHelper.map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
+  userinfo = OAuthHelper.map_claims_to_userinfo(user.attributes, req_claims, token['scope'].split)
   userinfo['sub'] = user.username
   PluginLoader.fire('OPENID_USERINFO', binding)
   halt 200, { 'Content-Type' => 'application/json' }, userinfo.to_json
