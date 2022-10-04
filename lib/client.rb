@@ -123,6 +123,9 @@ end
 # The exception to this rule are certificates, which are stored in keys/clients/
 # in PEM encoded form.
 class DefaultClientDB
+  CONFIG_SECTION_CLIENTS = 'clients'
+  KEYS_TARGET_CLIENTS = 'clients'
+
   def self.get(bind)
     client_id = bind.local_variable_get :client_id
     clients = get_all
@@ -131,14 +134,14 @@ class DefaultClientDB
   end
 
   def self.get_all(*)
-    Config.client_config.map { |ccnf| Client.from_h ccnf }
+    Config.read_config(CONFIG_SECTION_CLIENTS, []).map { |ccnf| Client.from_h ccnf }
   end
 
   def self.create(bind)
     new_client = bind.local_variable_get :client
     clients = get_all
     clients << new_client
-    Config.client_config = clients.map(&:to_h)
+    Config.write_config(CONFIG_SECTION_CLIENTS, clients.map(&:to_h))
   end
 
   def self.update(bind)
@@ -146,7 +149,7 @@ class DefaultClientDB
     clients = get_all
     idx = clients.index client
     clients[idx] = client if idx
-    Config.client_config = clients.map(&:to_h)
+    Config.write_config(CONFIG_SECTION_CLIENTS, clients.map(&:to_h))
   end
 
   def self.delete(bind)
@@ -154,23 +157,23 @@ class DefaultClientDB
     clients = get_all
     idx = clients.index Client.from_h({ 'client_id' => client_id })
     clients.delete_at idx if idx
-    Config.client_config = clients.map(&:to_h)
+    Config.write_config(CONFIG_SECTION_CLIENTS, clients.map(&:to_h))
   end
 
   def self.certificate_get(bind)
     client = bind.local_variable_get :client
-    key_material = Keys.load_key KEYS_TARGET_CLIENT, client.client_id
+    key_material = Keys.load_key KEYS_TARGET_CLIENTS, client.client_id
     key_material&.dig('certs', 0)
   end
 
   def self.certificate_update(bind)
     client = bind.local_variable_get :client
     new_cert = bind.local_variable_get :new_cert
-    hash = Keys.load_key KEYS_TARGET_CLIENT, client.client_id
+    hash = Keys.load_key KEYS_TARGET_CLIENTS, client.client_id
     hash['certs'] = new_cert ? [new_cert] : nil
     hash = {} unless hash['sk'] || hash['certs']
     hash['pk'] = (hash['sk'] || hash.dig('certs', 0))&.public_key
-    Keys.store_key KEYS_TARGET_CLIENT, client.client_id, hash.compact
+    Keys.store_key KEYS_TARGET_CLIENTS, client.client_id, hash.compact
   end
 
   # register functions

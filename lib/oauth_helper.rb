@@ -120,7 +120,8 @@ class OAuthHelper
     new_payload = {}
 
     # Add attribute if it was requested indirectly through a scope
-    scopes&.map { |s| Config.scope_mapping_config[s] }&.compact&.flatten&.uniq&.each do |ak|
+    scope_mapping = Config.read_config CONFIG_SECTION_SCOPE_MAPPING, {}
+    scopes&.map { |s| scope_mapping[s] }&.compact&.flatten&.uniq&.each do |ak|
       next unless (av = attrs[ak])
 
       av = { 'value' => av } unless av.instance_of?(Hash)
@@ -187,7 +188,7 @@ class OAuthHelper
     metadata['token_endpoint'] = "#{path}/token"
     metadata['jwks_uri'] = "#{path}/jwks.json"
     # metadata["registration_endpoint"] = "#{host}/FIXME"
-    metadata['scopes_supported'] = Config.scope_mapping_config.map { |m| m[0] }
+    metadata['scopes_supported'] = Config.read_config(CONFIG_SECTION_SCOPE_MAPPING, {}).map { |m| m[0] }
     metadata['scopes_supported'] << 'openid' if Config.base_config['openid']
     metadata['response_types_supported'] = ['code']
     metadata['response_modes_supported'] = %w[query fragment form_post]

@@ -26,8 +26,7 @@ class TestDB
 
   def self.read_config(bind)
     section  = bind.local_variable_get :section
-    fallback = bind.local_variable_get :fallback
-    JSON.parse((@config[section] || fallback).to_json) # Simple deep copy
+    (json = @config[section]&.to_json) ? JSON.parse(json) : nil # Simple deep copy
   end
 
   def self.store_key(bind)

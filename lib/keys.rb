@@ -3,7 +3,6 @@
 require 'openssl'
 require 'jwt'
 KEYS_TARGET_OMEJDN = 'omejdn'
-KEYS_TARGET_CLIENT = 'clients'
 
 # Key and Certificate Management
 class Keys
@@ -30,21 +29,13 @@ class Keys
     PluginLoader.fire('KEYS_LOAD_ALL', binding).flatten
   end
 
-  def self.gen_x5c(certs)
-    certs.map { |cert| Base64.strict_encode64(cert.to_der).strip }
-  end
-
-  def self.gen_x5t(certs)
-    Base64.urlsafe_encode64(OpenSSL::Digest::SHA1.new(certs[0].to_der).to_s)
-  end
-
   def self.generate_jwks
     { keys: (load_all_keys(KEYS_TARGET_OMEJDN).map do |k|
       jwk = JWT::JWK.new(k['pk']).export
       jwk[:use] = 'sig'
       if k['certs']
-        jwk[:x5c] = gen_x5c(k['certs'])
-        jwk[:x5t] = gen_x5t(k['certs'])
+        jwk[:x5c] = k['certs'].map { |cert| Base64.strict_encode64(cert.to_der).strip }
+        jwk[:x5t] = Base64.urlsafe_encode64(OpenSSL::Digest.new('SHA1', k.dig('certs', 0)&.to_der).to_s)
       end
       jwk
     end).uniq { |k| k[:kid] } }

@@ -82,39 +82,40 @@ end
 
 # The default User DB saves User Configuration in a dedicated configuration section
 class DefaultUserDB
+  CONFIG_SECTION_USERS = 'users'
   def self.create_user(bind)
     user = bind.local_variable_get('user')
     return unless user.backend == 'yaml'
 
-    users = get_all bind
+    users = get_all
     users << user
-    Config.user_config = users.map(&:to_h)
+    Config.write_config(CONFIG_SECTION_USERS, users.map(&:to_h))
   end
 
   def self.delete_user(bind)
     user = get bind
     return unless user
 
-    users = get_all bind
+    users = get_all
     users.delete(user)
-    Config.user_config = users.map(&:to_h)
+    Config.write_config(CONFIG_SECTION_USERS, users.map(&:to_h))
   end
 
   def self.update_user(bind)
     user = bind.local_variable_get('user')
     return unless user.backend == 'yaml'
 
-    users = get_all bind
+    users = get_all
     idx = users.index user
     return false unless idx
 
     users[idx] = user
-    Config.user_config = users.map(&:to_h)
+    Config.write_config(CONFIG_SECTION_USERS, users.map(&:to_h))
     true
   end
 
-  def self.get_all(_bind)
-    Config.user_config.map do |user|
+  def self.get_all(*)
+    Config.read_config(CONFIG_SECTION_USERS, []).map do |user|
       user['backend'] = 'yaml'
       User.from_h user
     end
@@ -132,20 +133,14 @@ class DefaultUserDB
   def self.verify_password(bind)
     user = bind.local_variable_get('user')
     password = bind.local_variable_get('password')
-    return unless user.backend == 'yaml'
-
-    user.password == password
+    user.backend == 'yaml' ? user.password == password : nil
   end
 
   def self.get(bind)
     username = bind.local_variable_get 'username'
-    Config.user_config.each do |user|
-      next unless user['username'] == username
-
-      user['backend'] = 'yaml'
-      return User.from_h user
-    end
-    nil
+    users = get_all
+    idx = users.index { |u| u.username == username }
+    idx ? users[idx] : nil
   end
 
   # register functions

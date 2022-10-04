@@ -176,7 +176,7 @@ def auth_response(auth, response_params)
 end
 
 def filter_scopes(resource_owner, scopes)
-  scope_mapping = Config.scope_mapping_config
+  scope_mapping = Config.read_config CONFIG_SECTION_SCOPE_MAPPING, {}
   scopes.select do |s|
     if s == 'openid'
       true
@@ -291,7 +291,7 @@ endpoint '/consent', ['GET'] do
     user: user,
     client: client,
     scopes: auth[:scope],
-    scope_description: Config.scope_description_config
+    scope_description: Config.read_config(CONFIG_SECTION_SCOPE_DESCRIPTION, {})
   }
 rescue OAuthError => e
   auth_response Cache.authorization[session[:current_auth]], e.to_h
@@ -401,7 +401,7 @@ end
 endpoint '/.well-known/webfinger', ['GET'], public_endpoint: true do
   res = CGI.unescape((params[:resource] || '').gsub('%20', '+'))
   halt 400 unless res.start_with? 'acct:'
-  halt 404 if Config.webfinger_config.filter { |h| res.end_with? h }.empty?
+  halt 404 if Config.read_config(CONFIG_SECTION_WEBFINGER, {}).filter { |h| res.end_with? h }.empty?
   webfinger = {
     subject: res,
     properties: {},

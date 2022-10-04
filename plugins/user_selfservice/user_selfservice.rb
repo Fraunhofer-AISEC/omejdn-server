@@ -30,7 +30,7 @@ rescue StandardError => e
 end
 
 endpoint '/api/v1/user', ['GET'], public_endpoint: true do
-  attributes = @user.attributes.to_a.map do |ak,av|
+  attributes = @user.attributes.to_a.map do |ak, av|
     av = { 'value' => av } unless av.instance_of?(Hash)
     { 'key' => ak }.merge(av)
   end
@@ -75,7 +75,7 @@ endpoint '/api/v1/user/provider', ['GET'], public_endpoint: true do
   # TODO: We probably do not want to send out the entire provider including secrets
   # to any user with API access
   halt 404 if @user.extern.nil?
-  providers = Config.oauth_provider_config
+  providers = [] # No providers anymore (see federation plugin)
   providers.each do |provider|
     next unless provider['name'] == @user.extern
 
