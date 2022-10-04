@@ -17,7 +17,7 @@ DEFAULT_SCOPE_MAPPING = {
   'profile' => %w[name family_name given_name middle_name nickname preferred_username profile picture
                   website gender birthdate zoneinfo locale updated_at],
   'email' => %w[email email_verified],
-  'address' => %w[formatted street_address locality region postal_code country],
+  'address' => %w[address/formatted address/street_address address/locality address/region address/postal_code address/country],
   'phone' => %w[phone_number phone_number_verified]
 }.freeze
 DEFAULT_SCOPE_DESCRIPTION = {

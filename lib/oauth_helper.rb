@@ -110,14 +110,10 @@ class OAuthHelper
     url_params
   end
 
-  def self.add_jwt_claim(jwt_body, key, value)
-    # Address is handled differently. For reasons...
-    if %w[street_address postal_code locality region country formatted].include?(key)
-      jwt_body['address'] ||= {}
-      jwt_body['address'][key] = value
-      return
-    end
-    jwt_body[key] = value
+  def self.add_nested_claim(hash, key, value)
+    key = key.split('/')
+    hash = (hash[key.shift] ||= {}) while key.length > 1
+    hash[key.shift] = value
   end
 
   def self.map_claims_to_userinfo(attrs, claims, client, scopes)
@@ -128,7 +124,7 @@ class OAuthHelper
     # scope and scope is allowed for client.
     allowed_scoped_attrs = client.allowed_scoped_attributes(scopes)
     attrs.select { |a| allowed_scoped_attrs.include?(a['key']) }
-         .each { |a| add_jwt_claim(new_payload, a['key'], a['value']) }
+         .each { |a| add_nested_claim(new_payload, a['key'], a['value']) }
     return new_payload if claims.empty?
 
     # Add attribute if it was specifically requested through OIDC
@@ -137,11 +133,11 @@ class OAuthHelper
       next unless (name = claims[attr['key']])
 
       if    attr['dynamic'] && name['value']
-        add_jwt_claim(new_payload, attr['key'], name['value'])
+        add_nested_claim(new_payload, attr['key'], name['value'])
       elsif attr['dynamic'] && name['values']
-        add_jwt_claim(new_payload, attr['key'], name.dig('values', 0))
+        add_nested_claim(new_payload, attr['key'], name.dig('values', 0))
       elsif attr['value']
-        add_jwt_claim(new_payload, attr['key'], attr['value'])
+        add_nested_claim(new_payload, attr['key'], attr['value'])
       end
     end
     new_payload
