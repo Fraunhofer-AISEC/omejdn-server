@@ -9,6 +9,8 @@ require 'json'
 require 'json-schema'
 
 # Error class for this API
+# All API endpoints will catch this error
+# and respond with to the specified http and error codes
 class AdminAPIError < RuntimeError
   attr_reader :type, :code, :desc
 
@@ -34,33 +36,73 @@ class AdminAPIError < RuntimeError
   end
 end
 
-after '/api/admin/v2/*' do
-  headers['Content-Type'] = 'application/json'
-end
-
-before '/api/admin/v2/*' do
-  return if request.env['REQUEST_METHOD'] == 'OPTIONS'
-
-  begin
-    jwt = env.fetch('HTTP_AUTHORIZATION', '')&.slice(7..-1)
-    @token = Token.decode jwt, '/api'
-    raise 'Client revoked' unless Client.find_by_id @token['client_id']
-  rescue StandardError
-    raise AdminAPIError::UNAUTHORIZED
+# A set of pack/unpack functions
+class AdminAPIv2Plugin
+  def self.pack_keys(k_in)
+    {
+      'pk' => k_in['pk']&.to_pem,
+      'sk' => k_in['sk']&.to_pem,
+      'certs' => k_in['certs']&.map { |c| c.to_pem }
+    }.compact
   end
 
-  raise AdminAPIError::ACCESS_DENIED unless @token['scope']&.split&.include? 'omejdn:admin'
+  def self.unpack_keys(k_in)
+    keys = {}
+    keys['certs'] = k_in['certs']&.map { |c| OpenSSL::X509::Certificate.new c }
+    keys['sk'] = OpenSSL::PKey.read k_in['sk'] if k_in['sk']
+    keys['pk'] = OpenSSL::PKey.read k_in['pk'] if k_in['pk']
+    # TODO: Consistency checks
+    keys['pk'] = keys['sk'].public_key       if keys['pk'].nil? && keys['sk']
+    keys['pk'] = keys['certs'][0].public_key if keys['pk'].nil? && keys['certs']&.length&.positive?
 
-  begin
-    body = request.body.read
-    @request_body = JSON.parse body unless body.empty?
-  rescue StandardError
-    raise AdminAPIError::MALFORMED_JSON
+    keys.compact
   end
 
-  raise AdminAPIError::MISSING_JSON if !(%w[GET DELETE].include? request.env['REQUEST_METHOD']) && @request_body.nil?
-rescue AdminAPIError => e
-  halt e.code, e.to_s
+  def self.pack_attribute(attribute)
+    return attribute if attribute.instance_of?(Hash)
+
+    { 'value' => attribute }
+  end
+
+  def self.unpack_attribute(attribute)
+    # Prefer compact representation
+    return attribute['value'] if attribute.keys == ['value'] && !attribute['value'].instance_of?(Hash)
+
+    attribute
+  end
+
+  def self.pack_user(user)
+    user = user.to_h
+    user.delete('password') # Password Hash is useless anyway
+    user['attributes'] = user['attributes']&.transform_values { |a| pack_attribute(a) }
+    user
+  end
+
+  def self.unpack_user(user)
+    user['attributes'] = user['attributes']&.transform_values { |a| unpack_attribute(a) }
+    user
+  end
+
+  MULTI_VALUED_METADATA = %w[contacts grant_types redirect_uris post_logout_redirect_uris request_uris scope
+                             resource].freeze
+
+  def self.pack_client(client)
+    client = client.to_h
+    client['attributes'] = client['attributes']&.transform_values { |a| pack_attribute(a) }
+    MULTI_VALUED_METADATA.each do |m|
+      client[m] = [*client[m]] if client.key? m
+    end
+    client
+  end
+
+  def self.unpack_client(client)
+    client['attributes'] = client['attributes']&.transform_values { |a| unpack_attribute(a) }
+    MULTI_VALUED_METADATA.each do |m|
+      # Prefer compact notation
+      client[m] = client[m].first if client.key?(m) && m.length == 1
+    end
+    client
+  end
 end
 
 # ---------- SCHEMAS ----------
@@ -71,10 +113,6 @@ def schema_pem(type)
                  "([0-9a-zA-Z\+\/=]{64}(\\n|\\r|\\r\\n))*" \
                  "([0-9a-zA-Z\+\/=]{1,63}(\\n|\\r|\\r\\n))?" \
                  "-----END #{type}-----(\\n|\\r|\\r\\n)?$" }
-end
-
-def schema_value_or_array(schema)
-  { 'oneOf' => [schema, { 'type' => 'array', 'items' => schema }] }
 end
 
 SCHEMA_CONFIG = { 'type' => %w[array object] }.freeze
@@ -90,16 +128,11 @@ SCHEMA_KEYS = {
 SCHEMA_ATTRIBUTES = {
   'type' => 'object',
   'additionalProperties' => {
-    'oneOf' => [
-      { 'type' => %w[string number array boolean] },
-      {
-        'type' => 'object',
-        'properties' => {
-          'value' => {},
-          'dynamic' => { 'type' => 'boolean' }
-        }
-      }
-    ]
+    'type' => 'object',
+    'properties' => {
+      'value' => {},
+      'dynamic' => { 'type' => 'boolean' }
+    }
   }
 }.freeze
 SCHEMA_USER = {
@@ -124,7 +157,6 @@ SCHEMA_UPDATE_USER = {
   'allOf' => [SCHEMA_USER],
   'properties' => { 'extern' => false, 'backend' => false, 'username' => false }
 }.freeze
-SCHEMA_STRING_OR_STRING_ARRAY = schema_value_or_array({ 'type' => 'string' })
 SCHEMA_ENUM_AUTH_METHODS = { 'enum' => %w[none client_secret_basic client_secret_post private_key_jwt] }.freeze
 SCHEMA_ENUM_GRANT_TYPES = { 'enum' => %w[authorization_code client_credentials] }.freeze
 SCHEMA_URL = { 'type' => 'string', 'pattern' => '^(http|https):\/\/[^ "]+$' }.freeze
@@ -141,15 +173,15 @@ SCHEMA_CLIENT = {
     'policy_uri' => SCHEMA_URL,
     'software_id' => { 'type' => 'string', 'minLength' => 1 },
     'software_version' => { 'type' => 'string', 'minLength' => 1 },
-    'contacts' => SCHEMA_STRING_OR_STRING_ARRAY,
+    'contacts' => { 'type' => 'array', 'items' => { 'type' => 'string' } },
     'token_endpoint_auth_method' => SCHEMA_ENUM_AUTH_METHODS,
     'client_secret' => { 'type' => 'string', 'minLength' => 1 },
-    'grant_types' => (schema_value_or_array SCHEMA_ENUM_GRANT_TYPES),
-    'redirect_uris' => (schema_value_or_array SCHEMA_URL),
-    'post_logout_redirect_uris' => (schema_value_or_array SCHEMA_URL),
-    'request_uris' => (schema_value_or_array SCHEMA_URL),
-    'scope' => SCHEMA_STRING_OR_STRING_ARRAY,
-    'resource' => SCHEMA_STRING_OR_STRING_ARRAY
+    'grant_types' => { 'type' => 'array', 'items' => SCHEMA_ENUM_GRANT_TYPES },
+    'redirect_uris' => { 'type' => 'array', 'items' => SCHEMA_URL },
+    'post_logout_redirect_uris' => { 'type' => 'array', 'items' => SCHEMA_URL },
+    'request_uris' => { 'type' => 'array', 'items' => SCHEMA_URL },
+    'scope' => { 'type' => 'array', 'items' => { 'type' => 'string' } },
+    'resource' => { 'type' => 'array', 'items' => { 'type' => 'string' } }
   }
 }.freeze
 SCHEMA_UPDATE_CLIENT = {
@@ -157,6 +189,35 @@ SCHEMA_UPDATE_CLIENT = {
   'properties' => { 'backend' => false, 'client_id' => false }
 }.freeze
 SCHEMA_UPDATE_CLIENT_CERTIFICATE = schema_pem 'CERTIFICATE'
+
+# ---------- ACCESS CONTROL / PRELIMINARY TESTS ----------
+
+after '/api/admin/v2/*' do
+  headers['Content-Type'] = 'application/json'
+end
+
+before '/api/admin/v2/*' do
+  return if request.env['REQUEST_METHOD'] == 'OPTIONS'
+
+  begin
+    @token = Token.decode env.fetch('HTTP_AUTHORIZATION', '')&.slice(7..-1), '/api'
+    raise 'Client revoked' unless Client.find_by_id @token['client_id']
+  rescue StandardError
+    raise AdminAPIError::UNAUTHORIZED
+  end
+
+  body = request.body.read
+  raise AdminAPIError::ACCESS_DENIED unless @token['scope']&.split&.include? 'omejdn:admin'
+  raise AdminAPIError::MISSING_JSON if !(%w[GET DELETE].include? request.env['REQUEST_METHOD']) && body.empty?
+
+  begin
+    @request_body = JSON.parse body unless body.empty?
+  rescue StandardError
+    raise AdminAPIError::MALFORMED_JSON
+  end
+rescue AdminAPIError => e
+  halt e.code, e.to_s
+end
 
 # ---------- CONFIGURATION ----------
 
@@ -184,31 +245,11 @@ end
 
 # ---------- KEY MATERIAL ----------
 
-def pack_keys(k_in)
-  {
-    'pk' => k_in['pk']&.to_pem,
-    'sk' => k_in['sk']&.to_pem,
-    'certs' => k_in['certs']&.map { |c| c.to_pem }
-  }.compact
-end
-
-def unpack_keys(k_in)
-  keys = {}
-  keys['certs'] = k_in['certs']&.map { |c| OpenSSL::X509::Certificate.new c }
-  keys['sk'] = OpenSSL::PKey.read k_in['sk'] if k_in['sk']
-  keys['pk'] = OpenSSL::PKey.read k_in['pk'] if k_in['pk']
-  # TODO: Consistency checks
-  keys['pk'] = keys['sk'].public_key       if keys['pk'].nil? && keys['sk']
-  keys['pk'] = keys['certs'][0].public_key if keys['pk'].nil? && keys['certs']&.length&.positive?
-
-  keys.compact
-end
-
 endpoint '/api/admin/v2/keys/:target_type', ['GET'], public_endpoint: true do # GET ALL
   raise AdminAPIError::INVALID_URL unless (target_type = params['target_type']) && target_type.length.positive?
   raise AdminAPIError::NOT_FOUND   unless (data = Keys.load_all_keys(target_type))
 
-  halt 200, JSON.generate(data.map { |d| pack_keys(d) })
+  halt 200, JSON.generate(data.map { |d| AdminAPIv2Plugin.pack_keys(d) })
 rescue AdminAPIError => e
   halt e.code, e.to_s
 end
@@ -218,7 +259,7 @@ endpoint '/api/admin/v2/keys/:target_type/:target', ['GET'], public_endpoint: tr
   raise AdminAPIError::INVALID_URL unless (target = params['target']) && target.length.positive?
   raise AdminAPIError::NOT_FOUND   if     (data = Keys.load_key(target_type, target)).empty?
 
-  halt 200, JSON.generate(pack_keys(data))
+  halt 200, JSON.generate(AdminAPIv2Plugin.pack_keys(data))
 rescue AdminAPIError => e
   halt e.code, e.to_s
 end
@@ -231,7 +272,7 @@ endpoint '/api/admin/v2/keys/:target_type/:target', ['PUT'], public_endpoint: tr
   raise AdminAPIError.unacceptable(reason) if reason.length.positive?
 
   existing_keys = Keys.load_key(target_type, target)
-  Keys.store_key target_type, target, unpack_keys(@request_body)
+  Keys.store_key target_type, target, AdminAPIv2Plugin.unpack_keys(@request_body)
   halt(existing_keys.empty? ? 201 : 204)
 rescue AdminAPIError => e
   halt e.code, e.to_s
@@ -239,14 +280,8 @@ end
 
 # ---------- USERS ----------
 
-def pack_user(user)
-  user = user.to_h
-  user.delete('password') # Password Hash is useless anyway
-  user
-end
-
 endpoint '/api/admin/v2/user', ['GET'], public_endpoint: true do
-  halt 200, JSON.generate(User.all_users.map { |u| pack_user(u) })
+  halt 200, JSON.generate(User.all_users.map { |u| AdminAPIv2Plugin.pack_user(u) })
 rescue AdminAPIError => e
   halt e.code, e.to_s
 end
@@ -255,7 +290,7 @@ endpoint '/api/admin/v2/user/:username', ['GET'], public_endpoint: true do
   raise AdminAPIError::INVALID_URL unless (username = params['username']) && username.length.positive?
   raise AdminAPIError::NOT_FOUND   unless (data = User.find_by_id(username))
 
-  halt 200, JSON.generate(pack_user(data))
+  halt 200, JSON.generate(AdminAPIv2Plugin.pack_user(data))
 rescue AdminAPIError => e
   halt e.code, e.to_s
 end
@@ -269,10 +304,11 @@ endpoint '/api/admin/v2/user/:username', ['PUT'], public_endpoint: true do
   existing_user = User.find_by_id username
   raise AdminAPIError.unacceptable('New user needs a password') if existing_user.nil? && @request_body['password'].nil?
 
+  requested_user = AdminAPIv2Plugin.unpack_user @request_body
   updated_user = existing_user || User.new
   updated_user.username   ||= username
-  updated_user.attributes   = @request_body['attributes'] || updated_user.attributes || {}
-  updated_user.consent      = @request_body['consent']    || updated_user.consent    || {}
+  updated_user.attributes   = requested_user['attributes'] || updated_user.attributes || {}
+  updated_user.consent      = requested_user['consent']    || updated_user.consent    || {}
   updated_user.backend    ||= 'yaml' # TODO
   if existing_user
     updated_user.save
@@ -299,16 +335,16 @@ end
 # ---------- CLIENTS ----------
 
 endpoint '/api/admin/v2/client', ['GET'], public_endpoint: true do
-  halt 200, JSON.generate(Client.all_clients.map(&:to_h))
+  halt 200, JSON.generate(Client.all_clients.map { |c| AdminAPIv2Plugin.pack_client(c) })
 rescue AdminAPIError => e
   halt e.code, e.to_s
 end
 
 endpoint '/api/admin/v2/client/:client_id', ['GET'], public_endpoint: true do
   raise AdminAPIError::INVALID_URL unless (client_id = params['client_id']) && client_id.length.positive?
-  raise AdminAPIError::NOT_FOUND   unless (data = Client.find_by_id(client_id)&.to_h)
+  raise AdminAPIError::NOT_FOUND   unless (data = Client.find_by_id(client_id))
 
-  halt 200, JSON.generate(data)
+  halt 200, JSON.generate(AdminAPIv2Plugin.pack_client(data))
 rescue AdminAPIError => e
   halt e.code, e.to_s
 end
@@ -319,10 +355,11 @@ endpoint '/api/admin/v2/client/:client_id', ['PUT'], public_endpoint: true do
   reason = JSON::Validator.fully_validate(SCHEMA_UPDATE_CLIENT, @request_body)
   raise AdminAPIError.unacceptable(reason) if reason.length.positive?
 
+  requested_client = AdminAPIv2Plugin.unpack_client @request_body
   existing_client = Client.find_by_id client_id
   updated_client = existing_client || Client.new
-  updated_client.attributes = @request_body.delete('attributes') || updated_client.attributes || {}
-  updated_client.metadata = @request_body unless @request_body.empty?
+  updated_client.attributes = requested_client.delete('attributes') || updated_client.attributes || {}
+  updated_client.metadata = requested_client unless requested_client.empty?
   updated_client.metadata['client_id'] = client_id
   updated_client.backend ||= 'yaml' # TODO
   if existing_client

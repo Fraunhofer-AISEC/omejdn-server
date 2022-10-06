@@ -96,14 +96,14 @@ class AdminApiV2Test < Test::Unit::TestCase
     assert last_response.ok?
     schema_user_array = { 'type' => 'array', 'items' => SCHEMA_USER }
     assert JSON::Validator.validate(schema_user_array, (response = JSON.parse(last_response.body)))
-    expected_response = TestSetup.users.map {|u| u.delete('password'); u }
+    expected_response = TestSetup.users.map {|u| AdminAPIv2Plugin.pack_user(u) }
     assert_equal expected_response, response
 
     # Add a new user
     payload = {
       'password' => 'alles wahr',
       'attributes' => {
-        'seemann' => true,
+        'seemann' => {'value' => true},
         'lügner' => { 'value' => false, 'dynamic' => true }
       },
       'consent' => {
@@ -122,13 +122,13 @@ class AdminApiV2Test < Test::Unit::TestCase
 
     # Update the user
     payload.delete('consent')
-    payload['attributes']['seemann'] = 'aye'
+    payload['attributes']['seemann']['value'] = 'aye'
     put '/api/admin/v2/user/blaubaer', payload.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
     get '/api/admin/v2/user/blaubaer', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
     assert JSON::Validator.validate(SCHEMA_USER, (response = JSON.parse(last_response.body)))
-    assert_equal 'aye', response.dig('attributes','seemann')
+    assert_equal 'aye', response.dig('attributes','seemann','value')
     assert response.dig('consent', 'biene_maja')
 
     # Delete the user
@@ -146,7 +146,7 @@ class AdminApiV2Test < Test::Unit::TestCase
     assert last_response.ok?
     schema_client_array = { 'type' => 'array', 'items' => SCHEMA_CLIENT }
     assert JSON::Validator.validate(schema_client_array, (response = JSON.parse(last_response.body)))
-    expected_response = TestSetup.clients
+    expected_response = TestSetup.clients.map{|c| AdminAPIv2Plugin.pack_client(c) }
     assert_equal expected_response, response
 
     # Add a new client
@@ -154,7 +154,7 @@ class AdminApiV2Test < Test::Unit::TestCase
       'client_secret' => 'super-secret',
       'grant_types' => ['authorization_code'],
       'token_endpoint_auth_method' => 'client_secret_post',
-      'redirect_uris' => 'https://example.org/oauth/cb',
+      'redirect_uris' => ['https://example.org/oauth/cb'],
       'attributes' => {}
     }
     put '/api/admin/v2/client/simpletestclient', payload.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
@@ -166,7 +166,7 @@ class AdminApiV2Test < Test::Unit::TestCase
     assert_equal payload, response
 
     # Update the client
-    payload = { 'attributes' => { 'coolclient' => true } }
+    payload = { 'attributes' => { 'coolclient' => { 'value' => true } } }
     put '/api/admin/v2/client/simpletestclient', payload.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
     get '/api/admin/v2/client/simpletestclient', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
