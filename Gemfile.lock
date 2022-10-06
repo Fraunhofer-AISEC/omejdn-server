@@ -1,6 +1,8 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    addressable (2.8.1)
+      public_suffix (>= 2.0.2, < 6.0)
     ast (2.4.2)
     bcrypt (3.1.18)
     chunky_png (1.4.0)
@@ -9,6 +11,8 @@ GEM
     haml (5.2.2)
       temple (>= 0.8.0)
       tilt
+    json-schema (3.0.0)
+      addressable (>= 2.8)
     jwt (2.4.1)
     multi_json (1.15.0)
     mustermann (1.1.1)
@@ -20,6 +24,7 @@ GEM
       ast (~> 2.4.1)
     pg (1.4.1)
     power_assert (2.0.1)
+    public_suffix (5.0.0)
     rack (2.2.3.1)
     rack-protection (2.2.0)
       rack
@@ -72,6 +77,7 @@ PLATFORMS
 DEPENDENCIES
   bcrypt
   haml
+  json-schema
   jwt
   net-ldap
   openssl

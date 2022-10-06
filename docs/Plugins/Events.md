@@ -63,7 +63,7 @@ Should overwrite a section identified by **section** with **data**.
 
 - CONFIGURATION_LOAD
 
-Should return the content of section **section**, or **fallback** if no data is stored yet.
+Should return the content of section **section**, or `nil` if no data is stored yet.
 
 ### Cryptographic Material Events
 
@@ -81,7 +81,6 @@ Should store the key material **key_material** for the given **target_type** and
 - KEYS_LOAD
 
 Should return the key material for the given **target_type** and **target**.
-If **create_key** is `true` and no key stored yet, a new key should be created and stored.
 
 - KEYS_LOAD_ALL
 

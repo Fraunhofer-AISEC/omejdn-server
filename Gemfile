@@ -15,6 +15,7 @@ end
 
 # Necessary Gems for Plugins
 group :plugins do
+  gem 'json-schema'
   gem 'net-ldap'
   gem 'pg'
   gem 'rqrcode'

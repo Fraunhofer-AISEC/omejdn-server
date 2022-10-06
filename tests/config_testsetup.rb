@@ -2,8 +2,8 @@
 
 # We want to intercept any storage request Omejdn makes,
 # so we do not actually overwrite any data.
-# To do this, we first edit ENV,
-# so Omejdn loads our custom plugins file.
+# To do this, we first edit ENV so Omejdn loads our custom plugins file,
+# which disables writing to disk.
 # Tests may add additional plugins
 plugin_files = ENV['OMEJDN_PLUGINS']&.split(':') || []
 plugin_files << 'tests/test_resources/setup.yml'
@@ -162,27 +162,5 @@ class TestSetup
         'omejdn' => 'write'
       }
     }]#.map { |c| Client.from_h(c) }
-  end
-
-  def self.config
-    {
-      'issuer' => 'http://localhost:4567',
-      'front_url' => 'http://localhost:4567',
-      'bind_to' => '0.0.0.0:4567',
-      'environment' => 'test',
-      'openid' => false,
-      'default_audience' => [],
-      'accept_audience' => 'http://localhost:4567',
-      'user_backend_default' => 'yaml',
-      'access_token' => {
-        'expiration' => 3600,
-        'algorithm' => 'RS256',
-      },
-      'id_token' => {
-        'expiration' => 3600,
-        'algorithm' => 'RS256',
-      }
-    }
-    TestDB.config['omejdn']
   end
 end

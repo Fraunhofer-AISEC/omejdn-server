@@ -17,7 +17,7 @@ class OpenIDTest < Test::Unit::TestCase
 
     @client = Client.find_by_id 'publicClient'
     @user   = User.find_by_id 'testUser'
-    @token  = Token.access_token @client, nil, ['openid'], {}, TestSetup.config['front_url']+"/api"
+    @token  = Token.access_token @client, nil, ['openid'], {}, TestDB.config.dig('omejdn','front_url')+"/api"
   end
 
   def test_pkce

@@ -78,7 +78,7 @@ class OAuth2Test < Test::Unit::TestCase
 
   def extract_access_token(response)
     check_keys ["access_token","expires_in","token_type","scope"], response
-    assert_equal TestSetup.config.dig('access_token','expiration'), response["expires_in"]
+    assert_equal TestDB.config.dig('omejdn','access_token','expiration'), response["expires_in"]
     assert_equal "bearer", response["token_type"]
     assert_equal "omejdn:write", response["scope"]
 
@@ -86,11 +86,11 @@ class OAuth2Test < Test::Unit::TestCase
     assert last_response.ok?
     server_keys = JSON.parse(last_response.body)
     jwt = JWT.decode(response['access_token'],nil,true, {
-      algorithms: [TestSetup.config.dig('access_token','algorithm')],
+      algorithms: [TestDB.config.dig('omejdn','access_token','algorithm')],
       jwks: server_keys})
     check_keys ['typ','kid','alg'], jwt[1]
     assert_equal 'at+jwt', jwt.dig(1,'typ')
-    assert_equal TestSetup.config.dig('access_token','algorithm'), jwt.dig(1,'alg')
+    assert_equal TestDB.config.dig('omejdn','access_token','algorithm'), jwt.dig(1,'alg')
 
     return jwt[0]
   end
@@ -102,8 +102,8 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub'], at
     assert_equal 'omejdn:write', at['scope']
-    assert_equal [TestSetup.config.dig('default_audience'), TestSetup.config['front_url']+'/api'].flatten, at['aud']
-    assert_equal TestSetup.config.dig('issuer'), at['iss']
+    assert_equal [TestDB.config.dig('omejdn','default_audience'), TestDB.config.dig('omejdn','front_url')+'/api'].flatten, at['aud']
+    assert_equal TestDB.config.dig('omejdn','issuer'), at['iss']
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['nbf'], at['iat']
     assert_equal at['nbf']+response["expires_in"], at['exp']
@@ -148,7 +148,7 @@ class OAuth2Test < Test::Unit::TestCase
     response = request_token 'client_credentials', @resource_client, 'omejdn:write', query_additions: resources
     assert response
     at = extract_access_token response
-    assert_equal ['http://example.org', TestSetup.config['front_url']+'/api'], at['aud']
+    assert_equal ['http://example.org', TestDB.config.dig('omejdn','front_url')+'/api'], at['aud']
   end
 
   def test_client_credentials_scope_rejection
@@ -213,7 +213,7 @@ class OAuth2Test < Test::Unit::TestCase
     code=response_params['code']
     return nil unless code
     assert_equal state, response_params['state']
-    assert_equal TestSetup.config['issuer'], response_params['iss']
+    assert_equal TestDB.config.dig('omejdn','issuer'), response_params['iss']
 
     code
   end
@@ -230,8 +230,8 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub'], at
     assert_equal 'omejdn:write', at['scope']
-    assert_equal [TestSetup.config.dig('default_audience'), TestSetup.config['front_url']+'/api'].flatten, at['aud']
-    assert_equal TestSetup.config.dig('issuer'), at['iss']
+    assert_equal [TestDB.config.dig('omejdn','default_audience'), TestDB.config.dig('omejdn','front_url')+'/api'].flatten, at['aud']
+    assert_equal TestDB.config.dig('omejdn','issuer'), at['iss']
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['nbf'], at['iat']
     assert_equal at['nbf']+response["expires_in"], at['exp']
@@ -258,8 +258,8 @@ class OAuth2Test < Test::Unit::TestCase
 
     check_keys ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub'], at
     assert_equal 'omejdn:write', at['scope']
-    assert_equal ['http://example.org', TestSetup.config['front_url']+'/api'], at['aud']
-    assert_equal TestSetup.config.dig('issuer'), at['iss']
+    assert_equal ['http://example.org', TestDB.config.dig('omejdn','front_url')+'/api'], at['aud']
+    assert_equal TestDB.config.dig('omejdn','issuer'), at['iss']
     assert       at['nbf'] <= Time.new.to_i
     assert_equal at['nbf'], at['iat']
     assert_equal at['nbf']+response["expires_in"], at['exp']
@@ -291,8 +291,8 @@ class OAuth2Test < Test::Unit::TestCase
 #
 #    check_keys ['scope','aud','iss','nbf','iat','jti','exp','client_id','sub', 'dynattribute', 'omejdn_reserved'], at
 #    assert_equal 'omejdn:write', at['scope']
-#    assert_equal [TestSetup.config.dig('default_audience'), TestSetup.config['front_url']+'/api'], at['aud']
-#    assert_equal TestSetup.config.dig('issuer'), at['iss']
+#    assert_equal [TestDB.config.dig('omejdn','default_audience'), TestDB.config.dig('omejdn','front_url')+'/api'], at['aud']
+#    assert_equal TestDB.config.dig('omejdn','issuer'), at['iss']
 #    assert       at['nbf'] <= Time.new.to_i
 #    assert_equal at['nbf'], at['iat']
 #    assert_equal at['nbf']+response["expires_in"], at['exp']
