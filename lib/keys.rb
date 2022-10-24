@@ -4,41 +4,75 @@ require 'openssl'
 require 'jwt'
 KEYS_TARGET_OMEJDN = 'omejdn'
 
-# Key and Certificate Management
+# JWKS Management
 class Keys
-  # Stores a cryptographic key (pk or sk) and/or certificates
-  def self.store_key(target_type, target, key_material)
+  def self.store_keys(target_type, target, jwks)
+    jwks = jwks.export(include_private: true)
     PluginLoader.fire('KEYS_STORE', binding)
   end
 
-  # Loads a cryptographic key (sk where available) and/or certificates
-  def self.load_key(target_type, target, create_key: false)
-    key_material = PluginLoader.fire('KEYS_LOAD', binding).first
-    if key_material['sk'].nil? && create_key
-      (key_material = {})['sk'] = OpenSSL::PKey::RSA.new 2048
-      key_material['pk'] = key_material['sk'].public_key
-      store_key(target_type, target, key_material)
+  def self.load_keys(target_type, target, create_key: false)
+    jwks = JWT::JWK::Set.new(PluginLoader.fire('KEYS_LOAD', binding).first)
+    if jwks.none? && create_key
+      jwks = JWT::JWK::Set.new(JWT::JWK.new(OpenSSL::PKey::RSA.new(2048), use: 'sig', alg: 'RS256'))
+      store_keys(target_type, target, jwks)
     end
-    key_material['kid'] = JWT::JWK.new(key_material['pk']).export[:kid] if key_material['pk']
-    key_material.compact
+    jwks
   end
 
-  # Loads all available keys and certificates for a target_type
-  # May contain duplicates and expired certificates
   def self.load_all_keys(target_type)
-    PluginLoader.fire('KEYS_LOAD_ALL', binding).flatten
+    JWT::JWK::Set.new(PluginLoader.fire('KEYS_LOAD_ALL', binding).first)
   end
 
-  def self.generate_jwks
-    { keys: (load_all_keys(KEYS_TARGET_OMEJDN).map do |k|
-      jwk = JWT::JWK.new(k['pk']).export
-      jwk[:use] = 'sig'
-      if k['certs']
-        jwk[:x5c] = k['certs'].map { |cert| Base64.strict_encode64(cert.to_der).strip }
-        jwk[:x5t] = Base64.urlsafe_encode64(OpenSSL::Digest.new('SHA1', k.dig('certs', 0)&.to_der).to_s)
+  def self.ensure_usability(jwk)
+    # NOTE: No support for x5u and key_ops atm.
+    # Certificates may overwrite a lot of defaults, so we handle them first
+    certs = jwk[:x5c]&.map { |c| OpenSSL::X509::Certificate.new(Base64.strict_decode64(c)) }
+    if certs
+      # Ensure the first certificate contains the correct key
+      return unless jwk.kid == JWT::JWK.new(certs[0].public_key).kid
+
+      # Check current validity (just by time)
+      return if certs[0].not_after < Time.now
+      return if certs[0].not_before > Time.now
+
+      # Set Thumbprints
+      jwk[:x5t]        = Base64.urlsafe_encode64(OpenSSL::Digest.new('SHA1',   certs[0].to_der).to_s)
+      jwk[:'x5t#S256'] = Base64.urlsafe_encode64(OpenSSL::Digest.new('SHA256', certs[0].to_der).to_s)
+
+      # Check usage restrictions
+      usages = certs[0].extensions&.find { |ext| ext.oid == 'keyUsage' }&.value&.split("\n")&.map do |usage|
+        # C.t. RFC 5280, Section 4.2.1.3
+        # We do not care about encipherOnly and decipherOnly for the `use` param
+        if ['Digital Signature', 'Non Repudiation', 'Content Commitment', 'Key Cert Sign', 'CRL Sign'].include? usage
+          'sig'
+        elsif ['Key Encipherment', 'Data Encipherment', 'Key Agreement'].include? usage
+          'enc'
+        end
       end
-      jwk
-    end).uniq { |k| k[:kid] } }
+
+      usages.compact!.uniq!
+      return if jwk[:use] && !usages.include?(jwk[:use])
+
+      jwk[:use] = usages[0] if usages.length == 1
+    end
+
+    jwk[:use] ||= 'sig' # By default, every key is a signature key
+    jwk[:alg] ||= default_alg jwk
+  end
+
+  def self.default_alg(jwk)
+    case jwk[:use]
+    when 'sig'
+      case jwk
+      when JWT::JWK::RSA
+        'RS256'
+      when JWT::JWK::EC
+        'ES256'
+      end
+    when 'enc'
+      'none' # We only support signing
+    end
   end
 end
 
@@ -46,87 +80,85 @@ end
 class DefaultKeysDB
   KEYS_DIR = 'keys'
 
-  def self.store_key(bind)
-    target_type  = bind.local_variable_get :target_type
-    target       = bind.local_variable_get :target
-    key_material = bind.local_variable_get :key_material
-    filename = "#{KEYS_DIR}/#{target_type}/#{target}"
-
-    # Ensure the directory exists
-    if (key_material['certs'] || key_material['sk']) && !(File.directory? "#{KEYS_DIR}/#{target_type}")
-      Dir.mkdir "#{KEYS_DIR}/#{target_type}"
-    end
-
-    # Certificates
-    if key_material['certs'].nil?
-      FileUtils.rm_rf "#{filename}.cert"
-    else
-      pem = key_material['certs'].map(&:to_pem).join("\n")
-      File.write("#{filename}.cert", pem)
-    end
-
-    # Keys
-    if key_material['sk'].nil?
-      FileUtils.rm_rf "#{filename}.key"
-    else
-      File.write("#{filename}.key", key_material['sk'])
-    end
-  end
-
-  def self.load_key(bind)
+  def self.store_keys(bind)
     target_type = bind.local_variable_get :target_type
     target      = bind.local_variable_get :target
-    result = {}
-    filename = "#{KEYS_DIR}/#{target_type}/#{target}"
+    jwks        = bind.local_variable_get :jwks
 
-    # Try to load keys
-    if File.exist?("#{filename}.key")
-      begin
-        key = OpenSSL::PKey::RSA.new File.read("#{filename}.key")
-        result['sk'] = key if key.private?
-        result['pk'] = key.private? ? key.public_key : key
-      rescue StandardError
-        p 'Loading key failed'
+    # Create directory and delete existing key material
+    Dir.mkdir "#{KEYS_DIR}/#{target_type}" unless File.directory? "#{KEYS_DIR}/#{target_type}"
+    FileUtils.rm Dir.glob("#{KEYS_DIR}/#{target_type}/#{target}.*")
+
+    JWT::JWK::Set.new(jwks).each do |jwk|
+      key_params = JWT::JWK.new(jwk.keypair).export.keys
+      desc_params = jwk.export.except(*key_params)
+      file_prefix = "#{KEYS_DIR}/#{target_type}/#{target}.#{desc_params.delete(:kid)}"
+
+      # Save optional x509 certificate chain to file as PEM
+      if (certs = desc_params.delete(:x5c))
+        certs = certs.map { |c| OpenSSL::X509::Certificate.new(Base64.strict_decode64(c)).to_pem }
+        File.write("#{file_prefix}.cert", certs.join("\n"))
+        # TODO: delete other x5* data from desc_params
+      end
+
+      # Save remaining desc_params to file as YAML
+      File.write("#{file_prefix}.yml", desc_params.to_yaml)
+
+      # If no x509 cert or private key available, save key to file as PEM
+      if jwk.private?
+        File.write("#{file_prefix}.key", jwk.keypair.to_pem)
+      elsif cert_chain.nil?
+        File.write("#{file_prefix}.key", jwk.public_key.to_pem)
       end
     end
-
-    # Try to load certificate (chain)
-    if File.exist?("#{filename}.cert")
-      begin
-        certs = OpenSSL::X509::Certificate.load_file("#{filename}.cert")
-        raise 'Certificate expired' if certs[0].not_after < Time.now
-        raise 'Certificate not yet valid' if certs[0].not_before > Time.now
-
-        result['certs'] = certs if result['sk'].nil? || (certs[0].check_private_key result['sk'])
-      rescue StandardError
-        p 'Loading certificate failed'
-      end
-    end
-    result
   end
 
-  def self.load_all_keys(bind)
+  def self.load_keys(bind, target = nil)
     target_type = bind.local_variable_get :target_type
-    return [] unless File.directory? "#{KEYS_DIR}/#{target_type}"
 
-    Dir.entries("#{KEYS_DIR}/#{target_type}").reject { |f| f.start_with? '.' }.map do |f|
-      result = {}
-      # The file could be either a certificate or a key
-      begin
-        result['certs'] = OpenSSL::X509::Certificate.load_file "keys/#{target_type}/#{f}"
-        result['pk'] = result['certs'][0].public_key
-      rescue StandardError
-        key = OpenSSL::PKey::RSA.new File.read("keys/#{target_type}/#{f}")
-        result['pk'] = key.public_key
-      end
-      result
+    # Find relevant key file groups
+    target_glob = "#{KEYS_DIR}/#{target_type}/"
+    target_glob += "#{target}." if target
+    keys = Dir.glob("#{target_glob}*").group_by do |f|
+      name_parts = f.split('/').last.split('.')
+      name_parts.pop # file ending
+      name_parts.join('.')
     end
+
+    # Read files and assemble JWKs
+    keys.map! do |_, filenames|
+      desc_params = {}
+      key = nil
+
+      filenames.each do |f|
+        case f.split('.').last
+        when 'key'
+          key = OpenSSL::PKey.read(File.read(f)) # Only OpenSSL algos supported atm
+        when 'cert'
+          certs = OpenSSL::X509::Certificate.load_file f
+          desc_params[:x5c] = certs.map { |c| Base64.strict_encode64 c.to_der }
+          key ||= certs[0]&.public_key
+          # TODO: Add other x5* data to desc_params
+        when 'yml'
+          desc_params.merge!(YAML.safe_load(File.read(f)), filename: f)
+        end
+      end
+
+      JWT::JWK.new key, desc_params if key
+    end
+
+    { keys: keys }
+  end
+
+  def self.load_target_keys(bind)
+    target = bind.local_variable_get :target
+    load_keys bind, target
   end
 
   # register functions
   def self.register
     PluginLoader.register 'KEYS_STORE',    method(:store_key)
-    PluginLoader.register 'KEYS_LOAD',     method(:load_key)
-    PluginLoader.register 'KEYS_LOAD_ALL', method(:load_all_keys)
+    PluginLoader.register 'KEYS_LOAD',     method(:load_target_keys)
+    PluginLoader.register 'KEYS_LOAD_ALL', method(:load_keys)
   end
 end

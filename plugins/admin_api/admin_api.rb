@@ -78,7 +78,7 @@ end
 
 endpoint '/api/v1/config/clients', ['POST'], public_endpoint: true do
   client = JSON.parse(request.body.read)
-  Client.add_client client, 'default'
+  Client.add_client Client.from_h(client), 'default'
   halt 201
 end
 
@@ -106,29 +106,41 @@ end
 
 # Client Keys
 endpoint '/api/v1/config/clients/:client_id/keys', ['GET'], public_endpoint: true do
-  certificate = Client.find_by_id(params['client_id'])&.certificate
-  halt 404 if certificate.nil?
+  client = Client.find_by_id(params['client_id'])
+  halt 404 if client.nil?
+  keys = client&.metadata&.dig('jwks')
+  halt 404 unless keys&.dig(:keys, 0, :x5c, 0)
+  certificate = OpenSSL::X509::Certificate.new(Base64.strict_decode64(keys.dig(:keys, 0, :x5c, 0)))
   halt 200, JSON.generate({ 'certificate' => certificate.to_s })
 end
 
 endpoint '/api/v1/config/clients/:client_id/keys', ['PUT'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
-  client.certificate = OpenSSL::X509::Certificate.new JSON.parse(request.body.read)['certificate']
+  cert = OpenSSL::X509::Certificate.new JSON.parse(request.body.read)['certificate']
+  jwk = JWT::JWK.new cert.public_key, use: 'sig'
+  jwk[:x5c] = [Base64.strict_encode64(cert.to_der)]
+  client.metadata['jwks'] = JWT::JWK::Set.new(jwk).export
+  client.save
   halt 204
 end
 
 endpoint '/api/v1/config/clients/:client_id/keys', ['POST'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
-  client.certificate = OpenSSL::X509::Certificate.new JSON.parse(request.body.read)['certificate']
+  cert = OpenSSL::X509::Certificate.new JSON.parse(request.body.read)['certificate']
+  jwk = JWT::JWK.new cert.public_key, use: 'sig'
+  jwk[:x5c] = [Base64.strict_encode64(cert.to_der)]
+  client.metadata['jwks'] = JWT::JWK::Set.new(jwk).export
+  client.save
   halt 201
 end
 
 endpoint '/api/v1/config/clients/:client_id/keys', ['DELETE'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
-  client.certificate = nil
+  client.metadata['jwks'] = JWT::JWK::Set.new
+  client.save
   halt 204
 end
 

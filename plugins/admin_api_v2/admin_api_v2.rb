@@ -38,24 +38,13 @@ end
 
 # A set of pack/unpack functions
 class AdminAPIv2Plugin
-  def self.pack_keys(k_in)
-    {
-      'pk' => k_in['pk']&.to_pem,
-      'sk' => k_in['sk']&.to_pem,
-      'certs' => k_in['certs']&.map { |c| c.to_pem }
-    }.compact
+  def self.pack_keys(jwks)
+    jwks.export
   end
 
-  def self.unpack_keys(k_in)
-    keys = {}
-    keys['certs'] = k_in['certs']&.map { |c| OpenSSL::X509::Certificate.new c }
-    keys['sk'] = OpenSSL::PKey.read k_in['sk'] if k_in['sk']
-    keys['pk'] = OpenSSL::PKey.read k_in['pk'] if k_in['pk']
-    # TODO: Consistency checks
-    keys['pk'] = keys['sk'].public_key       if keys['pk'].nil? && keys['sk']
-    keys['pk'] = keys['certs'][0].public_key if keys['pk'].nil? && keys['certs']&.length&.positive?
-
-    keys.compact
+  def self.unpack_keys(jwks)
+    JWT::JWK::Set.new jwks
+    # { keys: jwks['keys'].map { |k| JWT::JWK.new k } }
   end
 
   def self.pack_attribute(attribute)
@@ -110,20 +99,23 @@ end
 def schema_pem(type)
   { 'type' => 'string',
     'pattern' => "^-----BEGIN #{type}-----(\\n|\\r|\\r\\n)" \
-                 "([0-9a-zA-Z\+\/=]{64}(\\n|\\r|\\r\\n))*" \
-                 "([0-9a-zA-Z\+\/=]{1,63}(\\n|\\r|\\r\\n))?" \
+                 '([0-9a-zA-Z+/=]{64}(\\n|\\r|\\r\\n))*' \
+                 '([0-9a-zA-Z+/=]{1,63}(\\n|\\r|\\r\\n))?' \
                  "-----END #{type}-----(\\n|\\r|\\r\\n)?$" }
 end
 
 SCHEMA_CONFIG = { 'type' => %w[array object] }.freeze
-SCHEMA_KEYS = {
+SCHEMA_JWKS = {
   'type' => 'object',
+  'additionalProperties' => false,
   'properties' => {
-    'pk' => (schema_pem 'PUBLIC KEY'),
-    'sk' => (schema_pem '(.)* PRIVATE KEY'),
-    'certs' => { 'type' => 'array', 'items' => schema_pem('CERTIFICATE') }
-  },
-  'additionalProperties' => false
+    'keys' => {
+      'type' => 'array',
+      'items' => {
+        'type' => 'object'
+      }
+    }
+  }
 }.freeze
 SCHEMA_ATTRIBUTES = {
   'type' => 'object',
@@ -181,7 +173,9 @@ SCHEMA_CLIENT = {
     'post_logout_redirect_uris' => { 'type' => 'array', 'items' => SCHEMA_URL },
     'request_uris' => { 'type' => 'array', 'items' => SCHEMA_URL },
     'scope' => { 'type' => 'array', 'items' => { 'type' => 'string' } },
-    'resource' => { 'type' => 'array', 'items' => { 'type' => 'string' } }
+    'resource' => { 'type' => 'array', 'items' => { 'type' => 'string' } },
+    'jwks' => SCHEMA_JWKS,
+    'jwks_uri' => SCHEMA_URL
   }
 }.freeze
 SCHEMA_UPDATE_CLIENT = {
@@ -247,9 +241,9 @@ end
 
 endpoint '/api/admin/v2/keys/:target_type', ['GET'], public_endpoint: true do # GET ALL
   raise AdminAPIError::INVALID_URL unless (target_type = params['target_type']) && target_type.length.positive?
-  raise AdminAPIError::NOT_FOUND   unless (data = Keys.load_all_keys(target_type))
 
-  halt 200, JSON.generate(data.map { |d| AdminAPIv2Plugin.pack_keys(d) })
+  data = Keys.load_all_keys(target_type) || JWT::JWK::Set.new
+  halt 200, JSON.generate(AdminAPIv2Plugin.pack_keys(data))
 rescue AdminAPIError => e
   halt e.code, e.to_s
 end
@@ -257,8 +251,9 @@ end
 endpoint '/api/admin/v2/keys/:target_type/:target', ['GET'], public_endpoint: true do # GET
   raise AdminAPIError::INVALID_URL unless (target_type = params['target_type']) && target_type.length.positive?
   raise AdminAPIError::INVALID_URL unless (target = params['target']) && target.length.positive?
-  raise AdminAPIError::NOT_FOUND   if     (data = Keys.load_key(target_type, target)).empty?
+  raise AdminAPIError::NOT_FOUND   unless (data = Keys.load_keys(target_type, target))&.any?
 
+  data ||= JWT::JWK::Set.new
   halt 200, JSON.generate(AdminAPIv2Plugin.pack_keys(data))
 rescue AdminAPIError => e
   halt e.code, e.to_s
@@ -268,12 +263,12 @@ endpoint '/api/admin/v2/keys/:target_type/:target', ['PUT'], public_endpoint: tr
   raise AdminAPIError::INVALID_URL unless (target_type = params['target_type']) && target_type.length.positive?
   raise AdminAPIError::INVALID_URL unless (target = params['target']) && target.length.positive?
 
-  reason = JSON::Validator.fully_validate(SCHEMA_KEYS, @request_body)
+  reason = JSON::Validator.fully_validate(SCHEMA_JWKS, @request_body)
   raise AdminAPIError.unacceptable(reason) if reason.length.positive?
 
-  existing_keys = Keys.load_key(target_type, target)
-  Keys.store_key target_type, target, AdminAPIv2Plugin.unpack_keys(@request_body)
-  halt(existing_keys.empty? ? 201 : 204)
+  existing_keys = Keys.load_keys(target_type, target)&.any?
+  Keys.store_keys target_type, target, AdminAPIv2Plugin.unpack_keys(@request_body)
+  halt(existing_keys ? 204 : 201)
 rescue AdminAPIError => e
   halt e.code, e.to_s
 end
@@ -377,43 +372,6 @@ endpoint '/api/admin/v2/client/:client_id', ['DELETE'], public_endpoint: true do
   raise AdminAPIError::INVALID_URL unless (client_id = params['client_id']) && client_id.length.positive?
   raise AdminAPIError::NOT_FOUND   unless Client.delete_client(client_id)
 
-  halt 204
-rescue AdminAPIError => e
-  halt e.code, e.to_s
-end
-
-# ---------- CLIENT KEYS ----------
-
-endpoint '/api/admin/v2/client/:client_id/certificate', ['GET'], public_endpoint: true do
-  raise AdminAPIError::INVALID_URL unless (client_id = params['client_id']) && client_id.length.positive?
-  raise AdminAPIError::NOT_FOUND   unless (client = Client.find_by_id(client_id))
-  raise AdminAPIError::NOT_FOUND   unless (data = client.certificate)
-
-  halt 200, JSON.generate(data.to_s)
-rescue AdminAPIError => e
-  halt e.code, e.to_s
-end
-
-endpoint '/api/admin/v2/client/:client_id/certificate', ['PUT'], public_endpoint: true do
-  raise AdminAPIError::INVALID_URL unless (client_id = params['client_id']) && client_id.length.positive?
-  raise AdminAPIError::NOT_FOUND   unless (client = Client.find_by_id(client_id))
-
-  reason = JSON::Validator.fully_validate(SCHEMA_UPDATE_CLIENT_CERTIFICATE, @request_body)
-  raise AdminAPIError.unacceptable(reason) if reason.length.positive?
-
-  existing_certificate = client.certificate
-  client.certificate = OpenSSL::X509::Certificate.new @request_body
-  halt(existing_certificate ? 204 : 201)
-rescue AdminAPIError => e
-  halt e.code, e.to_s
-end
-
-endpoint '/api/admin/v2/client/:client_id/certificate', ['DELETE'], public_endpoint: true do
-  raise AdminAPIError::INVALID_URL unless (client_id = params['client_id']) && client_id.length.positive?
-  raise AdminAPIError::NOT_FOUND   unless (client = Client.find_by_id(client_id))
-  raise AdminAPIError::NOT_FOUND   unless client.certificate
-
-  client.certificate = nil
   halt 204
 rescue AdminAPIError => e
   halt e.code, e.to_s

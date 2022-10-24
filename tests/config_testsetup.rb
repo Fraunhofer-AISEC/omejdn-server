@@ -30,23 +30,27 @@ class TestDB
   end
 
   def self.store_key(bind)
-    target_type  = bind.local_variable_get :target_type
-    target       = bind.local_variable_get :target
-    key_material = bind.local_variable_get :key_material
-    raise 'ERROR' if key_material['pk'].nil? && key_material.keys.length.positive?
-    (@keys[target_type] ||= {})[target] = key_material
+    target_type = bind.local_variable_get :target_type
+    target      = bind.local_variable_get :target
+    jwks        = bind.local_variable_get :jwks
+    (@keys[target_type] ||= {})[target] = jwks
   end
 
   def self.load_key(bind)
     target_type = bind.local_variable_get :target_type
     target      = bind.local_variable_get :target
     create_key  = bind.local_variable_get :create_key
-    @keys.dig(target_type, target) || {}
+    (json = @keys.dig(target_type, target)&.to_json) ? JSON.parse(json) : JWT::JWK::Set.new.export # Simple deep copy
   end
 
   def self.load_all_keys(bind)
     target_type = bind.local_variable_get :target_type
-    (@keys[target_type] || {}).values
+    result = JWT::JWK::Set.new
+    (@keys[target_type] || {}).values.map do |jwks|
+      new_jwks = (json = jwks&.to_json) ? JSON.parse(json) : JWT::JWK::Set.new.export # Simple deep copy
+      result.merge(JWT::JWK::Set.new(new_jwks))
+    end
+    result.export
   end
 
   PluginLoader.register 'CONFIGURATION_STORE', method(:write_config)

@@ -29,16 +29,6 @@ class Client
     PluginLoader.fire('CLIENT_UPDATE', binding)
   end
 
-  def certificate
-    client = self
-    PluginLoader.fire('CLIENT_AUTHENTICATION_CERTIFICATE_GET', binding).compact.first
-  end
-
-  def certificate=(new_cert)
-    client = self
-    PluginLoader.fire('CLIENT_AUTHENTICATION_CERTIFICATE_UPDATE', binding)
-  end
-
   # ----- Conversion to/from hash for import/export -----
 
   def self.from_h(dict)
@@ -76,30 +66,46 @@ class Client
 
     uri ||= [*@metadata['redirect_uris']][0]
     escaped_redir = CGI.unescape(uri)&.gsub('%20', '+')
-    raise OAuthError, 'invalid_request' unless ([*@metadata['redirect_uris']] + ['localhost']).include? escaped_redir
+    raise OAuthError, 'invalid_request' unless [*@metadata['redirect_uris']].include? escaped_redir
 
     uri
   end
 
-  def verify_post_logout_redirect_uri(uri)
-    uri ||= [*@metadata['redirect_uris']][0]
-    escaped_redir = CGI.unescape(uri)&.gsub('%20', '+')
-    return uri if [*@metadata['post_logout_redirect_uris']].include? escaped_redir
+  def verify_uri(type, uri)
+    uri && [*@metadata[type]].include?(CGI.unescape(uri)&.gsub('%20', '+'))
   end
 
   # Decodes a JWT
-  def decode_jwt(jwt, verify_aud)
-    aud = Config.base_config['accept_audience']
-    jwt_dec, = JWT.decode jwt, certificate&.public_key, true,
-                          { nbf_leeway: 30, aud: aud, verify_aud: verify_aud, algorithm: %w[RS256 RS512 ES256 ES512] }
-
-    raise 'Not self-issued' if jwt_dec['sub'] && jwt_dec['sub'] != jwt_dec['iss']
-    raise 'Wrong Client ID in JWT' if jwt_dec['sub'] && jwt_dec['sub'] != client_id
-
-    jwt_dec
+  def decode_jwt(jwt)
+    jwks = lambda do |_options|
+      if @metadata['jwks']
+        @metadata['jwks']
+      elsif @metadata['jwks_uri']
+        # TODO: Caching and cache invalidation
+        JSON.parse(Net::HTTP.get(URI(@metadata[:jwks_uri])))
+      else
+        JWT::JWK::Set.new
+      end
+    end
+    decode_options = {
+      nbf_leeway: 30,
+      aud: Config.base_config['accept_audience'],
+      verify_aud: true,
+      iss: client_id,
+      verify_iss: true,
+      algorithm: %w[RS256 RS512 ES256 ES512]
+    }
+    # JWT cannot currently handle missing KIDs
+    payload, = JWT.decode jwt, nil, true, decode_options do |header, _body|
+      keys = JWT::JWK::Set.new(jwks.call({}))
+      kid = header['kid'] || header[:kid]
+      keys.filter! { |k| k[:kid] == kid } if kid
+      keys.first&.keypair # FIXME: public_key is kinda broken for EC
+    end
+    payload
   rescue StandardError => e
-    puts "Error decoding JWT #{jwt}: #{e}"
-    raise OAuthError.new 'invalid_client', "Error decoding JWT: #{e}"
+    p e
+    nil
   end
 
   # ----- Util -----
@@ -120,60 +126,49 @@ class Client
 end
 
 # The default Client DB saves Client Configuration in a dedicated configuration section.
-# The exception to this rule are certificates, which are stored in keys/clients/
-# in PEM encoded form.
+# The exception to this rule is JWKS, which is stored in Key Targets
 class DefaultClientDB
   CONFIG_SECTION_CLIENTS = 'clients'
   KEYS_TARGET_CLIENTS = 'clients'
 
   def self.get(bind)
     client_id = bind.local_variable_get :client_id
-    clients = get_all
-    idx = clients.index Client.from_h({ 'client_id' => client_id })
-    idx ? clients[idx] : nil
+    client = get_all(nil, keys: false).find { |c| c.client_id == client_id }
+    return unless client
+
+    client.metadata['jwks'] = Keys.load_keys(KEYS_TARGET_CLIENTS, client.client_id).export
+    client
   end
 
-  def self.get_all(*)
-    Config.read_config(CONFIG_SECTION_CLIENTS, []).map { |ccnf| Client.from_h ccnf }
+  def self.get_all(_bind = nil, keys: true)
+    clients = Config.read_config(CONFIG_SECTION_CLIENTS, []).map { |ccnf| Client.from_h ccnf }
+    clients.each { |c| c.metadata['jwks'] = Keys.load_keys(KEYS_TARGET_CLIENTS, c.client_id).export } if keys
+    clients
   end
 
   def self.create(bind)
-    new_client = bind.local_variable_get :client
-    clients = get_all
-    clients << new_client
+    client = bind.local_variable_get :client
+    clients = get_all nil, keys: false
+    clients << client
+    Keys.store_keys KEYS_TARGET_CLIENTS, client.client_id, JWT::JWK::Set.new(client.metadata.delete('jwks') || {})
     Config.write_config(CONFIG_SECTION_CLIENTS, clients.map(&:to_h))
   end
 
   def self.update(bind)
     client = bind.local_variable_get :client
-    clients = get_all
+    clients = get_all nil, keys: false
     idx = clients.index client
     clients[idx] = client if idx
+    Keys.store_keys KEYS_TARGET_CLIENTS, client.client_id, JWT::JWK::Set.new(client.metadata.delete('jwks') || {})
     Config.write_config(CONFIG_SECTION_CLIENTS, clients.map(&:to_h))
   end
 
   def self.delete(bind)
     client_id = bind.local_variable_get :client_id
-    clients = get_all
-    idx = clients.index Client.from_h({ 'client_id' => client_id })
-    clients.delete_at idx if idx
+    clients = get_all nil, keys: false
+    clients.delete Client.from_h({ 'client_id' => client_id })
+    Keys.store_keys KEYS_TARGET_CLIENTS, client_id, JWT::JWK::Set.new
     Config.write_config(CONFIG_SECTION_CLIENTS, clients.map(&:to_h))
-  end
-
-  def self.certificate_get(bind)
-    client = bind.local_variable_get :client
-    key_material = Keys.load_key KEYS_TARGET_CLIENTS, client.client_id
-    key_material&.dig('certs', 0)
-  end
-
-  def self.certificate_update(bind)
-    client = bind.local_variable_get :client
-    new_cert = bind.local_variable_get :new_cert
-    hash = Keys.load_key KEYS_TARGET_CLIENTS, client.client_id
-    hash['certs'] = new_cert ? [new_cert] : nil
-    hash = {} unless hash['sk'] || hash['certs']
-    hash['pk'] = (hash['sk'] || hash.dig('certs', 0))&.public_key
-    Keys.store_key KEYS_TARGET_CLIENTS, client.client_id, hash.compact
   end
 
   # register functions
@@ -183,7 +178,5 @@ class DefaultClientDB
     PluginLoader.register 'CLIENT_CREATE',                            method(:create)
     PluginLoader.register 'CLIENT_UPDATE',                            method(:update)
     PluginLoader.register 'CLIENT_DELETE',                            method(:delete)
-    PluginLoader.register 'CLIENT_AUTHENTICATION_CERTIFICATE_GET',    method(:certificate_get)
-    PluginLoader.register 'CLIENT_AUTHENTICATION_CERTIFICATE_UPDATE', method(:certificate_update)
   end
 end

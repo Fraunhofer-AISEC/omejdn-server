@@ -109,7 +109,8 @@ class AdminApiTest < Test::Unit::TestCase
   def test_get_clients
     get '/api/v1/config/clients', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal TestSetup.clients, JSON.parse(last_response.body)
+    expected_clients = TestSetup.clients.map { |c| c['jwks'] = { 'keys' => [] }; c }
+    assert_equal expected_clients, JSON.parse(last_response.body)
   end
 
   def test_put_clients
@@ -119,17 +120,20 @@ class AdminApiTest < Test::Unit::TestCase
     assert last_response.no_content?
     get '/api/v1/config/clients', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal new_clients, JSON.parse(last_response.body)
+    expected_clients = new_clients.map { |c| c['jwks'] = { 'keys' => [] }; c }
+    assert_equal expected_clients, JSON.parse(last_response.body)
   end
 
   def test_get_client
     get "/api/v1/config/clients/#{@client.client_id}", {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal @client.to_h, JSON.parse(last_response.body)
+    client_desc = JSON.parse(@client.to_h.to_json) # JSON Side Effects like turning symbols into strings
+    assert_equal client_desc, JSON.parse(last_response.body)
   end
 
   def test_put_client
     client_desc = @client.to_h
+    client_desc = JSON.parse(client_desc.to_json) # JSON Side Effects like turning symbols into strings
     client_desc.delete("client_id")
     client_desc['name'] = "Alternative Name"
     put "/api/v1/config/clients/#{@client.client_id}", client_desc.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
@@ -146,6 +150,7 @@ class AdminApiTest < Test::Unit::TestCase
       'name' => 'omejdn admin ui',
       'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
+      'jwks' => { 'keys' => [] },
       'attributes' => []
     }
     post '/api/v1/config/clients', new_client.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }

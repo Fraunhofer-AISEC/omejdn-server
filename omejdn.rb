@@ -19,6 +19,8 @@ require 'rack'
 require 'cgi'
 require 'securerandom'
 require 'net/http'
+require 'jwt'
+JWT.configuration.jwk.kid_generator_type = :rfc7638_thumbprint # Use "standard" kid s
 
 require_relative './lib/client'
 require_relative './lib/config'
@@ -134,7 +136,11 @@ endpoint '/token', ['POST'], public_endpoint: true do
   resources << ("#{front_url}/userinfo") if openid?(scopes)
   resources << ("#{front_url}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
 
-  OAuthHelper.adapt_requested_claims req_claims
+  # https://tools.ietf.org/id/draft-spencer-oauth-claims-00.html#rfc.section.3
+  known_sinks = %w[access_token id_token userinfo]
+  default_sinks = ['access_token']
+  known_sinks.each   { |sink| (req_claims[sink] ||= {}).merge!(req_claims.delete('*') || {}) }
+  default_sinks.each { |sink| req_claims[sink].merge!(req_claims.delete('?') || {}) }
 
   user = cache&.dig(:user)
   nonce = cache&.dig(:nonce)
@@ -196,7 +202,8 @@ endpoint '/par', ['POST'], public_endpoint: true do
   raise OAuthError.new 'invalid_request', 'Request URI not supported here' if params.key(:request_uri)
 
   client = OAuthHelper.authenticate_client params, env.fetch('HTTP_AUTHORIZATION', '')
-  OAuthHelper.prepare_params params, client
+  old_params = params
+  params = OAuthHelper.prepare_params old_params, client
 
   uri = "urn:ietf:params:oauth:request_uri:#{SecureRandom.uuid}"
   Cache.par[uri] = params # TODO: Expiration
@@ -225,7 +232,8 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
 
   # Used for error messages, might be overwritten by request objects
   auth[:redirect_uri] = client.verify_redirect_uri params[:redirect_uri], true if params[:redirect_uri]
-  OAuthHelper.prepare_params params, client
+  old_params = params # Ruby can be quite strange
+  params = OAuthHelper.prepare_params(old_params, client)
   uri = client.verify_redirect_uri params[:redirect_uri], openid?((params[:scope] || '').split) # For real this time
 
   # Some of these values may have been overwritten
@@ -314,7 +322,9 @@ end
 endpoint '/logout', ['GET', 'POST'], public_endpoint: true do
   id_token = Token.decode params[:id_token_hint]
   client = Client.find_by_id id_token&.dig('aud')
-  redirect_uri = client&.verify_post_logout_redirect_uri params[:post_logout_redirect_uri]
+  req_uri = params[:post_logout_redirect_uri]
+  redirect_uri = req_uri if client&.verify_uri('post_logout_redirect_uris', req_uri)
+  redirect_uri ||= [*client&.metadata&.[]('redirect_uris')][0]
   PluginLoader.fire('LOGOUT_STARTED', binding)
   halt 200, (haml :logout, locals: { state: params[:state], redirect_uri: redirect_uri })
 rescue StandardError
@@ -395,7 +405,12 @@ end
 endpoint '/.well-known/(oauth-authorization-server|openid-configuration)', ['GET'], public_endpoint: true do
   metadata = OAuthHelper.configuration_metadata
   PluginLoader.fire('STATIC_METADATA', binding)
-  halt 200, { 'Content-Type' => 'application/json' }, (OAuthHelper.sign_metadata metadata).to_json
+  to_sign = metadata.dup
+  to_sign['iss'] = to_sign['issuer']
+  jwks = Keys.load_keys KEYS_TARGET_OMEJDN, 'omejdn', create_key: true
+  key = jwks[:keys].find(&:private?)
+  metadata['signed_metadata'] = JWT.encode to_sign, key.keypair, key[:alg], { kid: key[:kid] }
+  halt 200, { 'Content-Type' => 'application/json' }, metadata.to_json
 end
 
 endpoint '/.well-known/webfinger', ['GET'], public_endpoint: true do
@@ -415,7 +430,9 @@ endpoint '/.well-known/webfinger', ['GET'], public_endpoint: true do
 end
 
 endpoint '/jwks.json', ['GET'], public_endpoint: true do
-  jwks = Keys.generate_jwks
+  # jwks = Keys.load_all_keys KEYS_TARGET_OMEJDN
+  # jwks = { keys: jwks[:keys].map(&:export) }
+  jwks = Keys.load_all_keys(KEYS_TARGET_OMEJDN).export
   PluginLoader.fire('STATIC_JWKS', binding)
   halt 200, { 'Content-Type' => 'application/json' }, jwks.to_json
 end

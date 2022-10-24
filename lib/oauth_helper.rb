@@ -51,7 +51,8 @@ class OAuthHelper
               when 'client_secret_post'
                 params[:client_secret] == client.metadata['client_secret']
               when 'private_key_jwt'
-                client.decode_jwt params[:client_assertion], true
+                token = client.decode_jwt params[:client_assertion]
+                token && token['sub'] == client.client_id
               when 'none'
                 true
               else
@@ -62,52 +63,38 @@ class OAuthHelper
     client
   end
 
-  def self.retrieve_request_uri(request_uri, client)
-    raise OAuthError, 'invalid_request_uri' unless client.request_uri_allowed? request_uri
-
-    uri = URI(request_uri)
-    Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
-      res = http.request Net::HTTP::Get.new(uri)
-      res.body
-    end
-  rescue StandardError
-    nil
-  end
-
   # Retrieves the request parameters from the URL parameters, for authorization flows
-  def self.prepare_params(url_params, client)
+  def self.prepare_params(params, client)
     # We deviate from the OIDC spec in favor of RFC 9101
     # For example, we do not require specifying the scope outside the request parameter,
     # if it is provided within said parameter.
     # On the other hand, we require https!
-    jwt, params = nil
-    if url_params.key? :request_uri
-      raise OAuthError.new 'invalid_request', 'request{,_uri}, pick one.' if url_params.key? :request
+    jwt = nil
+    if (request_uri = params.delete(:request_uri))
+      raise OAuthError.new 'invalid_request', 'request{,_uri}, pick one.' if params.key? :request
 
-      if url_params[:request_uri].start_with? 'urn:ietf:params:oauth:request_uri:'
+      if request_uri.start_with? 'urn:ietf:params:oauth:request_uri:'
         # Retrieve token from Pushed Authorization Request Cache
-        params = Cache.par[url_params[:request_uri]]
-      elsif url_params[:request_uri].start_with? 'https://'
+        params = Cache.par[request_uri]
+      elsif client.verify_uri('request_uris', request_uri)
         # Retrieve remote token
-        jwt = retrieve_request_uri url_params[:request_uri], client
+        jwt = Net::HTTP.get(URI(request_uri))
       end
       raise OAuthError, 'invalid_request_uri' unless jwt || params
-    elsif url_params.key? :request
-      jwt = url_params[:request]
+    elsif (request = params.delete(:request))
+      jwt = request
       raise OAuthError, 'invalid_request_object' unless jwt
     end
 
     if jwt
-      params = client.decode_jwt jwt, false
-      raise OAuthError, 'invalid_client' unless params['client_id'] == url_params[:client_id]
+      params = client.decode_jwt jwt
+      params&.delete('iss')
+      params&.delete('aud')
+      params&.transform_keys!(&:to_sym)
     end
+    raise OAuthError, 'invalid_client' unless params&.dig(:client_id) == client.client_id
 
-    if params
-      url_params.delete(:request_uri)
-      url_params.delete(:request)
-      url_params.merge! params
-    end
-    url_params
+    params
   end
 
   def self.add_nested_claim(hash, key, value)
@@ -156,12 +143,13 @@ class OAuthHelper
     digest.base64digest.gsub('+', '-').gsub('/', '_').gsub('=', '')
   end
 
-  def self.configuration_metadata_oidc_discovery(base_config, path)
+  def self.configuration_metadata_oidc_discovery(_base_config, path)
+    omejdn_keys = Keys.load_all_keys(KEYS_TARGET_OMEJDN).group_by { |k| k[:use] }
     metadata = {}
     metadata['userinfo_endpoint'] = "#{path}/userinfo"
     metadata['acr_values_supported'] = []
     metadata['subject_types_supported'] = ['public']
-    metadata['id_token_signing_alg_values_supported'] = [*base_config.dig('id_token', 'algorithm')]
+    metadata['id_token_signing_alg_values_supported'] = omejdn_keys['sig'].map { |k| k[:alg] }.uniq
     metadata['id_token_encryption_alg_values_supported'] = ['none']
     metadata['id_token_encryption_enc_values_supported'] = ['none']
     metadata['userinfo_signing_alg_values_supported'] = ['none']
@@ -244,29 +232,5 @@ class OAuthHelper
 
     # OpenID Connect Discovery 1.0
     metadata.merge!(configuration_metadata_oidc_discovery(base_config, path))
-  end
-
-  def self.sign_metadata(metadata)
-    to_sign = metadata.merge
-    to_sign['iss'] = to_sign['issuer']
-    key_pair = Keys.load_key KEYS_TARGET_OMEJDN, 'omejdn', create_key: true
-    metadata['signed_metadata'] = JWT.encode to_sign, key_pair['sk'], 'RS256', { kid: key_pair['kid'] }
-    metadata
-  end
-
-  def self.adapt_requested_claims(req_claims)
-    # https://tools.ietf.org/id/draft-spencer-oauth-claims-00.html#rfc.section.3
-    known_sinks = %w[access_token id_token userinfo]
-    default_sinks = ['access_token']
-    known_sinks.each do |sink|
-      req_claims[sink] ||= {}
-      req_claims[sink].merge!(req_claims['*'] || {})
-    end
-    default_sinks.each do |sink|
-      req_claims[sink].merge!(req_claims['?'] || {})
-    end
-    req_claims.delete('*')
-    req_claims.delete('?')
-    req_claims
   end
 end

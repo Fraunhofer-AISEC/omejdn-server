@@ -65,27 +65,27 @@ class AdminApiV2Test < Test::Unit::TestCase
     # Get Omejdn's Core Key Material (Should be generated, since we got a token above)
     get '/api/admin/v2/keys/omejdn', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    schema_keys_array = { 'type' => 'array', 'items' => SCHEMA_KEYS }
-    assert JSON::Validator.validate(schema_keys_array, (response = JSON.parse(last_response.body)))
+    assert JSON::Validator.validate(SCHEMA_JWKS, (response = JSON.parse(last_response.body)))
     # TODO: Verify actual key
 
     # Get Omejdn's Main Signing Key (Should be generated, since we got a token above)
     get '/api/admin/v2/keys/omejdn/omejdn', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert JSON::Validator.validate(SCHEMA_KEYS, (response = JSON.parse(last_response.body)))
+    assert JSON::Validator.validate(SCHEMA_JWKS, (response = JSON.parse(last_response.body)))
     # TODO: Verify actual key
 
     # Write Custom Key in Custom Target
     testkey = OpenSSL::PKey::RSA.new 2048
-    payload = { 'sk' => testkey.to_pem, 'pk' => testkey.public_key.to_pem }
+    payload = JWT::JWK::Set.new(JWT::JWK.new(testkey)).export
     put '/api/admin/v2/keys/testtargettype/testtarget', payload.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.created?
 
     # Read it back
     get '/api/admin/v2/keys/testtargettype/testtarget', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert JSON::Validator.validate(SCHEMA_KEYS, (response = JSON.parse(last_response.body)))
-    assert_equal payload, response
+    assert JSON::Validator.validate(SCHEMA_JWKS, (response = JSON.parse(last_response.body)))
+    expected_payload = JSON.parse(payload.to_json)
+    assert_equal expected_payload, response
   end
 
   # ---------- USERS ----------
@@ -147,6 +147,7 @@ class AdminApiV2Test < Test::Unit::TestCase
     schema_client_array = { 'type' => 'array', 'items' => SCHEMA_CLIENT }
     assert JSON::Validator.validate(schema_client_array, (response = JSON.parse(last_response.body)))
     expected_response = TestSetup.clients.map{|c| AdminAPIv2Plugin.pack_client(c) }
+    expected_response.each { |c| c['jwks'] = { 'keys' => [] } }
     assert_equal expected_response, response
 
     # Add a new client
@@ -155,6 +156,7 @@ class AdminApiV2Test < Test::Unit::TestCase
       'grant_types' => ['authorization_code'],
       'token_endpoint_auth_method' => 'client_secret_post',
       'redirect_uris' => ['https://example.org/oauth/cb'],
+      'jwks' => { 'keys' => [] },
       'attributes' => {}
     }
     put '/api/admin/v2/client/simpletestclient', payload.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
@@ -181,37 +183,4 @@ class AdminApiV2Test < Test::Unit::TestCase
     get '/api/admin/v2/client/simpletestclient', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.not_found?
   end
-
-  # ---------- CLIENT KEYS ----------
-
-  def test_client_keys
-    # Generate a new test certificate
-    key  = OpenSSL::PKey::RSA.new 2048
-    cert = OpenSSL::X509::Certificate.new
-    cert.version    = 2
-    cert.serial     = 0
-    cert.not_before = Time.now
-    cert.not_after  = Time.now + 3600
-    cert.public_key = key.public_key
-    cert.subject    = OpenSSL::X509::Name.parse 'CN=test/DC=test'
-    cert.issuer     = OpenSSL::X509::Name.parse 'CN=test/DC=test'
-    cert.sign key, OpenSSL::Digest::SHA1.new
-
-    # Add the certificate
-    client = @client
-    put "/api/admin/v2/client/#{client.client_id}/certificate", cert.to_pem.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    assert last_response.created?
-    get "/api/admin/v2/client/#{client.client_id}/certificate", {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    assert last_response.ok?
-    schema_pem_cert = schema_pem('CERTIFICATE')
-    assert JSON::Validator.validate(schema_pem_cert, (response = JSON.parse(last_response.body)))
-    assert_equal cert.to_pem, response
-
-    # Delete the certificate
-    delete "/api/admin/v2/client/#{client.client_id}/certificate", {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    assert last_response.no_content?
-    get "/api/admin/v2/client/#{client.client_id}/certificate", {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
-    assert last_response.not_found?
-  end
-
 end
