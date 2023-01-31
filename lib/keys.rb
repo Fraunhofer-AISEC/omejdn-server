@@ -107,8 +107,8 @@ class DefaultKeysDB
         raise 'Certificate not yet valid' if certs[0].not_before > Time.now
 
         result['certs'] = certs if result['sk'].nil? || (certs[0].check_private_key result['sk'])
-      rescue StandardError
-        p 'Loading certificate failed'
+      rescue StandardError => e
+        p "Loading certificate failed: #{e}"
       end
     end
     result
