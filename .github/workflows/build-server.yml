@@ -18,14 +18,13 @@ jobs:
     - uses: ruby/setup-ruby@v1
       with:
         ruby-version: '3.0' # Not needed with a .ruby-version file
-        bundler-cache: true # runs 'bundle install' and caches installed gems automatically
+        bundler-cache: false # runs 'bundle install' and caches installed gems automatically
     - name: Rubocop lint
       run: |
         sudo gem install --no-document rubocop
         rubocop
     - name: Unit tests
       run: |
-        gem install --no-document test-unit rack-test
         gem install --no-document -g
         scripts/test_all.sh
     - name: SBOM generation
