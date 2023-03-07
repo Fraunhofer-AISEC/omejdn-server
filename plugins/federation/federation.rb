@@ -150,9 +150,10 @@ def authenticated_post(provider, target, params)
       iat: now,
       jti: SecureRandom.uuid
     }
-    key_pair = Keys.load_key KEYS_TARGET_OMEJDN, 'omejdn'
+    jwks = Keys.load_keys KEYS_TARGET_OMEJDN, 'omejdn', create: true
+    key = jwks[:keys].find(&:private?)
     params[:client_assertion_type] = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
-    params[:client_assertion] = JWT.encode json, key_pair['sk'], 'RS256', { typ: 'JWT', kid: key_pair['kid'] }
+    params[:client_assertion] = JWT.encode json, key.keypair, key[:alg], { typ: 'JWT', kid: key[:kid] }
   end
 
   p params
@@ -198,12 +199,13 @@ def generate_extern_user(provider, userinfo)
   end
 
   # Update local Attributes
-  user.attributes = (provider['attribute_mappers'] || []).map do |mapper|
+  user.attributes = attributes = {}
+  (provider['attribute_mappers'] || []).each do |mapper|
     mapper = attribute_mapper_config&.dig(mapper)
     if check_prerequisites mapper, userinfo
       PluginLoader.fire "PLUGIN_FEDERATION_ATTRIBUTE_MAPPING_#{mapper['type'].upcase}", binding
     end
-  end.flatten(2).compact
+  end
   user.save
 
   user

@@ -17,9 +17,9 @@ class SelfServiceApiTest < Test::Unit::TestCase
     TestSetup.setup
     user = User.find_by_id 'testUser'
     client = Client.find_by_id 'publicClient'
-    @write_token   = Token.access_token client, user, ['omejdn:write'], {}, TestSetup.config['front_url']+"/api"
-    @read_token    = Token.access_token client, user, ['omejdn:read'],  {}, TestSetup.config['front_url']+"/api"
-    @useless_token = Token.access_token client, user, [],               {}, TestSetup.config['front_url']+"/api"
+    @write_token   = Token.access_token client, user, ['omejdn:write'], {}, TestDB.config.dig('omejdn','front_url')+"/api"
+    @read_token    = Token.access_token client, user, ['omejdn:read'],  {}, TestDB.config.dig('omejdn','front_url')+"/api"
+    @useless_token = Token.access_token client, user, [],               {}, TestDB.config.dig('omejdn','front_url')+"/api"
   end
 
   def test_require_read_scope
@@ -45,6 +45,10 @@ class SelfServiceApiTest < Test::Unit::TestCase
     expected = TestSetup.users[0]
     expected.delete('password')
     expected.delete('backend')
+    expected['attributes'] = expected['attributes'].to_a.map do |ak, av|
+      av = { 'value' => av } unless av.instance_of?(Hash)
+      { 'key' => ak }.merge(av)
+    end
     assert_equal expected, JSON.parse(last_response.body)
   end
 

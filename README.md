@@ -32,14 +32,17 @@ At a minimum, take a look at the documentation for production setups.
 ## Quickstart
 
 The main configuration file is `config/omejdn.yml`.
+It will be generated when you first run Omejdn.
 The default values result in a plain OAuth 2.0 server with no OpenID support
-and no way to add users, served at `localhost:4567`
+and no way to add users via an API, served at `http://localhost:4567`
 
 Depending on your use case, you might want to at least configure the following options:
 
-* `issuer` should be the desired URL to reach Omejdn
-* `openid` enables OpenID compatibility
-* `plugins/user_db` is used to configure storage for users. The `yaml` plugin should be sufficient for a semi-static set of users.
+* `issuer: https://example.org` defines Omejdn's Issuer Identifier. It is used for finding Omejdn's endpoints.
+* `front_url: https://example.org/auth` should point to where Omejdn is mounted. Defaults to `issuer` above.
+  If the two values differ or have a path segment, make sure to relay the well-known endpoints for the issuer according to the documentation.
+* `openid: true` enables OpenID functionality
+* `accept_audience` should include the issuer identifier and `$front_url/token`. Delete this config option to generate a default one for your setup.
 
 To start Omejdn, simply execute
 
@@ -60,10 +63,12 @@ For testing purposes, a script for creating JWT Bearer Tokens for client authent
 
 This section provides but a very brief overview of the possible configuration options.
 When in doubt, take a look at the documentation in `/docs`.
+By default, all configuration options are specified in files under `/config` and `/keys`.
+Omejdn's Plugin system however allows them to be located almost anywhere (including databases, remote locations, ...).
 
 ### Signing keys
 
-The server public/private key pair used to sign tokens is located at `keys/omejdn/omejdn.key`.
+The server public/private key pair used to sign tokens is located at `keys/omejdn/omejdn.key` in PEM format.
 This file will be auto-generated, if it does not exist.
 If you would like to use your own key, simply replace this file.
 You may place other keys and certificates in this folder to have the keys be advertised via the JWKS endpoint (e.g. for key rollover).
@@ -80,28 +85,34 @@ A minimal public client needs to have
 
 ### Users
 
-Users are configured using one or more *User Databases*, or `user_db` plugins.
-Simple setups will probably use the `yaml` plugin, which reads `config/users.yml` by default. Each user has a username, password, and an array of attributes.
+Users are configured in `config/users.yml`.
+Each user has at least a `username`, `password`, and an empty array of `attributes`,
+which are (in their simplest form) key-value pairs describing information about the user. For instance:
+
+```yaml
+- key: given_name
+  value: Alice
+```
+
 For more complex setups take a look at the documentation.
 
 ### Scopes and Attributes
 
-A client can request any subset of scopes in his `allowed scopes`,
-configurable in the client configuration file.
+A client can request any subset of scopes in his `scopes`, configurable in the client configuration file.
 If you define a set of attributes for a scope in `config/scope_mapping.yml`,
-the `userinfo` endpoint response will also include this attribute.
+the `userinfo` endpoint response will also include this attribute for OpenID requests.
 
 (Note: You can also add those attributes to the Access- and ID Tokens.
 Have a look at the `attributes` claim mapper plugin.)
 
-Scopes are granted if the subject contains at least one such attribute.
-Scopes of the form `k:v` are granted if the user contains an attribute with key `k` and value `v`. See the documentation for details.
+Scopes of the form `k:v` are granted if the resource owner (the user in authorization code flows) contains an attribute with key `k` and value `v`.
+Other scopes are granted if the resource owner contains at least one attribute which the scope under consideration maps to.
+See the documentation for details.
 
 In `config/scope_description.yml` you can configure a short description string
-which is displayed to the user in an OpenID Connect flow upon requesting
-authorization.
+which is displayed to the user in an OpenID Connect flow upon requesting authorization.
 
-There are some special scopes you may want to use:
+There are some special predefined scopes you may want to use:
 
   - `openid`, `profile`, `email`: These scopes are defined by OpenID.
   - `omejdn:*`: These scopes are reserved for use with Omejdn and its APIs.
@@ -153,7 +164,7 @@ This server mostly implements the following standards (potentially via plugins):
   * [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html)
   * [OAuth 2.0 Form Post Response Mode](https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html)
 - Other Standards
-  * [RFC 7033 - WebFinger](https://datatracker.ietf.org/doc/rfc7033/)
+  * [RFC 7033](https://datatracker.ietf.org/doc/rfc7033/) - WebFinger
 - Internet Drafts
   * [draft-spencer-oauth-claims-01](https://www.ietf.org/archive/id/draft-spencer-oauth-claims-01.txt)
   * [draft-ietf-oauth-security-topics-19](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics/)
@@ -181,10 +192,7 @@ Omejdn uses the following directory structure:
 ```
 \_ omejdn.rb                 (Omejdn Source code)
 \_ lib/                      (Additional Source code)
-\_ plugins/
-    \_ api/                  (API Plugins)
-    \_ claim_mapper/         (Claim Mapper Plugins)
-    \_ user_db/              (User Database Plugins)
+\_ plugins/                  (Plugin Source code)
 \_ config/
     \_ omejdn.yml            (The main configuration file)
     \_ clients.yml           (Client configuration file)

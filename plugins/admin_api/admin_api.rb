@@ -78,7 +78,7 @@ end
 
 endpoint '/api/v1/config/clients', ['POST'], public_endpoint: true do
   client = JSON.parse(request.body.read)
-  Client.add_client client, 'default'
+  Client.add_client Client.from_h(client), 'default'
   halt 201
 end
 
@@ -106,29 +106,41 @@ end
 
 # Client Keys
 endpoint '/api/v1/config/clients/:client_id/keys', ['GET'], public_endpoint: true do
-  certificate = Client.find_by_id(params['client_id'])&.certificate
-  halt 404 if certificate.nil?
+  client = Client.find_by_id(params['client_id'])
+  halt 404 if client.nil?
+  keys = client&.metadata&.dig('jwks')
+  halt 404 unless keys&.dig(:keys, 0, :x5c, 0)
+  certificate = OpenSSL::X509::Certificate.new(Base64.strict_decode64(keys.dig(:keys, 0, :x5c, 0)))
   halt 200, JSON.generate({ 'certificate' => certificate.to_s })
 end
 
 endpoint '/api/v1/config/clients/:client_id/keys', ['PUT'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
-  client.certificate = OpenSSL::X509::Certificate.new JSON.parse(request.body.read)['certificate']
+  cert = OpenSSL::X509::Certificate.new JSON.parse(request.body.read)['certificate']
+  jwk = JWT::JWK.new cert.public_key, use: 'sig'
+  jwk[:x5c] = [Base64.strict_encode64(cert.to_der)]
+  client.metadata['jwks'] = JWT::JWK::Set.new(jwk).export
+  client.save
   halt 204
 end
 
 endpoint '/api/v1/config/clients/:client_id/keys', ['POST'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
-  client.certificate = OpenSSL::X509::Certificate.new JSON.parse(request.body.read)['certificate']
+  cert = OpenSSL::X509::Certificate.new JSON.parse(request.body.read)['certificate']
+  jwk = JWT::JWK.new cert.public_key, use: 'sig'
+  jwk[:x5c] = [Base64.strict_encode64(cert.to_der)]
+  client.metadata['jwks'] = JWT::JWK::Set.new(jwk).export
+  client.save
   halt 201
 end
 
 endpoint '/api/v1/config/clients/:client_id/keys', ['DELETE'], public_endpoint: true do
   client = Client.find_by_id params['client_id']
   halt 404 if client.nil?
-  client.certificate = nil
+  client.metadata['jwks'] = JWT::JWK::Set.new
+  client.save
   halt 204
 end
 
@@ -155,62 +167,34 @@ endpoint '/api/v1/config/user_backend', ['PUT'], public_endpoint: true do
 end
 
 endpoint '/api/v1/config/webfinger', ['GET'], public_endpoint: true do
-  halt 200, JSON.generate(Config.webfinger_config)
+  halt 200, JSON.generate(Config.read_config(CONFIG_SECTION_WEBFINGER, {}))
 end
 
 endpoint '/api/v1/config/webfinger', ['PUT'], public_endpoint: true do
-  Config.webfinger_config = JSON.parse request.body.read
+  Config.write_config(CONFIG_SECTION_WEBFINGER, JSON.parse(request.body.read))
   halt 204
 end
 
 endpoint '/api/v1/config/oauth_providers', ['GET'], public_endpoint: true do
-  halt 200, JSON.generate(Config.oauth_provider_config)
+  halt 200, JSON.generate([]) # No providers anymore (see Federation Plugin)
 end
 
 endpoint '/api/v1/config/oauth_providers', ['PUT'], public_endpoint: true do
-  Config.oauth_provider_config = JSON.parse request.body.read
-  halt 204
+  halt 204 # No providers anymore (see Federation Plugin)
 end
 
 endpoint '/api/v1/config/oauth_providers/:provider', ['GET'], public_endpoint: true do
-  providers = Config.oauth_provider_config
-  providers.each do |provider|
-    next unless provider['name'] == params['provider']
-
-    return JSON.generate provider
-  end
-  halt 404
+  halt 404 # No providers anymore (see Federation Plugin)
 end
 
 endpoint '/api/v1/config/oauth_providers/:provider', ['POST'], public_endpoint: true do
-  new_provider = JSON.parse request.body.read
-  providers = Config.oauth_provider_config
-  providers.push(new_provider)
-  Config.oauth_provider_config = providers
-  halt 201
+  halt 201 # No providers anymore (see Federation Plugin)
 end
 
 endpoint '/api/v1/config/oauth_providers/:provider', ['PUT'], public_endpoint: true do
-  updated_provider = JSON.parse request.body.read
-  providers = Config.oauth_provider_config
-  providers.each do |provider|
-    next unless provider['name'] == updated_provider['name']
-
-    providers[providers.index(provider)] = updated_provider
-    Config.oauth_provider_config = providers
-    halt 200
-  end
-  halt 404
+  halt 404 # No providers anymore (see Federation Plugin)
 end
 
 endpoint '/api/v1/config/oauth_providers/:provider', ['DELETE'], public_endpoint: true do
-  providers = Config.oauth_provider_config
-  providers.each do |provider|
-    next unless provider['name'] == params['provider']
-
-    providers.delete(provider)
-    Config.oauth_provider_config = providers
-    halt 200
-  end
-  halt 404
+  halt 204 # No providers anymore (see Federation Plugin)
 end

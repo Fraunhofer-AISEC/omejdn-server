@@ -33,17 +33,18 @@ so it is suggested to start with a new configuration file,
 edit these values and let Omejdn fill in the rest for you,
 unless you have read the Main Config documentation.
 
-- `issuer` should be the desired URL to reach Omejdn
-- `openid` can be set to true to enable OpenID specific functionality
-- `plugins/user_db` should contain at least one User Database Plugin.
-For most simple use cases, the `YAML` plugin should suffice.
+* `issuer: https://example.org` defines Omejdn's Issuer Identifier. It is used for finding Omejdn's endpoints.
+* `front_url: https://example.org/auth` should point to where Omejdn is mounted. Defaults to `issuer` above.
+  If the two values differ or have a path segment, make sure to relay the well-known endpoints for the issuer according to the documentation.
+* `openid: true` enables OpenID functionality
+* `accept_audience` should include the issuer identifier and `$front_url/token`. Delete this config option to generate a default one for your setup.
 
 ### Adding clients
 
 Clients are configured in `config/clients.yml`.
 The file is documented [here](../Configuration/Clients.md).
 
-A minimal client capable of using the OpenID authorization flow looks like this:
+A minimal public client capable of using the OpenID authorization flow looks like this:
 
 ```
 - client_id: myClient
@@ -68,8 +69,7 @@ A user looks like this:
 - username: testuser
   password: <password>
   attributes:
-  - key: preferred_username
-    value: testy
+    preferred_username: testy
 ```
 
 While passwords may be specified as plaintext,

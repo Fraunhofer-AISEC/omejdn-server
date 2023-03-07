@@ -168,17 +168,25 @@ If the default audience specified in `omejdn.yml` is not included, a client MUST
 
 ## Client Attributes
 
-```
+```yaml
 attributes:
-  - key: omejdn
-  - value: admin
+  omejdn:
+    value: admin
 ```
 
-A list of attributes. Each attribute can have the following parameters:
+A set of attributes. Each attribute is identified by a key and a set of parameters controlling its value.
+The following parameters are defined:
 
-- `key` the parameter name
-- `value` a default value
+- `value` a default value for the attribute
 - `dynamic` set this to true to allow requesting a value in the claims parameter when requesting a token.
 
+If the default value is neither an object nor nil, and no other parameters are being explicitly set,
+the following shorthand may be used:
+
+```yaml
+attributes:
+  omejdn: admin
+```
+
 Scopes of the form `a:b` may be granted for a client only if said client has an attribute with key `a` and value `b`,
-while scopes of the form `a` can be granted as long as an attribute with key `a` exists.
+while scopes of the form `a` may be granted as long as an attribute with key `a` exists.

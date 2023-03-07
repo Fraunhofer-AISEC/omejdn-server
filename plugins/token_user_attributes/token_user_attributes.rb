@@ -27,7 +27,7 @@ class TokenUserAttributesPlugin
     user   = bind.local_variable_get 'user'
     scopes = bind.local_variable_get 'scopes'
     claims = bind.local_variable_get 'claims'
-    token.merge!(OAuthHelper.map_claims_to_userinfo((user || client).attributes, claims[sink], client, scopes))
+    token.merge!(OAuthHelper.map_claims_to_userinfo((user || client).attributes, claims[sink], scopes))
   end
 end
 

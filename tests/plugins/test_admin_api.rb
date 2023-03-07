@@ -18,7 +18,7 @@ class AdminApiTest < Test::Unit::TestCase
     
     @client = Client.find_by_id 'private_key_jwt_client'
     @client2 = Client.find_by_id 'publicClient'
-    @token = Token.access_token @client, nil, ['omejdn:admin'], {}, TestSetup.config['front_url']+"/api"
+    @token = Token.access_token @client, nil, ['omejdn:admin'], {}, TestDB.config.dig('omejdn','front_url')+"/api"
     @insufficient_token = Token.access_token @client, nil, ['omejdn:write'], {}, "test"
     @testCertificate = OpenSSL::X509::Certificate.new File.read('./tests/test_resources/testClient.pem')
   end
@@ -109,7 +109,8 @@ class AdminApiTest < Test::Unit::TestCase
   def test_get_clients
     get '/api/v1/config/clients', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal TestSetup.clients, JSON.parse(last_response.body)
+    expected_clients = TestSetup.clients.map { |c| c['jwks'] = { 'keys' => [] }; c }
+    assert_equal expected_clients, JSON.parse(last_response.body)
   end
 
   def test_put_clients
@@ -119,17 +120,20 @@ class AdminApiTest < Test::Unit::TestCase
     assert last_response.no_content?
     get '/api/v1/config/clients', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal new_clients, JSON.parse(last_response.body)
+    expected_clients = new_clients.map { |c| c['jwks'] = { 'keys' => [] }; c }
+    assert_equal expected_clients, JSON.parse(last_response.body)
   end
 
   def test_get_client
     get "/api/v1/config/clients/#{@client.client_id}", {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal @client.to_h, JSON.parse(last_response.body)
+    client_desc = JSON.parse(@client.to_h.to_json) # JSON Side Effects like turning symbols into strings
+    assert_equal client_desc, JSON.parse(last_response.body)
   end
 
   def test_put_client
     client_desc = @client.to_h
+    client_desc = JSON.parse(client_desc.to_json) # JSON Side Effects like turning symbols into strings
     client_desc.delete("client_id")
     client_desc['name'] = "Alternative Name"
     put "/api/v1/config/clients/#{@client.client_id}", client_desc.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
@@ -146,6 +150,7 @@ class AdminApiTest < Test::Unit::TestCase
       'name' => 'omejdn admin ui',
       'allowed_scopes' => ['omejdn:write'],
       'redirect_uri' => 'http://localhost:4200',
+      'jwks' => { 'keys' => [] },
       'attributes' => []
     }
     post '/api/v1/config/clients', new_client.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
@@ -166,15 +171,15 @@ class AdminApiTest < Test::Unit::TestCase
   def test_get_config
     get '/api/v1/config/omejdn', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal TestSetup.config, JSON.parse(last_response.body)
+    assert_equal TestDB.config.dig('omejdn'), JSON.parse(last_response.body)
   end
 
   def test_put_config
-    put '/api/v1/config/omejdn', TestSetup.config.to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
+    put '/api/v1/config/omejdn', TestDB.config.dig('omejdn').to_json, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.no_content?
     get '/api/v1/config/omejdn', {}, { 'HTTP_AUTHORIZATION' => "Bearer #{@token}" }
     assert last_response.ok?
-    assert_equal TestSetup.config, JSON.parse(last_response.body)
+    assert_equal TestDB.config.dig('omejdn'), JSON.parse(last_response.body)
   end
 
   def test_post_put_delete_certificate

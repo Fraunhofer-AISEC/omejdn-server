@@ -11,14 +11,14 @@ OMEJDN_VERSION = File.file?('.version') ? File.read('.version').chomp : 'unknown
 puts "Starting Omejdn version #{OMEJDN_VERSION}"
 puts '========================================='
 
-require 'rubygems'
-require 'bundler/setup'
 require 'sinatra'
 require 'sinatra/cookies'
 require 'rack'
 require 'cgi'
 require 'securerandom'
 require 'net/http'
+require 'jwt'
+JWT.configuration.jwk.kid_generator_type = :rfc7638_thumbprint # Use "standard" kid s
 
 require_relative './lib/client'
 require_relative './lib/config'
@@ -109,7 +109,7 @@ endpoint '/token', ['POST'], public_endpoint: true do
   PluginLoader.fire('TOKEN_STARTED', binding)
   case params[:grant_type]
   when 'client_credentials'
-    scopes     = filter_scopes(client, client.filter_scopes(params[:scope]&.split) || [])
+    scopes     = filter_scopes(client, client, params[:scope]&.split)
     resources  = [*Config.base_config['default_audience']] if resources.empty?
     req_claims = JSON.parse(params[:claims] || '{}')
     raise OAuthError.new 'invalid_target', "Access denied to: #{resources}" unless client.resources_allowed? resources
@@ -134,7 +134,11 @@ endpoint '/token', ['POST'], public_endpoint: true do
   resources << ("#{front_url}/userinfo") if openid?(scopes)
   resources << ("#{front_url}/api") unless scopes.select { |s| s.start_with? 'omejdn:' }.empty?
 
-  OAuthHelper.adapt_requested_claims req_claims
+  # https://tools.ietf.org/id/draft-spencer-oauth-claims-00.html#rfc.section.3
+  known_sinks = %w[access_token id_token userinfo]
+  default_sinks = ['access_token']
+  known_sinks.each   { |sink| (req_claims[sink] ||= {}).merge!(req_claims.delete('*') || {}) }
+  default_sinks.each { |sink| req_claims[sink].merge!(req_claims.delete('?') || {}) }
 
   user = cache&.dig(:user)
   nonce = cache&.dig(:nonce)
@@ -175,16 +179,18 @@ def auth_response(auth, response_params)
   end
 end
 
-def filter_scopes(resource_owner, scopes)
-  scope_mapping = Config.scope_mapping_config
-  scopes.select do |s|
+def filter_scopes(resource_owner, client, scopes)
+  scope_mapping = Config.read_config CONFIG_SECTION_SCOPE_MAPPING, {}
+  ((scopes || []) & [*client.metadata['scope']]).select do |s|
     if s == 'openid'
       true
     elsif s.include? ':'
       key, value = s.split(':', 2)
-      resource_owner.claim?(key, value)
+      av = resource_owner.attributes[key]
+      av = { 'value' => av } unless av.instance_of?(Hash)
+      av && av['value'] == value
     else
-      (scope_mapping[s] || []).any? { |claim| resource_owner.claim?(claim) }
+      (scope_mapping[s] || []).any? { |claim| resource_owner.attributes[claim] }
     end
   end
 end
@@ -194,7 +200,8 @@ endpoint '/par', ['POST'], public_endpoint: true do
   raise OAuthError.new 'invalid_request', 'Request URI not supported here' if params.key(:request_uri)
 
   client = OAuthHelper.authenticate_client params, env.fetch('HTTP_AUTHORIZATION', '')
-  OAuthHelper.prepare_params params, client
+  old_params = params
+  params = OAuthHelper.prepare_params old_params, client
 
   uri = "urn:ietf:params:oauth:request_uri:#{SecureRandom.uuid}"
   Cache.par[uri] = params # TODO: Expiration
@@ -221,13 +228,18 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
     response_mode: params[:response_mode] # The response mode to use
   }
 
-  # Used for error messages, might be overwritten by request objects
-  auth[:redirect_uri] = client.verify_redirect_uri params[:redirect_uri], true if params[:redirect_uri]
-  OAuthHelper.prepare_params params, client
-  uri = client.verify_redirect_uri params[:redirect_uri], openid?((params[:scope] || '').split) # For real this time
+  # Used for early error reporting, might be overwritten by request objects
+  auth[:redirect_uri] = client.verify_uri 'redirect_uris', params[:redirect_uri]
+  old_params = params # Ruby can be quite strange
+  params = OAuthHelper.prepare_params(old_params, client)
+  if !openid?((params[:scope] || '').split) && [*client.metadata['redirect_uris']].length == 1
+    params[:redirect_uri] ||= [*client.metadata['redirect_uris']][0]
+  end
+  raise OAuthError, 'invalid_request' unless client.verify_uri('redirect_uris', params[:redirect_uri])
 
   # Some of these values may have been overwritten
   auth.merge!({
+                redirect_uri: params[:redirect_uri],
                 state: params[:state], # Client state
                 nonce: params[:nonce], # The client's OIDC nonce
                 response_mode: params[:response_mode] # The response mode to use
@@ -240,18 +252,17 @@ endpoint '/authorize', ['GET'], public_endpoint: true do
   end
 
   auth.merge!({
-                redirect_uri: uri,
                 pkce: params[:code_challenge],
                 pkce_method: params[:code_challenge_method],
                 req_scope: params[:scope].split,
                 req_claims: JSON.parse(params[:claims] || '{}'),
-                req_resource: params['resource']
+                req_resource: params['resource'],
+                req_max_age: params[:max_age],
+                req_tasks: (params[:prompt]&.split&.uniq || [])
               })
 
-  auth[:req_max_age] = params[:max_age]
-  auth[:req_tasks] = params[:prompt]&.split&.uniq || []
   if (auth[:req_tasks].include? 'none') && auth[:req_tasks] != ['none']
-    raise OAuthError.new 'invalid_request', "Invalid 'prompt' values: #{params[:prompt]}"
+    raise OAuthError.new 'invalid_request', "Invalid 'prompt' values"
   end
 
   PluginLoader.fire('AUTHORIZATION_STARTED', binding)
@@ -269,7 +280,7 @@ endpoint '/consent', ['GET'] do
   raise OAuthError.new 'invalid_client', 'Client unknown' if (client = auth[:client]).nil?
 
   # Find the right scopes
-  auth[:scope] = filter_scopes(user, client.filter_scopes(auth[:req_scope]))
+  auth[:scope] = filter_scopes(user, client, auth[:req_scope])
   auth[:claims] = auth[:req_claims]
   auth[:resource] = [auth[:req_resource] || Config.base_config['default_audience']].flatten
   raise OAuthError.new 'invalid_target', 'Resources not granted' unless client.resources_allowed? auth[:resource]
@@ -289,7 +300,7 @@ endpoint '/consent', ['GET'] do
     user: user,
     client: client,
     scopes: auth[:scope],
-    scope_description: Config.scope_description_config
+    scope_description: Config.read_config(CONFIG_SECTION_SCOPE_DESCRIPTION, {})
   }
 rescue OAuthError => e
   auth_response Cache.authorization[session[:current_auth]], e.to_h
@@ -312,7 +323,9 @@ end
 endpoint '/logout', ['GET', 'POST'], public_endpoint: true do
   id_token = Token.decode params[:id_token_hint]
   client = Client.find_by_id id_token&.dig('aud')
-  redirect_uri = client&.verify_post_logout_redirect_uri params[:post_logout_redirect_uri]
+  req_uri = params[:post_logout_redirect_uri]
+  redirect_uri = req_uri if client&.verify_uri('post_logout_redirect_uris', req_uri)
+  redirect_uri ||= [*client&.metadata&.[]('redirect_uris')][0]
   PluginLoader.fire('LOGOUT_STARTED', binding)
   halt 200, (haml :logout, locals: { state: params[:state], redirect_uri: redirect_uri })
 rescue StandardError
@@ -374,7 +387,7 @@ endpoint '/userinfo', ['GET', 'POST'], public_endpoint: true do
   user   = User.find_by_id   token['sub']
   halt 401 unless user && client
   req_claims = token.dig('omejdn_reserved', 'userinfo_req_claims')
-  userinfo = OAuthHelper.map_claims_to_userinfo(user.attributes, req_claims, client, token['scope'].split)
+  userinfo = OAuthHelper.map_claims_to_userinfo(user.attributes, req_claims, token['scope'].split)
   userinfo['sub'] = user.username
   PluginLoader.fire('OPENID_USERINFO', binding)
   halt 200, { 'Content-Type' => 'application/json' }, userinfo.to_json
@@ -391,15 +404,20 @@ before '/(.well-known*|jwks.json)' do
 end
 
 endpoint '/.well-known/(oauth-authorization-server|openid-configuration)', ['GET'], public_endpoint: true do
+  jwks = Keys.load_keys KEYS_TARGET_OMEJDN, 'omejdn', create: true
+  key = jwks.find(&:private?)
   metadata = OAuthHelper.configuration_metadata
   PluginLoader.fire('STATIC_METADATA', binding)
-  halt 200, { 'Content-Type' => 'application/json' }, (OAuthHelper.sign_metadata metadata).to_json
+  to_sign = metadata.dup
+  to_sign['iss'] = to_sign['issuer']
+  metadata['signed_metadata'] = JWT.encode to_sign, key.keypair, key[:alg], { kid: key[:kid] }
+  halt 200, { 'Content-Type' => 'application/json' }, metadata.to_json
 end
 
 endpoint '/.well-known/webfinger', ['GET'], public_endpoint: true do
   res = CGI.unescape((params[:resource] || '').gsub('%20', '+'))
   halt 400 unless res.start_with? 'acct:'
-  halt 404 if Config.webfinger_config.filter { |h| res.end_with? h }.empty?
+  halt 404 if Config.read_config(CONFIG_SECTION_WEBFINGER, {}).filter { |h| res.end_with? h }.empty?
   webfinger = {
     subject: res,
     properties: {},
@@ -413,7 +431,9 @@ endpoint '/.well-known/webfinger', ['GET'], public_endpoint: true do
 end
 
 endpoint '/jwks.json', ['GET'], public_endpoint: true do
-  jwks = Keys.generate_jwks
+  # jwks = Keys.load_all_keys KEYS_TARGET_OMEJDN
+  # jwks = { keys: jwks[:keys].map(&:export) }
+  jwks = Keys.load_all_keys(KEYS_TARGET_OMEJDN).export
   PluginLoader.fire('STATIC_JWKS', binding)
   halt 200, { 'Content-Type' => 'application/json' }, jwks.to_json
 end
