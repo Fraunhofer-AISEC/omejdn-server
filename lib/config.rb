@@ -113,6 +113,7 @@ class DefaultConfigDB
   def self.write_config(bind)
     section = bind.local_variable_get :section
     data    = bind.local_variable_get :data
+    Dir.mkdir CONFIG_DIR unless File.directory? CONFIG_DIR
     file = File.new "#{CONFIG_DIR}/#{section}.yml", File::CREAT | File::TRUNC | File::RDWR
     file.write data.to_yaml
     file.close

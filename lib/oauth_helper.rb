@@ -149,7 +149,7 @@ class OAuthHelper
     metadata['userinfo_endpoint'] = "#{path}/userinfo"
     metadata['acr_values_supported'] = []
     metadata['subject_types_supported'] = ['public']
-    metadata['id_token_signing_alg_values_supported'] = omejdn_keys['sig'].map { |k| k[:alg] }.uniq
+    metadata['id_token_signing_alg_values_supported'] = omejdn_keys['sig']&.map { |k| k[:alg] }&.uniq || ['none']
     metadata['id_token_encryption_alg_values_supported'] = ['none']
     metadata['id_token_encryption_enc_values_supported'] = ['none']
     metadata['userinfo_signing_alg_values_supported'] = ['none']

@@ -11,17 +11,29 @@ class Keys
     PluginLoader.fire('KEYS_STORE', binding)
   end
 
-  def self.load_keys(target_type, target, create_key: false)
+  def self.load_keys(target_type, target, create: false)
     jwks = JWT::JWK::Set.new(PluginLoader.fire('KEYS_LOAD', binding).first)
-    if jwks.none? && create_key
-      jwks = JWT::JWK::Set.new(JWT::JWK.new(OpenSSL::PKey::RSA.new(2048), use: 'sig', alg: 'RS256'))
-      store_keys(target_type, target, jwks)
-    end
+    store_keys(target_type, target, jwks = JWT::JWK::Set.new(create_key('RS256'))) if jwks.none? && create
     jwks
   end
 
   def self.load_all_keys(target_type)
     JWT::JWK::Set.new(PluginLoader.fire('KEYS_LOAD_ALL', binding).first)
+  end
+
+  def self.create_key(alg, options = {})
+    options = { use: 'sig', alg: alg }.merge(options)
+    key = case alg
+          when 'RS256'
+            OpenSSL::PKey::RSA.new 2048
+          when 'RS512'
+            OpenSSL::PKey::RSA.new 2048
+          when 'ES256'
+            OpenSSL::PKey::EC.generate('prime256v1')
+          when 'ES512'
+            OpenSSL::PKey::EC.generate('prime256v1')
+          end
+    JWT::JWK.new(key, options)
   end
 
   def self.ensure_usability(jwk)
@@ -86,13 +98,15 @@ class DefaultKeysDB
     jwks        = bind.local_variable_get :jwks
 
     # Create directory and delete existing key material
+    Dir.mkdir KEYS_DIR unless File.directory? KEYS_DIR
     Dir.mkdir "#{KEYS_DIR}/#{target_type}" unless File.directory? "#{KEYS_DIR}/#{target_type}"
     FileUtils.rm Dir.glob("#{KEYS_DIR}/#{target_type}/#{target}.*")
 
     JWT::JWK::Set.new(jwks).each do |jwk|
-      key_params = JWT::JWK.new(jwk.keypair).export.keys
+      key_params = JWT::JWK.new(jwk.keypair).export(include_private: true).keys
       desc_params = jwk.export.except(*key_params)
-      file_prefix = "#{KEYS_DIR}/#{target_type}/#{target}.#{desc_params.delete(:kid)}"
+      file_prefix = "#{KEYS_DIR}/#{target_type}/#{target}"
+      file_prefix += ".#{jwk[:kid]}" if jwks[:keys].size > 1
 
       # Save optional x509 certificate chain to file as PEM
       if (certs = desc_params.delete(:x5c))
@@ -102,7 +116,7 @@ class DefaultKeysDB
       end
 
       # Save remaining desc_params to file as YAML
-      File.write("#{file_prefix}.yml", desc_params.to_yaml)
+      File.write("#{file_prefix}.yml", JSON.parse(desc_params.to_json).to_yaml) # Convert Symbols to Strings
 
       # If no x509 cert or private key available, save key to file as PEM
       if jwk.private?
@@ -126,7 +140,7 @@ class DefaultKeysDB
     end
 
     # Read files and assemble JWKs
-    keys.map! do |_, filenames|
+    keys = keys.values.map do |filenames|
       desc_params = {}
       key = nil
 
@@ -140,14 +154,14 @@ class DefaultKeysDB
           key ||= certs[0]&.public_key
           # TODO: Add other x5* data to desc_params
         when 'yml'
-          desc_params.merge!(YAML.safe_load(File.read(f)), filename: f)
+          desc_params.merge!(YAML.safe_load(File.read(f), filename: f))
         end
       end
 
       JWT::JWK.new key, desc_params if key
     end
 
-    { keys: keys }
+    JWT::JWK::Set.new(keys).export include_private: true
   end
 
   def self.load_target_keys(bind)
@@ -157,7 +171,7 @@ class DefaultKeysDB
 
   # register functions
   def self.register
-    PluginLoader.register 'KEYS_STORE',    method(:store_key)
+    PluginLoader.register 'KEYS_STORE',    method(:store_keys)
     PluginLoader.register 'KEYS_LOAD',     method(:load_target_keys)
     PluginLoader.register 'KEYS_LOAD_ALL', method(:load_keys)
   end

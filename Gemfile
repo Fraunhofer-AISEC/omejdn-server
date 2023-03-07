@@ -6,7 +6,7 @@ source 'https://rubygems.org'
 group :omejdn do
   gem 'bcrypt'
   gem 'haml'
-  gem 'jwt', git: 'https://github.com/jwt/ruby-jwt.git'
+  gem 'jwt'
   gem 'sinatra'
   gem 'sinatra-contrib'
   gem 'thin'

@@ -72,14 +72,5 @@ endpoint '/api/v1/user/password', ['PUT'], public_endpoint: true do
 end
 
 endpoint '/api/v1/user/provider', ['GET'], public_endpoint: true do
-  # TODO: We probably do not want to send out the entire provider including secrets
-  # to any user with API access
-  halt 404 if @user.extern.nil?
-  providers = [] # No providers anymore (see federation plugin)
-  providers.each do |provider|
-    next unless provider['name'] == @user.extern
-
-    return JSON.generate provider
-  end
-  halt 404
+  halt 404 # No providers anymore (see federation plugin)
 end

@@ -27,9 +27,7 @@ class Token
     reserved = {}
     reserved['userinfo_req_claims'] = claims['userinfo'] unless (claims['userinfo'] || {}).empty?
     token['omejdn_reserved'] = reserved unless reserved.empty?
-    # jwks = Keys.load_keys KEYS_TARGET_OMEJDN, 'omejdn', create_key: true
-    # key = jwks[:keys].find(&:private?)
-    jwks = Keys.load_keys(KEYS_TARGET_OMEJDN, 'omejdn', create_key: true)
+    jwks = Keys.load_keys(KEYS_TARGET_OMEJDN, 'omejdn', create: true)
     key = jwks.find { |k| k[:use] == 'sig' && k.private? }
     JWT.encode token, key.keypair, key[:alg], { typ: 'at+jwt', kid: key[:kid] }
   end
@@ -49,9 +47,7 @@ class Token
       'nonce' => nonce
     }.compact
     PluginLoader.fire 'TOKEN_CREATED_ID_TOKEN', binding
-    # jwks = Keys.load_keys KEYS_TARGET_OMEJDN, 'omejdn', create_key: true
-    # key = jwks[:keys].find(&:private?)
-    jwks = Keys.load_keys KEYS_TARGET_OMEJDN, 'omejdn', create_key: true
+    jwks = Keys.load_keys KEYS_TARGET_OMEJDN, 'omejdn', create: true
     key = jwks.find { |k| k[:use] == 'sig' && k.private? }
     JWT.encode token, key.keypair, key[:alg], { typ: 'JWT', kid: key[:kid] }
   end

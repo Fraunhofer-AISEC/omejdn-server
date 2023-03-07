@@ -44,10 +44,6 @@ class Client
     }.merge(@metadata).compact
   end
 
-  def filter_scopes(scopes)
-    (scopes || []) & [*@metadata['scope']]
-  end
-
   def grant_type_allowed?(grant_type)
     [*(@metadata['grant_types'] || ['authorization_code'])].include? grant_type
   end
@@ -56,26 +52,11 @@ class Client
     @metadata['resource'].nil? || (resources - [*@metadata['resource']]).empty?
   end
 
-  def request_uri_allowed?(uri)
-    [*@metadata['request_uris']].include? uri
-  end
-
-  # This function ensures a URI is allowed to be used by a client
-  def verify_redirect_uri(uri, require_existence)
-    raise OAuthError, 'invalid_request' if !uri && (require_existence || [*@metadata['redirect_uris']].length != 1)
-
-    uri ||= [*@metadata['redirect_uris']][0]
-    escaped_redir = CGI.unescape(uri)&.gsub('%20', '+')
-    raise OAuthError, 'invalid_request' unless [*@metadata['redirect_uris']].include? escaped_redir
-
-    uri
-  end
-
   def verify_uri(type, uri)
-    uri && [*@metadata[type]].include?(CGI.unescape(uri)&.gsub('%20', '+'))
+    uri if uri && [*@metadata[type]].include?(CGI.unescape(uri)&.gsub('%20', '+'))
   end
 
-  # Decodes a JWT
+  # Decodes a JWT using this client's keys
   def decode_jwt(jwt)
     jwks = lambda do |_options|
       if @metadata['jwks']
@@ -93,16 +74,11 @@ class Client
       verify_aud: true,
       iss: client_id,
       verify_iss: true,
-      algorithm: %w[RS256 RS512 ES256 ES512]
+      algorithm: %w[RS256 RS512 ES256 ES512],
+      jwks: jwks,
+      allow_nil_kid: true
     }
-    # JWT cannot currently handle missing KIDs
-    payload, = JWT.decode jwt, nil, true, decode_options do |header, _body|
-      keys = JWT::JWK::Set.new(jwks.call({}))
-      kid = header['kid'] || header[:kid]
-      keys.filter! { |k| k[:kid] == kid } if kid
-      keys.first&.keypair # FIXME: public_key is kinda broken for EC
-    end
-    payload
+    (JWT.decode jwt, nil, true, decode_options)[0]
   rescue StandardError => e
     p e
     nil
@@ -173,10 +149,10 @@ class DefaultClientDB
 
   # register functions
   def self.register
-    PluginLoader.register 'CLIENT_GET',                               method(:get)
-    PluginLoader.register 'CLIENT_GET_ALL',                           method(:get_all)
-    PluginLoader.register 'CLIENT_CREATE',                            method(:create)
-    PluginLoader.register 'CLIENT_UPDATE',                            method(:update)
-    PluginLoader.register 'CLIENT_DELETE',                            method(:delete)
+    PluginLoader.register 'CLIENT_GET',     method(:get)
+    PluginLoader.register 'CLIENT_GET_ALL', method(:get_all)
+    PluginLoader.register 'CLIENT_CREATE',  method(:create)
+    PluginLoader.register 'CLIENT_UPDATE',  method(:update)
+    PluginLoader.register 'CLIENT_DELETE',  method(:delete)
   end
 end

@@ -39,7 +39,6 @@ class TestDB
   def self.load_key(bind)
     target_type = bind.local_variable_get :target_type
     target      = bind.local_variable_get :target
-    create_key  = bind.local_variable_get :create_key
     (json = @keys.dig(target_type, target)&.to_json) ? JSON.parse(json) : JWT::JWK::Set.new.export # Simple deep copy
   end
 
