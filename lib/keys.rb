@@ -24,53 +24,54 @@ class Keys
   def self.create_key(alg, options = {})
     options = { use: 'sig', alg: alg }.merge(options)
     key = case alg
-          when 'RS256'
+          when 'RS256', 'RS512'
             OpenSSL::PKey::RSA.new 2048
-          when 'RS512'
-            OpenSSL::PKey::RSA.new 2048
-          when 'ES256'
-            OpenSSL::PKey::EC.generate('prime256v1')
-          when 'ES512'
+          when 'ES256', 'ES512'
             OpenSSL::PKey::EC.generate('prime256v1')
           end
     JWT::JWK.new(key, options)
+  end
+
+  def self.adapt_to_cert(jwk, cert)
+    # Ensure the first certificate contains the correct key
+    return unless jwk.kid == JWT::JWK.new(cert.public_key).kid
+
+    # Check current validity (just by time)
+    return if cert.not_after < Time.now
+    return if cert.not_before > Time.now
+
+    # Set Thumbprints
+    jwk[:x5t]        = Base64.urlsafe_encode64(OpenSSL::Digest.new('SHA1',   cert.to_der).to_s)
+    jwk[:'x5t#S256'] = Base64.urlsafe_encode64(OpenSSL::Digest.new('SHA256', cert.to_der).to_s)
+
+    # Check usage restrictions
+    usages = cert.extensions&.find { |ext| ext.oid == 'keyUsage' }&.value&.split("\n")&.map do |usage|
+      # C.t. RFC 5280, Section 4.2.1.3
+      # We do not care about encipherOnly and decipherOnly for the `use` param
+      if ['Digital Signature', 'Non Repudiation', 'Content Commitment', 'Key Cert Sign', 'CRL Sign'].include? usage
+        'sig'
+      elsif ['Key Encipherment', 'Data Encipherment', 'Key Agreement'].include? usage
+        'enc'
+      end
+    end
+
+    usages.compact!.uniq!
+    return if jwk[:use] && !usages.include?(jwk[:use])
+
+    jwk[:use] = usages[0] if usages.length == 1
+    jwk
   end
 
   def self.ensure_usability(jwk)
     # NOTE: No support for x5u and key_ops atm.
     # Certificates may overwrite a lot of defaults, so we handle them first
     certs = jwk[:x5c]&.map { |c| OpenSSL::X509::Certificate.new(Base64.strict_decode64(c)) }
-    if certs
-      # Ensure the first certificate contains the correct key
-      return unless jwk.kid == JWT::JWK.new(certs[0].public_key).kid
-
-      # Check current validity (just by time)
-      return if certs[0].not_after < Time.now
-      return if certs[0].not_before > Time.now
-
-      # Set Thumbprints
-      jwk[:x5t]        = Base64.urlsafe_encode64(OpenSSL::Digest.new('SHA1',   certs[0].to_der).to_s)
-      jwk[:'x5t#S256'] = Base64.urlsafe_encode64(OpenSSL::Digest.new('SHA256', certs[0].to_der).to_s)
-
-      # Check usage restrictions
-      usages = certs[0].extensions&.find { |ext| ext.oid == 'keyUsage' }&.value&.split("\n")&.map do |usage|
-        # C.t. RFC 5280, Section 4.2.1.3
-        # We do not care about encipherOnly and decipherOnly for the `use` param
-        if ['Digital Signature', 'Non Repudiation', 'Content Commitment', 'Key Cert Sign', 'CRL Sign'].include? usage
-          'sig'
-        elsif ['Key Encipherment', 'Data Encipherment', 'Key Agreement'].include? usage
-          'enc'
-        end
-      end
-
-      usages.compact!.uniq!
-      return if jwk[:use] && !usages.include?(jwk[:use])
-
-      jwk[:use] = usages[0] if usages.length == 1
-    end
+    jwk = adapt_to_cert(jwk, certs[0]) if certs
+    return if jwk.nil?
 
     jwk[:use] ||= 'sig' # By default, every key is a signature key
     jwk[:alg] ||= default_alg jwk
+    jwk
   end
 
   def self.default_alg(jwk)
@@ -158,7 +159,7 @@ class DefaultKeysDB
         end
       end
 
-      JWT::JWK.new key, desc_params if key
+      Keys.ensure_usability(JWT::JWK.new(key, desc_params)) if key
     end
 
     JWT::JWK::Set.new(keys).export include_private: true
